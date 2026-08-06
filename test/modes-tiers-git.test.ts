@@ -37,19 +37,34 @@ describe('modes, tiers, and Git opt-ins', () => {
       git: { commits: false, branches: false, worktrees: false },
     });
     expect(negotiateExecutionTier(capabilities, requested)).toMatchObject({
-      tier: 'tier1', requested: 'tier2', downgraded: true,
+      tier: 'tier0', requested: 'tier2', downgraded: true,
     });
+    expect(negotiateExecutionTier(capabilities, requested).diagnostics.join(' '))
+      .toContain('registered host dispatcher');
   });
 
-  it('permits Tier 2 and each Git mutation only through independent opt-ins', () => {
+  it('distinguishes permission flags, probed capabilities, and registered adapters', () => {
     const config = GuardrailsConfigV1Schema.parse({
       requestedTier: 'tier2', allowAgentDispatch: true, allowParallel: true,
       git: { commits: false, branches: false, worktrees: true },
     });
-    expect(negotiateExecutionTier(capabilities, config).tier).toBe('tier2');
-    expect(plannedGitOperations(config)).toEqual(['worktree']);
-    expect(() => assertGitOperationAllowed(config, 'commit')).toThrow('disabled');
-    expect(() => assertGitOperationAllowed(config, 'branch')).toThrow('disabled');
-    expect(() => assertGitOperationAllowed(config, 'worktree')).not.toThrow();
+    expect(negotiateExecutionTier(capabilities, config).tier).toBe('tier0');
+    expect(negotiateExecutionTier(capabilities, config, { dispatcher: true }).tier).toBe('tier1');
+    expect(negotiateExecutionTier(capabilities, config, {
+      dispatcher: true, worktrees: true,
+    }).tier).toBe('tier2');
+    expect(plannedGitOperations(config, { worktree: true })).toEqual(['worktree']);
+    expect(() => assertGitOperationAllowed(config, 'commit', { commit: true })).toThrow(/permission/i);
+    expect(() => assertGitOperationAllowed(config, 'branch', { branch: true })).toThrow(/permission/i);
+    expect(() => assertGitOperationAllowed(config, 'worktree')).toThrow(/registered host adapter/i);
+    expect(() => assertGitOperationAllowed(config, 'worktree', { worktree: true })).not.toThrow();
+  });
+
+  it.each(['linux', 'darwin', 'win32'])('keeps Git mutations independently disabled on %s', () => {
+    const config = GuardrailsConfigV1Schema.parse({
+      git: { commits: true, branches: false, worktrees: false },
+    });
+    expect(plannedGitOperations(config, { commit: true, branch: true, worktree: true }))
+      .toEqual(['commit']);
   });
 });

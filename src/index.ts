@@ -19,3 +19,4 @@ export * from './runner.js';
 export * from './status.js';
 export * from './execution-adapters.js';
 export * from './events.js';
+export * from './recording.js';

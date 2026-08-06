@@ -200,7 +200,13 @@ export function replayGuardrailsEvents(options: {
     if (payload.type === 'task.transition') {
       const current = byTask.get(payload.taskId);
       if (current && current.status !== 'complete' && payload.status !== 'complete') {
-        byTask.set(payload.taskId, { ...current, status: payload.status });
+        byTask.set(payload.taskId, {
+          ...current,
+          status: payload.status,
+          ...(payload.status === 'in_progress' && !current.implementationStartedAt
+            ? { implementationStartedAt: event.occurredAt }
+            : {}),
+        });
       }
     } else if (payload.type === 'evidence.recorded') evidence.push(payload.evidence);
     else if (payload.type === 'finding.recorded') findings.push(payload.finding);
