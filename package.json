@@ -29,6 +29,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
