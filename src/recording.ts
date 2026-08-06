@@ -23,7 +23,7 @@ import {
   type GuardrailsEventPayloadV1,
   type GuardrailsRunV1,
 } from './schemas.js';
-import { atomicWriteText, resolveChangeDirectory } from './state.js';
+import { atomicWriteText, readRunState, resolveChangeDirectory } from './state.js';
 import type { z as Zod } from 'zod';
 
 type EventActorV1 = Zod.infer<typeof GuardrailsEventActorV1Schema>;
@@ -266,14 +266,17 @@ export async function acceptGuardrailsGate(options: {
 }): Promise<RecordingResultV1> {
   const resolved = await resolveChangeDirectory(options);
   const acceptedAt = options.occurredAt ?? new Date().toISOString();
+  const store = await migrateV1ProjectionsToEventStore(resolved.changeDir);
+  const run = await readRunState(resolved.changeDir);
   await acceptRequiredGate(resolved.changeDir, options.gateId, { actor: options.actor, acceptedAt });
   const record = await readRequiredGateRecord(resolved.changeDir);
   const gate = record.gates.find((item) => item.gateId === options.gateId)!;
-  return recordGuardrailsPayload({
-    change: options.change,
-    projectRoot: resolved.projectRoot,
+  const event = createGuardrailsEvent({
     eventId: options.eventId ?? randomUUID(),
+    runId: store.runId,
+    changeName: store.changeName,
     occurredAt: acceptedAt,
+    sourceDigests: sourceDigests(run),
     actor: { kind: 'human', id: options.actor },
     provenance: { origin: 'tier0-cli-accept' },
     payload: {
@@ -284,4 +287,15 @@ export async function acceptGuardrailsGate(options: {
       evidenceDigest: gate.acceptance!.evidenceDigest,
     },
   });
+  const appended = await appendGuardrailsEvent({ changeDir: resolved.changeDir, event });
+  return {
+    accepted: true,
+    appended: appended.appended,
+    eventId: event.eventId,
+    eventType: event.payload.type,
+    runId: event.runId,
+    changeName: event.changeName,
+    projectionRepaired: false,
+    nextAction: nextAction(run),
+  };
 }

@@ -129,7 +129,9 @@ during the transition. If doctor reports `api-unavailable`, restore the last
 supported fork prerelease rather than disabling the required gate.
 
 Repository ownership, change control, and release authority are documented in
-[`GOVERNANCE.md`](./GOVERNANCE.md).
+[`GOVERNANCE.md`](./GOVERNANCE.md). The complete upstream-update,
+compatibility, release-order, rollback, and official-upstream procedures are in
+[`MAINTENANCE.md`](./MAINTENANCE.md).
 
 ## Development
 
