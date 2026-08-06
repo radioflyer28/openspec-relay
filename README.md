@@ -113,6 +113,9 @@ CI builds both the selected OpenSpec integration branch and Guardrails, runs the
 conformance and cross-repository suites on Linux, macOS, and Windows, and packs
 both release units before publication.
 
+Repository ownership, change control, and release authority are documented in
+[`GOVERNANCE.md`](./GOVERNANCE.md).
+
 ## Development
 
 ```bash
