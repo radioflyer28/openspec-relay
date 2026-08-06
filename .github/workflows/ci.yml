@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout Guardrails
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: openspec-guardrails
+          persist-credentials: false
+
+      - name: Checkout OpenSpec integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ vars.OPENSPEC_CORE_REPOSITORY || format('{0}/OpenSpec', github.repository_owner) }}
+          ref: ${{ vars.OPENSPEC_CORE_REF || 'main' }}
+          path: OpenSpec
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+          cache-dependency-path: |
+            OpenSpec/pnpm-lock.yaml
+            openspec-guardrails/pnpm-lock.yaml
+
+      - name: Build OpenSpec core seam
+        working-directory: OpenSpec
+        run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: Install Guardrails dependencies
+        working-directory: openspec-guardrails
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify Guardrails
+        working-directory: openspec-guardrails
+        env:
+          OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
+          OPENSPEC_NO_UPDATE_CHECK: '1'
+          OPENSPEC_TELEMETRY: '0'
+        run: pnpm build && pnpm lint && pnpm exec vitest run
+
+      - name: Pack both release units
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pnpm --dir OpenSpec pack --pack-destination "$RUNNER_TEMP"
+          pnpm --dir openspec-guardrails pack --pack-destination "$RUNNER_TEMP"

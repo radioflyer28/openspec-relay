@@ -1,0 +1,3 @@
+allowBuilds:
+  '@fission-ai/openspec@file:../OpenSpec': false
+  esbuild: false

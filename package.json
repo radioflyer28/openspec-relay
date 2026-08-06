@@ -1,0 +1,53 @@
+{
+  "name": "openspec-guardrails",
+  "version": "0.1.0",
+  "description": "Risk-aware execution and assurance workflows for OpenSpec",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "bin": {
+    "openspec-guardrails": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./gate": {
+      "types": "./dist/gate.d.ts",
+      "default": "./dist/gate.js"
+    }
+  },
+  "files": [
+    "dist",
+    "workflows",
+    "openspec-extension.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "eslint src test",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "conformance": "npm run build && vitest run test/conformance.test.ts",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@fission-ai/openspec": ">=1.7.0 <2.0.0"
+  },
+  "dependencies": {
+    "commander": "14.0.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "file:../OpenSpec",
+    "@types/node": "20.19.43",
+    "eslint": "10.7.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "3.2.6"
+  }
+}
