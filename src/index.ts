@@ -1,3 +1,4 @@
+export * from './version.js';
 export * from './schemas.js';
 export * from './state.js';
 export * from './gate.js';

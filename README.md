@@ -16,15 +16,22 @@ every tier enforces the same assurance outcomes.
 ## Requirements and installation
 
 - Node.js 20.19 or newer
-- `@fission-ai/openspec` in the manifest's supported range
+- an API-bearing OpenSpec distribution in the manifest's supported range
 
-Install or upgrade OpenSpec first, then install Guardrails into the project:
+Until the generic extension API is released by official OpenSpec, install the
+maintained fork prerelease first, verify its identity, and then install
+Guardrails into the project:
 
 ```bash
-npm install --global @fission-ai/openspec@latest
+npm install --global github:radioflyer28/OpenSpec#v1.8.0-guardrails.1
+openspec --version # 1.8.0-guardrails.1
 openspec extension install openspec-guardrails
 openspec extension doctor guardrails
 ```
+
+An official `@fission-ai/openspec` release may satisfy the declared semver range
+while lacking `openspec.dev/extensions/v1`; the public API feature probe remains
+required, and `extension doctor` reports that case as `api-unavailable`.
 
 For companion development against a sibling OpenSpec checkout:
 
@@ -100,7 +107,8 @@ closed through OpenSpec's archive gate protocol.
 
 ## Upgrade and release order
 
-1. Upgrade OpenSpec and run `openspec extension doctor guardrails`.
+1. Upgrade the maintained fork prerelease and run
+   `openspec extension doctor guardrails`.
 2. Upgrade Guardrails with `openspec extension install openspec-guardrails@<version>`.
 3. Run `openspec extension doctor guardrails` again and regenerate configured
    workflows with `openspec update` if needed.
@@ -112,6 +120,13 @@ OpenSpec and Guardrails are packaged and released independently. The companion
 CI builds both the selected OpenSpec integration branch and Guardrails, runs the
 conformance and cross-repository suites on Linux, macOS, and Windows, and packs
 both release units before publication.
+
+When official OpenSpec publishes this API, install its first documented
+API-bearing release, run `openspec extension doctor guardrails`, and only then
+remove the fork installation. Guardrails will move its minimum supported version
+to that official release; generated state and gate obligations do not change
+during the transition. If doctor reports `api-unavailable`, restore the last
+supported fork prerelease rather than disabling the required gate.
 
 Repository ownership, change control, and release authority are documented in
 [`GOVERNANCE.md`](./GOVERNANCE.md).

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { GUARDRAILS_VERSION } from './version.js';
 import { GuardrailsConfigV1Schema, RunModeSchema, ExecutionTierSchema } from './schemas.js';
 import { checkGuardrailsRun, startGuardrailsRun } from './runner.js';
 import { getRunStatus } from './status.js';
@@ -12,7 +13,7 @@ function print(value: unknown, json: boolean): void {
 const program = new Command()
   .name('openspec-guardrails')
   .description('Risk-aware execution and assurance for OpenSpec changes')
-  .version('0.1.0');
+  .version(GUARDRAILS_VERSION);
 
 program.command('run')
   .argument('<change>')

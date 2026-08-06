@@ -18,6 +18,7 @@ import {
 } from './state.js';
 import { classifyTddRequirement, resolveTddPolicy } from './tdd.js';
 import { negotiateExecutionTier, type TierDecisionV1 } from './tiers.js';
+import { GUARDRAILS_VERSION } from './version.js';
 
 export const DEFAULT_HOST_CAPABILITIES: HostCapabilitiesV1 = {
   agentDispatch: false,
@@ -108,7 +109,7 @@ export async function startGuardrailsRun(options: {
   const persistedRun = await readRunState(resolved.changeDir);
   await registerRequiredGate(resolved.changeDir, {
     extensionId: 'guardrails',
-    extensionVersion: '0.1.0',
+    extensionVersion: GUARDRAILS_VERSION,
     gateId: 'guardrails.assurance',
     workflowId: 'run',
   });
