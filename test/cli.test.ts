@@ -20,4 +20,11 @@ describe('companion CLI', () => {
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(status).toMatchObject({ changeName: 'demo', mode: 'quick', tier: 'tier0' });
   });
+
+  it('does not advertise repair when this host has no repair adapter', () => {
+    const help = execFileSync(process.execPath, [
+      'dist/cli.js', 'check', '--help',
+    ], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(help).not.toContain('--repair');
+  });
 });

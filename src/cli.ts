@@ -50,14 +50,10 @@ program.command('run')
 program.command('check')
   .argument('<change>')
   .option('--project <path>')
-  .option('--repair', 'permit a host workflow to perform bounded repair')
   .option('--json')
   .action(async (change, options) => {
     const result = await checkGuardrailsRun({ change, projectRoot: options.project });
-    const output = options.repair && result.assurance.status !== 'pass'
-      ? { ...result, repair: 'No repair adapter is available in this host; user direction is required.' }
-      : result;
-    print(options.json ? output :
+    print(options.json ? result :
       `Guardrails assurance: ${result.assurance.status}; ` +
       `${result.assurance.checks.filter((check) => check.status === 'fail' || check.status === 'error').length} blocking check(s).`,
     Boolean(options.json));
