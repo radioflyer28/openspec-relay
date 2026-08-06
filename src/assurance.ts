@@ -39,6 +39,7 @@ export function createInitialAssurance(
     scenarioCoverage: previous?.scenarioCoverage ?? [],
     repairs: previous?.repairs ?? [],
     findings: previous?.findings ?? [],
+    staleEvidenceIds: previous?.staleEvidenceIds ?? [],
     unresolvedHumanActions: previous?.unresolvedHumanActions ?? [],
   };
 }
@@ -62,6 +63,10 @@ export function evaluateAssuranceState(
   run: GuardrailsRunV1,
   input: GuardrailsAssuranceV1,
 ): GuardrailsAssuranceV1 {
+  const activeEvidence = input.evidence.filter(
+    (item) => !input.staleEvidenceIds.includes(item.evidenceId),
+  );
+  const activeInput = { ...input, evidence: activeEvidence };
   const scenarioIds = run.artifacts.flatMap((artifact) => artifact.ids)
     .filter((id) => id.includes('/scenario:'));
   const requirementIds = run.artifacts.flatMap((artifact) => artifact.ids)
@@ -69,7 +74,7 @@ export function evaluateAssuranceState(
   const humanNeeded = Object.fromEntries(input.scenarioCoverage
     .filter((item) => item.status === 'human_needed' && item.acceptanceInstructions)
     .map((item) => [item.scenarioId, item.acceptanceInstructions!]));
-  const coverage = mapScenarioCoverage({ scenarioIds, evidence: input.evidence, humanNeeded });
+  const coverage = mapScenarioCoverage({ scenarioIds, evidence: activeEvidence, humanNeeded });
 
   const checks = input.checks.map((check): AssuranceCheckV1 => {
     if (check.kind === 'artifact-validation') {
@@ -79,7 +84,7 @@ export function evaluateAssuranceState(
         : 'Required OpenSpec tasks artifact is missing.' };
     }
     if (check.kind === 'repository-checks' || check.kind === 'targeted-tests') {
-      const evidenceIds = passingEvidence(input, check.kind);
+      const evidenceIds = passingEvidence(activeInput, check.kind);
       return {
         ...check,
         status: evidenceIds.length ? 'pass' : 'fail',
@@ -90,7 +95,7 @@ export function evaluateAssuranceState(
     }
     if (check.kind === 'tdd') {
       const required = run.tasks.filter((task) => task.tddRequired);
-      const results = required.map((task) => validateTddEvidence(task, input.evidence));
+      const results = required.map((task) => validateTddEvidence(task, activeEvidence));
       const valid = results.every((result) => result.valid);
       return {
         ...check,
@@ -115,7 +120,7 @@ export function evaluateAssuranceState(
     if (check.kind === 'code-review') {
       const reviewFindings = input.findings.filter((finding) => finding.origin === 'reviewer');
       const evidenceIds = reviewFindings.flatMap((finding) => finding.evidenceIds)
-        .filter((id) => input.evidence.some((item) => item.evidenceId === id && item.origin !== 'executor'));
+        .filter((id) => activeEvidence.some((item) => item.evidenceId === id && item.origin !== 'executor'));
       const failures = reviewFindings.filter((finding) => finding.status === 'fail');
       return {
         ...check,
@@ -130,7 +135,7 @@ export function evaluateAssuranceState(
       const verified = validateIndependentVerification({
         requirementIds,
         findings: input.findings,
-        evidence: input.evidence,
+        evidence: activeEvidence,
       });
       return {
         ...check,
@@ -139,7 +144,7 @@ export function evaluateAssuranceState(
         evidenceIds: verified.evidenceIds,
       };
     }
-    const evidenceIds = passingEvidence(input, check.kind);
+    const evidenceIds = passingEvidence(activeInput, check.kind);
     if (check.kind === 'human-uat' && evidenceIds.length === 0) {
       return { ...check, status: 'human_needed', summary: 'Human UAT acceptance is required.' };
     }

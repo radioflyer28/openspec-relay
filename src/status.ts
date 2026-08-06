@@ -1,5 +1,6 @@
 import type { GuardrailsAssuranceV1, GuardrailsRunV1 } from './schemas.js';
 import { digestJson, readAssuranceState, readRunState, resolveChangeDirectory } from './state.js';
+import { reconcileCurrentOpenSpec, type SourceReconciliationV1 } from './reconciliation.js';
 
 export interface RunStatusV1 {
   changeName: string;
@@ -14,6 +15,8 @@ export interface RunStatusV1 {
   gates: string[];
   assuranceStatus: GuardrailsAssuranceV1['status'];
   unresolvedHumanActions: string[];
+  staleEvidenceCount: number;
+  reconciliation: SourceReconciliationV1;
   assuranceDigestMatches: boolean;
 }
 
@@ -22,8 +25,17 @@ export async function getRunStatus(options: {
   projectRoot?: string;
 }): Promise<RunStatusV1> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const run = await readRunState(resolved.changeDir);
-  const assurance = await readAssuranceState(resolved.changeDir);
+  const persistedRun = await readRunState(resolved.changeDir);
+  const persistedAssurance = await readAssuranceState(resolved.changeDir);
+  const assuranceDigestMatches = persistedRun.assuranceDigest === digestJson(persistedAssurance);
+  const reconciled = await reconcileCurrentOpenSpec({
+    projectRoot: resolved.projectRoot,
+    changeDir: resolved.changeDir,
+    changeName: resolved.changeName,
+    run: persistedRun,
+    assurance: persistedAssurance,
+  });
+  const { run, assurance, reconciliation } = reconciled;
   return {
     changeName: run.changeName,
     mode: run.mode,
@@ -41,6 +53,8 @@ export async function getRunStatus(options: {
     gates: run.gateIds,
     assuranceStatus: assurance.status,
     unresolvedHumanActions: assurance.unresolvedHumanActions,
-    assuranceDigestMatches: run.assuranceDigest === digestJson(assurance),
+    staleEvidenceCount: assurance.staleEvidenceIds.length,
+    reconciliation,
+    assuranceDigestMatches,
   };
 }

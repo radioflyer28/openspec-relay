@@ -4,6 +4,8 @@ export * from './state.js';
 export * from './gate.js';
 export * from './graph.js';
 export * from './artifacts.js';
+export * from './openspec-adapter.js';
+export * from './reconciliation.js';
 export * from './modes.js';
 export * from './tiers.js';
 export * from './git-policy.js';
