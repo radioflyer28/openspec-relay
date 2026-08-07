@@ -55,13 +55,37 @@ jobs:
         working-directory: openspec-guardrails
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Verify Guardrails
+      - name: Build Guardrails
         working-directory: openspec-guardrails
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
           OPENSPEC_NO_UPDATE_CHECK: '1'
           OPENSPEC_TELEMETRY: '0'
-        run: pnpm build && pnpm lint && pnpm exec vitest run
+        run: pnpm build
+
+      - name: Type-check Guardrails
+        working-directory: openspec-guardrails
+        run: pnpm typecheck
+
+      - name: Lint Guardrails
+        working-directory: openspec-guardrails
+        run: pnpm lint
+
+      - name: Test Guardrails
+        working-directory: openspec-guardrails
+        env:
+          OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
+          OPENSPEC_NO_UPDATE_CHECK: '1'
+          OPENSPEC_TELEMETRY: '0'
+        run: pnpm test
+
+      - name: Run extension conformance
+        working-directory: openspec-guardrails
+        env:
+          OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
+          OPENSPEC_NO_UPDATE_CHECK: '1'
+          OPENSPEC_TELEMETRY: '0'
+        run: pnpm conformance
 
       - name: Pack both release units
         if: matrix.os == 'ubuntu-latest'

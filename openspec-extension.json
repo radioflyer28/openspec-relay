@@ -3,7 +3,7 @@
   "id": "guardrails",
   "version": "0.1.0",
   "requires": {
-    "openspec": ">=1.7.0 <2.0.0",
+    "openspec": ">=1.8.0-guardrails.1 <2.0.0",
     "hostCapabilities": {
       "required": ["structuredResults"],
       "optional": ["agentDispatch", "parallelism", "worktrees", "git", "humanInteraction"]
@@ -39,8 +39,6 @@
         "requiredHostCapabilities": ["structuredResults"]
       }
     ],
-    "schemas": [],
-    "commands": [],
     "gates": [
       {
         "id": "guardrails.assurance",

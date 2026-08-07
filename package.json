@@ -25,10 +25,12 @@
     "dist",
     "workflows",
     "openspec-extension.json",
-    "README.md"
+    "README.md",
+    "MAINTENANCE.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
@@ -36,7 +38,7 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@fission-ai/openspec": ">=1.7.0 <2.0.0"
+    "@fission-ai/openspec": ">=1.8.0-guardrails.1 <2.0.0"
   },
   "dependencies": {
     "commander": "14.0.3",

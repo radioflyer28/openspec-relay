@@ -127,6 +127,25 @@ export async function atomicWriteJson(
   }
 }
 
+export async function atomicWriteText(
+  filename: string,
+  content: string,
+  operations: { rename?: typeof fs.rename } = {},
+): Promise<void> {
+  const rename = operations.rename ?? fs.rename;
+  await fs.mkdir(path.dirname(filename), { recursive: true });
+  const temporary = path.join(
+    path.dirname(filename),
+    `.${path.basename(filename)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await fs.writeFile(temporary, content, { flag: 'wx' });
+    await rename(temporary, filename);
+  } finally {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
 export async function readRunState(changeDir: string): Promise<GuardrailsRunV1> {
   return GuardrailsRunV1Schema.parse(JSON.parse(await fs.readFile(runStatePath(changeDir), 'utf8')));
 }

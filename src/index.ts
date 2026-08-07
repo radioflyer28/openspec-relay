@@ -1,8 +1,11 @@
+export * from './version.js';
 export * from './schemas.js';
 export * from './state.js';
 export * from './gate.js';
 export * from './graph.js';
 export * from './artifacts.js';
+export * from './openspec-adapter.js';
+export * from './reconciliation.js';
 export * from './modes.js';
 export * from './tiers.js';
 export * from './git-policy.js';
@@ -15,3 +18,5 @@ export * from './assurance.js';
 export * from './runner.js';
 export * from './status.js';
 export * from './execution-adapters.js';
+export * from './events.js';
+export * from './recording.js';

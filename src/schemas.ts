@@ -48,12 +48,21 @@ export const GuardrailsConfigV1Schema = z.object({
 
 export const ArtifactReferenceV1Schema = z.object({
   kind: z.enum(['proposal', 'spec', 'design', 'tasks']),
-  path: z.string().min(1),
+  path: z.string().min(1).refine(
+    (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) &&
+      !value.split('/').includes('..') && !value.includes('\\'),
+    'artifact path must be a contained portable change-relative path',
+  ),
+  sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
   ids: z.array(z.string().min(1)).default([]),
 }).strict();
 
 export const TaskNodeV1Schema = z.object({
   taskId: z.string().min(1),
+  idStability: z.enum(['explicit', 'positional']).optional(),
+  sourcePath: z.string().min(1).optional(),
+  sourceDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  sourceLine: z.number().int().positive().optional(),
   dependencies: z.array(z.string().min(1)).default([]),
   risk: RiskSchema.default('low'),
   expectedVerification: z.array(z.string().min(1)).default([]),
@@ -74,6 +83,10 @@ export const EvidenceV1Schema = z.object({
   checkId: z.string().min(1),
   observedAt: z.string().datetime(),
   sourceState: z.string().min(1),
+  sourceDigests: z.record(
+    z.string().min(1),
+    z.string().regex(/^[a-f0-9]{64}$/),
+  ).optional(),
   exitCode: z.number().int().optional(),
   result: z.enum(['pass', 'fail', 'warn', 'human_needed', 'error']),
   outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -167,6 +180,7 @@ export const GuardrailsAssuranceV1Schema = z.object({
   scenarioCoverage: z.array(ScenarioCoverageV1Schema),
   repairs: z.array(RepairAttemptV1Schema),
   findings: z.array(VerificationFindingV1Schema),
+  staleEvidenceIds: z.array(z.string().min(1)).default([]),
   unresolvedHumanActions: z.array(z.string().min(1)).default([]),
 }).strict();
 
@@ -181,6 +195,73 @@ export const GuardrailsReportV1Schema = z.object({
   evidenceRefs: z.array(z.string().min(1)),
 }).strict();
 
+export const GuardrailsEventActorV1Schema = z.object({
+  kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host']),
+  id: z.string().min(1).optional(),
+}).strict();
+
+export const GuardrailsEventProvenanceV1Schema = z.object({
+  origin: z.string().min(1),
+  adapter: z.string().min(1).optional(),
+  command: z.string().min(1).optional(),
+}).strict();
+
+export const GuardrailsEventPayloadV1Schema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('task.transition'),
+    taskId: z.string().min(1),
+    status: z.enum(['pending', 'in_progress', 'complete', 'blocked']),
+    reason: z.string().min(1).optional(),
+  }).strict(),
+  z.object({ type: z.literal('evidence.recorded'), evidence: EvidenceV1Schema }).strict(),
+  z.object({ type: z.literal('finding.recorded'), finding: VerificationFindingV1Schema }).strict(),
+  z.object({ type: z.literal('deviation.recorded'), deviation: DeviationV1Schema }).strict(),
+  z.object({ type: z.literal('repair.recorded'), repair: RepairAttemptV1Schema }).strict(),
+  z.object({
+    type: z.literal('human.decision'),
+    gateId: z.string().min(1),
+    decision: z.enum(['requested', 'accepted', 'rejected']),
+    reason: z.string().min(1).optional(),
+    resultDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    evidenceDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  }).strict(),
+]);
+
+export const GuardrailsEventEnvelopeV1Schema = z.object({
+  version: z.literal(GUARDRAILS_STATE_VERSION),
+  eventId: z.string().min(1),
+  runId: z.string().min(1),
+  changeName: z.string().min(1),
+  occurredAt: z.string().datetime(),
+  sourceDigests: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/)),
+  actor: GuardrailsEventActorV1Schema,
+  provenance: GuardrailsEventProvenanceV1Schema,
+  payloadDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  payload: GuardrailsEventPayloadV1Schema,
+}).strict();
+
+export const GuardrailsEventStoreSeedV1Schema = z.object({
+  changeRef: z.string().min(1),
+  mode: RunModeSchema,
+  tier: ExecutionTierSchema,
+  status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']),
+  startedAt: z.string().datetime(),
+  gateIds: z.array(z.string().min(1)),
+  config: GuardrailsConfigV1Schema,
+  checks: z.array(AssuranceCheckV1Schema),
+  scenarioCoverage: z.array(ScenarioCoverageV1Schema),
+}).strict();
+
+export const GuardrailsEventStoreV1Schema = z.object({
+  version: z.literal(GUARDRAILS_STATE_VERSION),
+  owner: z.literal('openspec-guardrails'),
+  runId: z.string().min(1),
+  changeName: z.string().min(1),
+  createdAt: z.string().datetime(),
+  seed: GuardrailsEventStoreSeedV1Schema,
+  events: z.array(GuardrailsEventEnvelopeV1Schema),
+}).strict();
+
 export type RunMode = z.infer<typeof RunModeSchema>;
 export type ExecutionTier = z.infer<typeof ExecutionTierSchema>;
 export type TddPolicy = z.infer<typeof TddPolicySchema>;
@@ -193,3 +274,6 @@ export type VerificationFindingV1 = z.infer<typeof VerificationFindingV1Schema>;
 export type GuardrailsRunV1 = z.infer<typeof GuardrailsRunV1Schema>;
 export type GuardrailsAssuranceV1 = z.infer<typeof GuardrailsAssuranceV1Schema>;
 export type GuardrailsReportV1 = z.infer<typeof GuardrailsReportV1Schema>;
+export type GuardrailsEventPayloadV1 = z.infer<typeof GuardrailsEventPayloadV1Schema>;
+export type GuardrailsEventEnvelopeV1 = z.infer<typeof GuardrailsEventEnvelopeV1Schema>;
+export type GuardrailsEventStoreV1 = z.infer<typeof GuardrailsEventStoreV1Schema>;

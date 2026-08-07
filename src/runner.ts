@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { registerRequiredGate, type HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
-import { compileOpenSpecChange } from './artifacts.js';
+import { compileCurrentOpenSpecChange } from './openspec-adapter.js';
 import { createInitialAssurance, evaluateAssuranceState } from './assurance.js';
 import { routeSpecialistCheckers } from './checkers.js';
 import { loadGuardrailsConfig } from './config.js';
@@ -10,14 +10,16 @@ import {
   type GuardrailsConfigV1,
   type GuardrailsRunV1,
 } from './schemas.js';
+import { materializeCompiledTasks, reconcileCurrentOpenSpec } from './reconciliation.js';
 import {
   readAssuranceState,
   readRunState,
   resolveChangeDirectory,
   writeAssuranceState,
 } from './state.js';
-import { classifyTddRequirement, resolveTddPolicy } from './tdd.js';
 import { negotiateExecutionTier, type TierDecisionV1 } from './tiers.js';
+import { GUARDRAILS_VERSION } from './version.js';
+import { migrateV1ProjectionsToEventStore } from './events.js';
 
 export const DEFAULT_HOST_CAPABILITIES: HostCapabilitiesV1 = {
   agentDispatch: false,
@@ -57,21 +59,13 @@ export async function startGuardrailsRun(options: {
     changeDir: resolved.changeDir,
     overrides: options.config,
   });
-  const compiled = await compileOpenSpecChange({
+  const compiled = await compileCurrentOpenSpecChange({
+    projectRoot: resolved.projectRoot,
+    changeName: resolved.changeName,
     changeDir: resolved.changeDir,
     taskMetadata: config.taskOverrides,
   });
-  const tasks = compiled.graph.nodes.map((task) => {
-    const policy = resolveTddPolicy({ change: config.tdd, task: task.tdd });
-    const classification = classifyTddRequirement(task, policy);
-    return {
-      ...task,
-      tddRequired: classification.required,
-      ...(!classification.required && classification.exemptionReason
-        ? { tddExemptionReason: classification.exemptionReason }
-        : {}),
-    };
-  });
+  const tasks = materializeCompiledTasks(compiled, config);
   const specialists = routeSpecialistCheckers({
     changedFiles: options.changedFiles,
     artifactText: compiled.routingText,
@@ -105,10 +99,11 @@ export async function startGuardrailsRun(options: {
   };
   const assurance = createInitialAssurance(run, pipeline, previousAssurance);
   await writeAssuranceState(resolved.changeDir, assurance, run);
+  await migrateV1ProjectionsToEventStore(resolved.changeDir);
   const persistedRun = await readRunState(resolved.changeDir);
   await registerRequiredGate(resolved.changeDir, {
     extensionId: 'guardrails',
-    extensionVersion: '0.1.0',
+    extensionVersion: GUARDRAILS_VERSION,
     gateId: 'guardrails.assurance',
     workflowId: 'run',
   });
@@ -120,8 +115,15 @@ export async function checkGuardrailsRun(options: {
   projectRoot?: string;
 }): Promise<{ run: GuardrailsRunV1; assurance: GuardrailsAssuranceV1 }> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const run = await readRunState(resolved.changeDir);
-  const assurance = evaluateAssuranceState(run, await readAssuranceState(resolved.changeDir));
+  const reconciled = await reconcileCurrentOpenSpec({
+    projectRoot: resolved.projectRoot,
+    changeDir: resolved.changeDir,
+    changeName: resolved.changeName,
+    run: await readRunState(resolved.changeDir),
+    assurance: await readAssuranceState(resolved.changeDir),
+  });
+  const run = reconciled.run;
+  const assurance = evaluateAssuranceState(run, reconciled.assurance);
   const nextRun = {
     ...run,
     status: assurance.status === 'pass' || assurance.status === 'warn' ? 'complete' as const : 'blocked' as const,
