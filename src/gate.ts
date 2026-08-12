@@ -1,6 +1,14 @@
 import path from 'node:path';
 import type { GateProviderV1, GateResultV1 } from '@fission-ai/openspec/extensions';
-import { digestJson, readAssuranceState, readRunState } from './state.js';
+import { evaluateFindingObligations } from './findings.js';
+import { evaluateUatObligations } from './uat.js';
+import {
+  digestJson,
+  readAssuranceState,
+  readAssuranceStateV2,
+  readRunState,
+  readRunStateV2,
+} from './state.js';
 
 const GATE_ID = 'guardrails.assurance';
 
@@ -16,8 +24,19 @@ function result(
 export const guardrailsAssuranceGate: GateProviderV1 = {
   async evaluate(context) {
     try {
-      const run = await readRunState(context.changeDir);
-      const assurance = await readAssuranceState(context.changeDir);
+      let run: Awaited<ReturnType<typeof readRunState>> | Awaited<ReturnType<typeof readRunStateV2>>;
+      let assurance: Awaited<ReturnType<typeof readAssuranceState>> | Awaited<ReturnType<typeof readAssuranceStateV2>>;
+      try {
+        run = await readRunStateV2(context.changeDir);
+        assurance = await readAssuranceStateV2(context.changeDir);
+      } catch (v2Error) {
+        try {
+          run = await readRunState(context.changeDir);
+          assurance = await readAssuranceState(context.changeDir);
+        } catch {
+          throw v2Error;
+        }
+      }
       if (run.runId !== assurance.runId || run.changeName !== context.changeName ||
           assurance.changeName !== context.changeName) {
         return result(
@@ -37,6 +56,22 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
           'Guardrails assurance state does not match the digest bound to the run.',
           evidence,
           ['Run openspec-guardrails check to regenerate matching run and assurance records.'],
+        );
+      }
+      if (assurance.version === 2) {
+        const findings = evaluateFindingObligations({ findings: assurance.findings });
+        if (findings.blocking.length > 0) return result(
+          'fail',
+          `Guardrails has unresolved blocking findings: ${findings.blocking.join(', ')}.`,
+          evidence,
+          ['Repair the findings and record independent verification or an explicit accepted risk.'],
+        );
+        const uat = evaluateUatObligations({ scenarios: assurance.uatScenarios });
+        if (uat.blocking.length > 0) return result(
+          'human_needed',
+          `Guardrails requires UAT action for: ${uat.blocking.join(', ')}.`,
+          evidence,
+          ['Run openspec-guardrails uat and record an explicit human disposition for each scenario.'],
         );
       }
       if (assurance.status === 'human_needed' || assurance.unresolvedHumanActions.length > 0) {

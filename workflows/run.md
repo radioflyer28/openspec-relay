@@ -4,9 +4,12 @@ Run an OpenSpec change through Guardrails.
    design, and tasks as the sole planning source.
 2. Invoke `openspec-guardrails run <change>` with `--mode quick|guarded|full`
    when the user selected a mode; omit the flag to use guarded mode.
-3. Follow `nextAction.taskId` in dependency order. Before implementation, record
-   required RED evidence with `record evidence`, then record the task as
-   `in_progress` with `record task`.
+3. Inspect the recorded repository context and independent readiness result. If
+   required readiness is not passing, do not begin implementation; update the
+   controlling OpenSpec artifacts and rerun `openspec-guardrails check <change>`.
+   Follow `nextAction.taskId` in dependency order only after readiness permits
+   execution. Before implementation, use `record evidence` for required RED
+   evidence, then record the task as `in_progress` with `record task`.
 4. Record GREEN, REFACTOR, checker, finding, deviation, and repair observations
    only through `openspec-guardrails record ... --input <json-file|->`. Record a
    completed task with `record task <change> <task-id> --status complete

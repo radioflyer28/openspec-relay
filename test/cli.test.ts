@@ -64,6 +64,6 @@ describe('companion CLI', () => {
     const rootHelp = execFileSync(process.execPath, ['dist/cli.js', '--help'], {
       cwd: process.cwd(), encoding: 'utf8',
     });
-    expect(rootHelp).toContain('accept');
+    for (const command of ['accept', 'debug', 'uat']) expect(rootHelp).toContain(command);
   });
 });

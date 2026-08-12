@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { registerRequiredGate, type HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
-import { compileCurrentOpenSpecChange } from './openspec-adapter.js';
+import { compileOpenSpecChange } from './artifacts.js';
 import { createInitialAssurance, evaluateAssuranceState } from './assurance.js';
 import { routeSpecialistCheckers } from './checkers.js';
 import { loadGuardrailsConfig } from './config.js';
@@ -59,12 +59,7 @@ export async function startGuardrailsRun(options: {
     changeDir: resolved.changeDir,
     overrides: options.config,
   });
-  const compiled = await compileCurrentOpenSpecChange({
-    projectRoot: resolved.projectRoot,
-    changeName: resolved.changeName,
-    changeDir: resolved.changeDir,
-    taskMetadata: config.taskOverrides,
-  });
+  const compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: config.taskOverrides });
   const tasks = materializeCompiledTasks(compiled, config);
   const specialists = routeSpecialistCheckers({
     changedFiles: options.changedFiles,

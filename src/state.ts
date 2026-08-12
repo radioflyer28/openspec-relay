@@ -3,9 +3,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   GuardrailsAssuranceV1Schema,
+  GuardrailsAssuranceV2Schema,
   GuardrailsRunV1Schema,
+  GuardrailsRunV2Schema,
   type GuardrailsAssuranceV1,
+  type GuardrailsAssuranceV2,
   type GuardrailsRunV1,
+  type GuardrailsRunV2,
 } from './schemas.js';
 
 export interface ResolvedChange {
@@ -15,6 +19,26 @@ export interface ResolvedChange {
   archived: boolean;
   changeRef: string;
 }
+
+/**
+ * Every generated path owned by Guardrails. Values are portable identities;
+ * callers must use guardrailsGeneratedPath() at a filesystem boundary.
+ */
+export const GUARDRAILS_GENERATED_FILES = {
+  run: 'run.json',
+  assurance: 'assurance.json',
+  events: 'events.json',
+  v1MigrationBackup: 'reports/v1-migration-backup.json',
+  migrationPreview: 'reports/migration-preview.json',
+  repositoryContext: 'reports/repository-context.json',
+  readiness: 'reports/readiness.json',
+  findings: 'reports/findings.json',
+  debug: 'reports/debug.json',
+  uat: 'reports/uat.json',
+  release: 'reports/release.json',
+} as const;
+
+export type GuardrailsGeneratedFile = keyof typeof GUARDRAILS_GENERATED_FILES;
 
 async function isDirectory(candidate: string): Promise<boolean> {
   try {
@@ -96,12 +120,20 @@ export function guardrailsDirectory(changeDir: string): string {
   return path.join(changeDir, '.guardrails');
 }
 
+export function guardrailsGeneratedPath(
+  changeDir: string,
+  file: GuardrailsGeneratedFile,
+  pathApi: path.PlatformPath = path,
+): string {
+  return pathApi.join(guardrailsDirectory(changeDir), ...GUARDRAILS_GENERATED_FILES[file].split('/'));
+}
+
 export function runStatePath(changeDir: string): string {
-  return path.join(guardrailsDirectory(changeDir), 'run.json');
+  return guardrailsGeneratedPath(changeDir, 'run');
 }
 
 export function assuranceStatePath(changeDir: string): string {
-  return path.join(guardrailsDirectory(changeDir), 'assurance.json');
+  return guardrailsGeneratedPath(changeDir, 'assurance');
 }
 
 export function digestJson(value: unknown): string {
@@ -156,6 +188,16 @@ export async function readAssuranceState(changeDir: string): Promise<GuardrailsA
   );
 }
 
+export async function readRunStateV2(changeDir: string): Promise<GuardrailsRunV2> {
+  return GuardrailsRunV2Schema.parse(JSON.parse(await fs.readFile(runStatePath(changeDir), 'utf8')));
+}
+
+export async function readAssuranceStateV2(changeDir: string): Promise<GuardrailsAssuranceV2> {
+  return GuardrailsAssuranceV2Schema.parse(
+    JSON.parse(await fs.readFile(assuranceStatePath(changeDir), 'utf8')),
+  );
+}
+
 export async function writeRunState(changeDir: string, run: GuardrailsRunV1): Promise<void> {
   await atomicWriteJson(runStatePath(changeDir), GuardrailsRunV1Schema.parse(run));
 }
@@ -170,6 +212,24 @@ export async function writeAssuranceState(
   await atomicWriteJson(assuranceStatePath(changeDir), validated);
   if (run) {
     await writeRunState(changeDir, { ...run, assuranceDigest, updatedAt: new Date().toISOString() });
+  }
+  return assuranceDigest;
+}
+
+export async function writeRunStateV2(changeDir: string, run: GuardrailsRunV2): Promise<void> {
+  await atomicWriteJson(runStatePath(changeDir), GuardrailsRunV2Schema.parse(run));
+}
+
+export async function writeAssuranceStateV2(
+  changeDir: string,
+  assurance: GuardrailsAssuranceV2,
+  run?: GuardrailsRunV2,
+): Promise<string> {
+  const validated = GuardrailsAssuranceV2Schema.parse(assurance);
+  const assuranceDigest = digestJson(validated);
+  await atomicWriteJson(assuranceStatePath(changeDir), validated);
+  if (run) {
+    await writeRunStateV2(changeDir, { ...run, assuranceDigest, updatedAt: new Date().toISOString() });
   }
   return assuranceDigest;
 }

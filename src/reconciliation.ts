@@ -1,5 +1,5 @@
 import type { CompiledOpenSpecChangeV1 } from './artifacts.js';
-import { compileCurrentOpenSpecChange } from './openspec-adapter.js';
+import { compileOpenSpecChange } from './artifacts.js';
 import type {
   GuardrailsAssuranceV1,
   GuardrailsConfigV1,
@@ -142,10 +142,8 @@ export async function reconcileCurrentOpenSpec(options: {
   run: GuardrailsRunV1;
   assurance: GuardrailsAssuranceV1;
 }): Promise<ReturnType<typeof reconcileCompiledOpenSpec>> {
-  const compiled = await compileCurrentOpenSpecChange({
-    projectRoot: options.projectRoot,
+  const compiled = await compileOpenSpecChange({
     changeDir: options.changeDir,
-    changeName: options.changeName,
     taskMetadata: options.run.config.taskOverrides,
   });
   return reconcileCompiledOpenSpec({ run: options.run, assurance: options.assurance, compiled });
