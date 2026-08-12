@@ -36,7 +36,6 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
       let canonicalRun: typeof run;
       let canonicalAssurance: typeof assurance;
       let canonicalRevision: string;
-      let canonicalProjectionRequired = false;
       try {
         const store = await readEventStoreV2(context.changeDir);
         const compiled = await compileOpenSpecChange({
@@ -47,7 +46,6 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
         canonicalRun = canonical.run;
         canonicalAssurance = canonical.assurance;
         canonicalRevision = digestJson(store);
-        canonicalProjectionRequired = true;
         run = await readRunStateV2(context.changeDir);
         assurance = await readAssuranceStateV2(context.changeDir);
       } catch (v2Error) {
@@ -67,8 +65,7 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
           throw v2Error;
         }
       }
-      if (canonicalProjectionRequired &&
-          (digestJson(run) !== digestJson(canonicalRun) || digestJson(assurance) !== digestJson(canonicalAssurance))) {
+      if (digestJson(run) !== digestJson(canonicalRun) || digestJson(assurance) !== digestJson(canonicalAssurance)) {
         return result(
           'error',
           'Guardrails projections do not match canonical event replay.',

@@ -134,6 +134,42 @@ describe('Guardrails v1-to-v2 event migration', () => {
     expect(present.map((event) => event.eventId).sort()).toEqual(eventIds.sort());
   }, 30_000);
 
+  it('does not steal a lease from a live writer that exceeds the lease interval', async () => {
+    const { changeDir } = await seedV1State();
+    const store = await events.migrateV1ToV2EventStore(changeDir);
+    const sourceDigest = '0'.repeat(64);
+    const event = (eventId: string) => events.createGuardrailsEventV2({
+      eventId,
+      runId: store.runId,
+      changeName: store.changeName,
+      occurredAt: new Date().toISOString(),
+      sourceDigests: { 'tasks.md': sourceDigest },
+      actor: { kind: 'host' },
+      provenance: { origin: 'lease-expiry-test' },
+      payload: {
+        type: 'v1.migrated', sourceVersion: 1, sourceKind: 'human_action', sourceId: eventId,
+        sourceDigest, record: {},
+      },
+    });
+    const lock = { leaseMs: 40, heartbeatMs: 10, timeoutMs: 2_000 };
+    const first = events.appendGuardrailsEventV2({
+      changeDir,
+      event: event('lease:first'),
+      lock,
+      rename: async (source, target) => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await fs.rename(source, target);
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    const second = events.appendGuardrailsEventV2({ changeDir, event: event('lease:second'), lock });
+    const results = await Promise.all([first, second]);
+    expect(results.every((result) => result.appended)).toBe(true);
+    const committed = await events.readEventStoreV2(changeDir);
+    expect(committed.events.filter((item) => item.eventId.startsWith('lease:')).map((item) => item.eventId).sort())
+      .toEqual(['lease:first', 'lease:second']);
+  });
+
   it('migrates an active v1 run before v2 commands mutate it and retains the v1 recovery record', async () => {
     const { root, changeDir } = await seedV1State();
     const resumed = await startGuardrailsRunV2({ change: 'baseline', projectRoot: root });
