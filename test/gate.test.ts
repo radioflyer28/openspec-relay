@@ -6,6 +6,7 @@ import {
   digestJson,
   guardrailsAssuranceGate,
   readAssuranceState,
+  readRunState,
   readRunStateV2,
   runStatePath,
   seedAssuranceState,
@@ -58,7 +59,7 @@ describe('Guardrails archive gate', () => {
       ...assurance, status: 'human_needed', unresolvedHumanActions: ['Approve visual behavior.'],
     }) });
     expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
-      .toMatchObject({ status: 'human_needed', summary: 'Approve visual behavior.' });
+      .toMatchObject({ status: 'error', summary: expect.stringMatching(/canonical|projection/i) });
   });
 
   it('blocks mismatched run and assurance digests', async () => {
@@ -86,6 +87,30 @@ describe('Guardrails archive gate', () => {
       unresolvedHumanActions: [],
     };
     const forgedRun = { ...run, status: 'complete', assuranceDigest: digestJson(forgedAssurance) };
+    await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify(forgedAssurance, null, 2)}\n`);
+    await fs.writeFile(runStatePath(changeDir), `${JSON.stringify(forgedRun, null, 2)}\n`);
+
+    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+      status: 'error', summary: expect.stringMatching(/canonical|replay|projection/i),
+    });
+  });
+
+  it('rejects forged v1 projections when canonical v1 events remain incomplete', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startGuardrailsRun({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const run = await readRunState(changeDir);
+    const assurance = await readAssuranceState(changeDir);
+    const forgedAssurance = {
+      ...assurance,
+      status: 'pass' as const,
+      checks: assurance.checks.map((check) => ({
+        ...check,
+        status: check.status === 'skipped' ? 'skipped' as const : 'pass' as const,
+        summary: 'Forged passing v1 projection.',
+      })),
+      unresolvedHumanActions: [],
+    };
+    const forgedRun = { ...run, status: 'complete' as const, assuranceDigest: digestJson(forgedAssurance) };
     await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify(forgedAssurance, null, 2)}\n`);
     await fs.writeFile(runStatePath(changeDir), `${JSON.stringify(forgedRun, null, 2)}\n`);
 
