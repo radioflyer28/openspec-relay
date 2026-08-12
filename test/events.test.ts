@@ -68,7 +68,7 @@ describe('Tier 0 event store', () => {
     await expect(appendGuardrailsEvent({
       changeDir,
       event: event('event-c', '2026-08-04T12:20:00.000Z'),
-      rename: async () => { throw new Error('interrupted'); },
+      failBeforeCommit: true,
     })).rejects.toThrow('interrupted');
     expect(await fs.readFile(eventStorePath(changeDir), 'utf8')).toBe(before);
   });

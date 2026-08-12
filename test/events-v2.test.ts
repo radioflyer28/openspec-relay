@@ -97,7 +97,7 @@ describe('Guardrails v1-to-v2 event migration', () => {
     await expect(append({
       changeDir,
       event: event('event-c', '2026-08-09T12:03:00.000Z'),
-      rename: async () => { throw new Error('interrupted'); },
+      failBeforeCommit: true,
     })).rejects.toThrow('interrupted');
     expect(await fs.readFile(filename, 'utf8')).toBe(before);
   });
@@ -156,9 +156,8 @@ describe('Guardrails v1-to-v2 event migration', () => {
       changeDir,
       event: event('lease:first'),
       lock,
-      rename: async (source, target) => {
+      beforeCommit: async () => {
         await new Promise((resolve) => setTimeout(resolve, 150));
-        await fs.rename(source, target);
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 70));
