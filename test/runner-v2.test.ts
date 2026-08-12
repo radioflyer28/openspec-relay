@@ -81,6 +81,65 @@ describe('Guardrails v2 run pipeline', () => {
     expect(resumed.assurance.readiness?.resultId).not.toBe(first.assurance.readiness?.resultId);
   });
 
+  it('invalidates readiness on requirement, scenario, task, and cited repository-evidence changes', async () => {
+    const cases = [
+      {
+        name: 'requirement',
+        mutate: async (changeDir: string) => fs.appendFile(`${changeDir}/specs/demo/spec.md`, [
+          '', '### Requirement: Added requirement', 'The system SHALL add behavior.', '',
+        ].join('\n')),
+        expected: 'fail',
+        repository: false,
+      },
+      {
+        name: 'scenario',
+        mutate: async (changeDir: string) => fs.appendFile(`${changeDir}/specs/demo/spec.md`, [
+          '', '#### Scenario: Added scenario', '- **WHEN** added', '- **THEN** it works', '',
+        ].join('\n')),
+        expected: 'fail',
+        repository: false,
+      },
+      {
+        name: 'task',
+        mutate: async (changeDir: string) => fs.appendFile(`${changeDir}/tasks.md`, '\n- [ ] 1.3 Added unverified task\n'),
+        expected: 'pass',
+        repository: false,
+      },
+      {
+        name: 'repository-evidence',
+        mutate: async (_changeDir: string, root: string) => fs.writeFile(`${root}/src/index.ts`, 'export const value = 2;\n'),
+        expected: 'pass',
+        repository: true,
+      },
+    ] as const;
+    for (const item of cases) {
+      const { root, changeDir } = await createOpenSpecProject(`stale-${item.name}`);
+      if (item.repository) {
+        await fs.mkdir(`${root}/src`, { recursive: true });
+        await fs.writeFile(`${root}/src/index.ts`, 'export const value = 1;\n');
+      }
+      const taskMetadata = {
+        ...readinessTask,
+        ...(item.repository ? { writeSet: ['src/index.ts'] } : {}),
+      };
+      const first = await runner.startGuardrailsRunV2({
+        change: `stale-${item.name}`, projectRoot: root,
+        changedFiles: item.repository ? ['src/index.ts'] : [],
+        config: { taskOverrides: { '1.1': taskMetadata, '1.2': taskMetadata } },
+      });
+      expect(first.assurance.readiness).toMatchObject({ status: 'pass' });
+      await item.mutate(changeDir, root);
+      const resumed = await runner.startGuardrailsRunV2({
+        change: `stale-${item.name}`, projectRoot: root,
+        changedFiles: item.repository ? ['src/index.ts'] : [],
+      });
+      expect({ case: item.name, status: resumed.assurance.readiness?.status })
+        .toEqual({ case: item.name, status: item.expected });
+      expect(resumed.assurance.readiness?.inputRevision).not.toBe(first.assurance.readiness?.inputRevision);
+      expect(resumed.assurance.repositoryContext?.inputRevision).not.toBe(first.assurance.repositoryContext?.inputRevision);
+    }
+  }, 30_000);
+
   it('persists current OpenSpec scenarios for required UAT instead of producing an empty queue', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await runner.startGuardrailsRunV2({
