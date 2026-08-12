@@ -300,6 +300,7 @@ export const PortableReferenceV2Schema = z.object({
 export const RepositoryAnalysisConfigV2Schema = z.object({
   enabled: z.boolean().default(true),
   boundaries: z.array(z.string().min(1)).max(100).default([]),
+  comparisonBase: z.string().min(1).optional(),
 }).strict();
 
 export const ReadinessConfigV2Schema = z.object({
@@ -595,9 +596,10 @@ export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('debug.next_action_recorded'), sessionId: z.string().min(1), nextAction: z.string().min(1) }).strict(),
   z.object({ type: z.literal('debug.session_updated'), sessionId: z.string().min(1), status: z.enum(['active', 'resolved', 'human_needed']), nextAction: z.string().min(1).optional(), regressionEvidence: z.array(PortableReferenceV2Schema).optional() }).strict(),
   z.object({ type: z.literal('uat.scenario_recorded'), scenario: UatScenarioV2Schema }).strict(),
+  z.object({ type: z.literal('uat.scenario_retest'), scenarioId: z.string().min(1), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   z.object({ type: z.literal('uat.scenario_stale'), scenarioId: z.string().min(1), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   z.object({ type: z.literal('scenario.coverage_reconciled'), coverage: z.array(ScenarioCoverageV1Schema) }).strict(),
-  z.object({ type: z.literal('uat.disposition_recorded'), scenarioId: z.string().min(1), status: z.enum(['passed', 'failed', 'blocked', 'accepted_limitation']), actor: z.string().min(1), notes: z.string().min(1), evidence: z.array(PortableReferenceV2Schema).default([]) }).strict(),
+  z.object({ type: z.literal('uat.disposition_recorded'), scenarioId: z.string().min(1), status: z.enum(['passed', 'failed', 'blocked', 'accepted_limitation']), actor: z.string().min(1), notes: z.string().min(1), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/), evidence: z.array(PortableReferenceV2Schema).default([]) }).strict(),
   z.object({ type: z.literal('release.evaluated'), candidate: ReleaseCandidateV2Schema }).strict(),
   z.object({ type: z.literal('checks.evaluated'), checks: z.array(AssuranceCheckV2Schema) }).strict(),
   z.object({ type: z.literal('run.status_updated'), status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']) }).strict(),

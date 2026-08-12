@@ -107,6 +107,91 @@ describe('v2 debug and UAT operations', () => {
     ]));
   }, 30_000);
 
+  it('returns a failed UAT scenario to the production retest queue after independent repair verification', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: [], config: {
+      features: { uat: { enabled: true, required: true } },
+    } });
+    const presented = await presentUatV2({ change: 'demo', projectRoot: root });
+    const scenarioId = presented.next!.scenarioId;
+    await recordUatV2({
+      change: 'demo', projectRoot: root, scenarioId, status: 'failed', actor: 'maintainer',
+      notes: 'The acceptance scenario failed.',
+      evidence: [{ referenceId: 'test:uat-failure', kind: 'generated', externalId: 'uat-failure', available: true }],
+    });
+    const failed = (await readAssuranceStateV2(changeDir)).findings.find((item) =>
+      item.providerId === 'uat' && item.scope.identity === scenarioId)!;
+    const repairEvidence = [{
+      referenceId: 'test:uat-repair', kind: 'generated' as const, externalId: 'uat-repair', available: true,
+    }];
+    await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: failed.findingId, to: 'repaired',
+      actor: { kind: 'executor', id: 'executor' }, reason: 'Repaired the failed behavior.', evidence: repairEvidence,
+    });
+    await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: failed.findingId, to: 'independently_verified',
+      actor: { kind: 'verifier', id: 'verifier' }, reason: 'Verified the repair against current evidence.',
+      evidence: repairEvidence,
+    });
+    const retest = await presentUatV2({ change: 'demo', projectRoot: root });
+    expect(retest.next).toMatchObject({ scenarioId, status: 'awaiting_retest' });
+    expect(retest.next).not.toHaveProperty('disposition');
+  }, 20_000);
+
+  it('invalidates lifecycle acceptance when exact cited repository evidence changes', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await fs.mkdir(`${root}/src`, { recursive: true });
+    await fs.writeFile(`${root}/src/index.ts`, 'export const value = 1;\n');
+    await startGuardrailsRunV2({
+      change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'],
+      config: { features: { uat: { enabled: true, required: true } } },
+    });
+    const store = await readEventStoreV2(changeDir);
+    const compiled = await compileOpenSpecChange({ changeDir });
+    const repositoryEvidence = [{
+      referenceId: 'repository:src/index.ts', kind: 'repository' as const, path: 'src/index.ts', available: true,
+    }];
+    const finding = discoverFinding({
+      providerId: 'review', ruleId: 'source-defect', category: 'correctness',
+      scope: { kind: 'location', identity: 'src/index.ts' }, severity: 'error', blocking: true,
+      summary: 'The changed source needs repair.', requirementIds: [], taskIds: ['1.1'], evidence: repositoryEvidence,
+      occurredAt: now, sourceRevision: createHash('sha256').update('initial').digest('hex'), actor: { kind: 'reviewer' },
+    });
+    await appendGuardrailsEventV2({ changeDir, event: createGuardrailsEventV2({
+      eventId: 'source-finding', runId: store.runId, changeName: store.changeName, occurredAt: now,
+      sourceDigests: digests(compiled.artifacts), actor: { kind: 'reviewer' }, provenance: { origin: 'test' },
+      payload: { type: 'finding.discovered', finding },
+    }) });
+    await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
+      actor: { kind: 'executor', id: 'executor' }, reason: 'Repaired.', evidence: repositoryEvidence,
+    });
+    const verified = await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
+      actor: { kind: 'verifier', id: 'verifier' }, reason: 'Verified.', evidence: repositoryEvidence,
+    });
+    expect(verified.transitions.at(-1)?.evidence).toEqual([
+      expect.objectContaining({ referenceId: 'repository:src/index.ts', digest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+    ]);
+    const presented = await presentUatV2({ change: 'demo', projectRoot: root });
+    await recordUatV2({
+      change: 'demo', projectRoot: root, scenarioId: presented.next!.scenarioId,
+      status: 'passed', actor: 'maintainer', notes: 'Observed current behavior.', evidence: repositoryEvidence,
+    });
+    expect((await readAssuranceStateV2(changeDir)).uatScenarios.find((item) =>
+      item.scenarioId === presented.next!.scenarioId)?.disposition?.evidence).toEqual([
+      expect.objectContaining({ referenceId: 'repository:src/index.ts', digest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+    ]);
+    await fs.writeFile(`${root}/src/index.ts`, 'export const value = 2;\n');
+    const checked = await checkGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    expect(checked.assurance.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ findingId: finding.findingId, state: 'stale' }),
+    ]));
+    expect(checked.assurance.uatScenarios).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scenarioId: presented.next!.scenarioId, status: 'stale' }),
+    ]));
+  }, 20_000);
+
   it('automatically begins a resumable debug session after repair exhaustion and records human-needed when debugging is unavailable', async () => {
     const active = await createOpenSpecProject('active');
     await startGuardrailsRunV2({ change: 'active', projectRoot: active.root, config: { repairLimit: 1 } });

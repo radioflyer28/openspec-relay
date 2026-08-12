@@ -33,6 +33,13 @@ export interface RepositoryAnalysisAdapterV2 {
   }>): Promise<RepositoryContextV2>;
 }
 
+export interface RepositoryChangedFilesV2 {
+  files: string[];
+  source: 'git' | 'unknown';
+  comparisonBase?: string;
+  unresolved?: string;
+}
+
 export function createRepositoryAnalysisContract(options: {
   tier: RepositoryAnalysisTierV2;
 }): RepositoryAnalysisContractV2 {
@@ -55,20 +62,46 @@ function portable(root: string, filename: string): string {
   return portableRepositoryPath(root, filename);
 }
 
-export async function discoverRepositoryChangedFiles(projectRoot: string): Promise<{
-  files: string[];
-  source: 'git' | 'unknown';
-}> {
+export async function discoverRepositoryChangedFiles(
+  projectRoot: string,
+  comparisonBase?: string,
+): Promise<RepositoryChangedFilesV2> {
   try {
-    const [tracked, untracked] = await Promise.all([
+    await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: projectRoot });
+    const [working, untracked] = await Promise.all([
       execFileAsync('git', ['diff', '--name-only', '--relative', 'HEAD', '--'], { cwd: projectRoot }),
       execFileAsync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: projectRoot }),
     ]);
-    const files = [...new Set(`${tracked.stdout}\n${untracked.stdout}`.split(/\r?\n/)
+    const bases = comparisonBase
+      ? [comparisonBase]
+      : ['@{upstream}', 'origin/main', 'origin/master', 'main', 'master'];
+    let base: string | undefined;
+    for (const candidate of bases) {
+      try {
+        await execFileAsync('git', ['rev-parse', '--verify', `${candidate}^{commit}`], { cwd: projectRoot });
+        const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: projectRoot })).stdout.trim();
+        const candidateRevision = (await execFileAsync('git', ['rev-parse', `${candidate}^{commit}`], { cwd: projectRoot })).stdout.trim();
+        if (!comparisonBase && head === candidateRevision) continue;
+        base = candidate;
+        break;
+      } catch {
+        // Try the next explicit, upstream, or conventional comparison base.
+      }
+    }
+    const committed = base
+      ? (await execFileAsync('git', ['diff', '--name-only', '--relative', `${base}...HEAD`, '--'], { cwd: projectRoot })).stdout
+      : '';
+    const files = [...new Set(`${working.stdout}\n${untracked.stdout}\n${committed}`.split(/\r?\n/)
       .map((item) => item.trim().replaceAll('\\', '/')).filter(Boolean))].sort();
-    return { files, source: 'git' };
+    return base
+      ? { files, source: 'git', comparisonBase: base }
+      : { files, source: 'git', unresolved: 'No configured, upstream, or conventional Git comparison base could be established.' };
   } catch {
-    return { files: [], source: 'unknown' };
+    return {
+      files: [],
+      source: 'unknown',
+      unresolved: 'Repository impact could not be established because Git comparison data is unavailable.',
+    };
   }
 }
 
@@ -134,6 +167,8 @@ export async function compileRepositoryContext(options: {
   changeName: string;
   compiled: CompiledOpenSpecChangeV1;
   changedFiles?: string[];
+  comparisonBase?: string;
+  impactUnknown?: string;
   boundaries?: string[];
   tier?: RepositoryAnalysisTierV2;
   adapter?: RepositoryAnalysisAdapterV2;
@@ -147,8 +182,13 @@ export async function compileRepositoryContext(options: {
   const sourceSet = new Set(sourceFiles);
   const byPortable = new Map(allFiles.map((filename) => [portable(options.projectRoot, filename), filename]));
   const discovered = options.changedFiles === undefined
-    ? await discoverRepositoryChangedFiles(options.projectRoot)
-    : { files: options.changedFiles, source: 'git' as const };
+    ? await discoverRepositoryChangedFiles(options.projectRoot, options.comparisonBase)
+    : {
+      files: options.changedFiles,
+      source: 'git' as const,
+      comparisonBase: options.comparisonBase,
+      unresolved: options.impactUnknown,
+    };
   const changed = discovered.files.map((item) => item.replaceAll('\\', '/'));
   const fileReferences = new Map<string, PortableReferenceV2>();
   const getReference = async (filename: string, kind: PortableReferenceV2['kind'] = 'repository') => {
@@ -160,6 +200,18 @@ export async function compileRepositoryContext(options: {
     return next;
   };
   const claims: RepositoryContextClaimV2[] = [];
+
+  if (discovered.unresolved) {
+    const artifact = options.compiled.artifacts.find((item) => item.kind === 'tasks')!;
+    claims.push(claim({
+      category: 'unknown', classification: 'unknown', summary: discovered.unresolved,
+      confidence: 'low', evidence: [{
+        referenceId: `artifact:${artifact.path}`, kind: 'artifact',
+        path: path.join(portable(options.projectRoot, options.changeDir), artifact.path).split(path.sep).join('/'),
+        digest: artifact.sourceDigest, available: true,
+      }], relatedOpenSpecIds: artifact.ids,
+    }));
+  }
 
   for (const changedPath of changed) {
     const filename = byPortable.get(changedPath);
@@ -264,6 +316,8 @@ export async function compileRepositoryContext(options: {
       return [item, file ? fileReferences.get(`repository:${file}`)?.digest ?? null : null];
     }),
     discovery: discovered.source,
+    comparisonBase: discovered.comparisonBase ?? null,
+    unresolved: discovered.unresolved ?? null,
     claims: claims.map((item) => [item.claimId, item.evidence.map((evidence) =>
       [evidence.referenceId, evidence.digest ?? null, evidence.available])]),
   });
@@ -272,7 +326,7 @@ export async function compileRepositoryContext(options: {
     changeName: options.changeName,
     inputRevision,
     compiledAt: options.now ?? new Date().toISOString(),
-    status: 'current',
+    status: discovered.unresolved ? 'unavailable' : 'current',
     claims: claims.sort((left, right) => left.claimId.localeCompare(right.claimId)),
     staleReferenceIds: [],
   });
@@ -285,6 +339,56 @@ export async function compileRepositoryContext(options: {
     throw new Error('Repository-analysis adapter returned a result for different controlling inputs.');
   }
   return analyzed;
+}
+
+export async function bindRepositoryEvidenceDigests(options: {
+  projectRoot: string;
+  evidence: PortableReferenceV2[];
+}): Promise<PortableReferenceV2[]> {
+  return Promise.all(options.evidence.map(async (item) => {
+    if (item.kind !== 'repository' || !item.path) return item;
+    const filename = path.resolve(options.projectRoot, ...item.path.split('/'));
+    const relative = path.relative(options.projectRoot, filename);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return { ...item, available: false, digest: undefined };
+    }
+    try {
+      return {
+        ...item,
+        available: true,
+        digest: createHash('sha256').update(await fs.readFile(filename)).digest('hex'),
+      };
+    } catch {
+      return { ...item, available: false, digest: undefined };
+    }
+  }));
+}
+
+export async function computeMaterialRevision(options: {
+  projectRoot: string;
+  compiled: CompiledOpenSpecChangeV1;
+  context?: RepositoryContextV2;
+  evidence?: PortableReferenceV2[];
+}): Promise<string> {
+  const references = new Map<string, PortableReferenceV2>();
+  for (const item of options.context?.claims.flatMap((claim) => claim.evidence) ?? []) references.set(item.referenceId, item);
+  for (const item of options.evidence ?? []) references.set(item.referenceId, item);
+  const repository = await Promise.all([...references.values()].sort((left, right) =>
+    left.referenceId.localeCompare(right.referenceId)).map(async (item) => {
+    if (item.kind !== 'repository' || !item.path) return [item.referenceId, item.digest ?? null, item.available] as const;
+    const filename = path.resolve(options.projectRoot, ...item.path.split('/'));
+    const relative = path.relative(options.projectRoot, filename);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return [item.referenceId, null, false] as const;
+    try {
+      return [item.referenceId, createHash('sha256').update(await fs.readFile(filename)).digest('hex'), true] as const;
+    } catch {
+      return [item.referenceId, null, false] as const;
+    }
+  }));
+  return digest({
+    artifacts: options.compiled.artifacts.map((item) => [item.path, item.sourceDigest]),
+    repository,
+  });
 }
 
 export function invalidateRepositoryContext(options: {

@@ -8,7 +8,7 @@ import {
   replayGuardrailsEventsV2,
 } from './events.js';
 import { evaluateFindingObligations } from './findings.js';
-import { evaluateUatObligations } from './uat.js';
+import { evaluateUatObligations, REQUIRED_UAT_PROJECTION_ERROR_ID } from './uat.js';
 import {
   digestJson,
   readAssuranceState,
@@ -112,6 +112,12 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
           ['Continue the structured investigation, record an evidence-backed root cause, and verify the regression fix.'],
         );
         const uat = evaluateUatObligations({ scenarios: assurance.uatScenarios });
+        if (uat.blocking.includes(REQUIRED_UAT_PROJECTION_ERROR_ID)) return result(
+          'error',
+          'Required UAT has no projected OpenSpec acceptance scenario.',
+          evidence,
+          ['Repair OpenSpec scenario coverage or record an explicit non-applicability decision.'],
+        );
         if (uat.blocking.length > 0) return result(
           'human_needed',
           `Guardrails requires UAT action for: ${uat.blocking.join(', ')}.`,
