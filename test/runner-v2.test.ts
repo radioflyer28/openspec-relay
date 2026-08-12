@@ -32,7 +32,7 @@ describe('Guardrails v2 run pipeline', () => {
     const start = (runner as Record<string, unknown>).startGuardrailsRunV2 as (input: Record<string, unknown>) => Promise<{
       run: { version: number }; assurance: { readiness?: { status: string }; repositoryContext?: { status: string } }; blockedBeforeExecution: boolean;
     }>;
-    const result = await start({ change: 'demo', projectRoot: root, config: {
+    const result = await start({ change: 'demo', projectRoot: root, changedFiles: [], config: {
       taskOverrides: { '1.1': readinessTask, '1.2': readinessTask },
       features: { readiness: { rollout: 'required' } },
     } });
@@ -65,6 +65,7 @@ describe('Guardrails v2 run pipeline', () => {
     const { root, changeDir } = await createOpenSpecProject();
     const first = await runner.startGuardrailsRunV2({
       change: 'demo', projectRoot: root,
+      changedFiles: [],
       config: { taskOverrides: { '1.1': readinessTask, '1.2': readinessTask } },
       now: '2026-08-12T12:00:00.000Z',
     });
@@ -74,7 +75,7 @@ describe('Guardrails v2 run pipeline', () => {
       '#### Scenario: New behavior works', '- **WHEN** invoked', '- **THEN** the new behavior works', '',
     ].join('\n'));
     const resumed = await runner.startGuardrailsRunV2({
-      change: 'demo', projectRoot: root, now: '2026-08-12T12:01:00.000Z',
+      change: 'demo', projectRoot: root, changedFiles: [], now: '2026-08-12T12:01:00.000Z',
     });
     expect(resumed).toMatchObject({ assurance: { readiness: { status: 'fail' } }, blockedBeforeExecution: true });
     expect(resumed.assurance.readiness?.resultId).not.toBe(first.assurance.readiness?.resultId);
@@ -135,6 +136,7 @@ describe('Guardrails v2 run pipeline', () => {
       const result = await start({
         change: tier,
         projectRoot: root,
+        changedFiles: [],
         hostCapabilities: higherTierHost,
         adapters: tier === 'tier1' ? { dispatcher: true } : { dispatcher: true, worktrees: true },
         config: {

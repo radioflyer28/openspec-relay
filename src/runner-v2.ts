@@ -400,6 +400,7 @@ export async function checkGuardrailsRunV2(options: {
     mode: store.seed.mode,
     config: store.seed.config.features.releaseAssurance,
     previousArtifactPath,
+    releaseRunner: options.adapters?.releaseRunner,
   });
   await refreshPlanningEvents({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, store, compiled, current,
     context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,

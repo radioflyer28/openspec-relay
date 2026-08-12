@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -25,6 +27,20 @@ async function packageProject() {
 async function temporaryEntries(prefix: string): Promise<Set<string>> {
   return new Set((await fs.readdir(os.tmpdir())).filter((entry) => entry.startsWith(prefix)));
 }
+
+const trustedTestRunner: release.ConstrainedReleaseRunnerV2 = {
+  capabilities: {
+    filesystemIsolation: 'enforced', networkIsolation: 'enforced',
+    sourceWorkspaceHidden: true, opaqueOutput: true,
+  },
+  async run(request) {
+    const result = await release.runLocalReleaseCommand(request);
+    return {
+      exitCode: result.exitCode,
+      outputDigest: createHash('sha256').update(`${result.stdout}\0${result.stderr}`).digest('hex'),
+    };
+  },
+};
 
 describe('conditional release assurance', () => {
   it('routes Node packages, CLIs, extensions, configured distributions, and explicit disablement transparently', async () => {
@@ -119,7 +135,7 @@ describe('conditional release assurance', () => {
     const api = release as Record<string, unknown>;
     const verification = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{
       status: string; artifactDigest?: string; checks: Array<{ checkId: string; status: string }>;
-    }>)({ packageRoot: root, mode: 'quick' });
+    }>)({ packageRoot: root, mode: 'quick', releaseRunner: trustedTestRunner });
     expect(verification).toMatchObject({ status: 'pass', artifactDigest: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(verification.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ checkId: 'pack', status: 'pass' }),
@@ -139,6 +155,7 @@ describe('conditional release assurance', () => {
         args: ['-e', "require('node:fs').writeFileSync('artifact.txt', process.cwd())"],
         expectedArtifacts: ['artifact.txt'], timeoutMs: 30_000,
       },
+      releaseRunner: trustedTestRunner,
     });
     expect(result.status).toBe('pass');
     await expect(fs.access(path.join(root, 'artifact.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
@@ -159,6 +176,7 @@ describe('conditional release assurance', () => {
         args: ['--offline', 'view', 'guardrails-package-not-in-local-cache-4e6d1'],
         expectedArtifacts: [], timeoutMs: 15_000,
       },
+      releaseRunner: trustedTestRunner,
     });
     expect(result.status).toBe('fail');
     const after = await temporaryEntries('openspec-guardrails-configured-release-');
@@ -184,6 +202,70 @@ describe('conditional release assurance', () => {
       expect.objectContaining({ checkId: 'runner-isolation', status: 'human_needed' }),
     ] });
   });
+
+  it('does not execute candidate code when enforceable filesystem and network isolation are unavailable', async () => {
+    const root = await packageProject();
+    const secretRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'guardrails-host-secret-'));
+    roots.push(secretRoot);
+    const secretValue = 'arbitrary-unlabelled-secret-value';
+    const secretFile = path.join(secretRoot, 'host-secret');
+    const sourceSentinel = path.join(root, 'candidate-mutated-source');
+    await fs.writeFile(secretFile, secretValue);
+    let localhostReached = false;
+    const server = createServer((socket) => {
+      localhostReached = true;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not expose a TCP port.');
+    const hostileScript = [
+      `const fs = require('node:fs')`,
+      `const secret = fs.readFileSync(${JSON.stringify(secretFile)}, 'utf8')`,
+      `fs.writeFileSync(${JSON.stringify(sourceSentinel)}, secret)`,
+      `console.error(secret)`,
+      `require('node:net').connect(${address.port}, '127.0.0.1')`,
+      `fetch('https://example.com').catch(() => {})`,
+    ].join(';');
+    const verification = await release.verifyNodePackageRelease({
+      packageRoot: root,
+      mode: 'quick',
+      buildCommand: {
+        id: 'hostile-build', command: process.execPath, args: ['-e', hostileScript], expectedArtifacts: [],
+      },
+    });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    expect(verification).toMatchObject({
+      status: 'human_needed',
+      checks: [expect.objectContaining({ checkId: 'runner-isolation', status: 'human_needed' })],
+    });
+    await expect(fs.access(sourceSentinel)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(localhostReached).toBe(false);
+    expect(JSON.stringify(verification)).not.toContain(secretValue);
+  });
+
+  it('passes only an allowlisted environment to the constrained runner and persists no candidate output', async () => {
+    const root = await packageProject();
+    process.env.GUARDRAILS_UNRELATED_SECRET = 'arbitrary-secret-bearing-output';
+    let observedEnvironment: Record<string, string> | undefined;
+    const runner: release.ConstrainedReleaseRunnerV2 = {
+      ...trustedTestRunner,
+      async run(request) {
+        observedEnvironment = request.env;
+        return trustedTestRunner.run(request);
+      },
+    };
+    try {
+      const verification = await release.verifyNodePackageRelease({
+        packageRoot: root, mode: 'quick', releaseRunner: runner,
+      });
+      expect(verification.status).toBe('pass');
+      expect(observedEnvironment).not.toHaveProperty('GUARDRAILS_UNRELATED_SECRET');
+      expect(JSON.stringify(verification)).not.toContain('arbitrary-secret-bearing-output');
+    } finally {
+      delete process.env.GUARDRAILS_UNRELATED_SECRET;
+    }
+  }, 30_000);
 
   it('honors configured surfaces and required platform obligations', async () => {
     const root = await packageProject();
@@ -228,6 +310,7 @@ describe('conditional release assurance', () => {
       packageRoot: root, mode: 'quick',
       buildCommand: { id: 'authorized-build', command: process.execPath,
         args: ['-e', "require('node:fs').writeFileSync('build-output', 'build')"], expectedArtifacts: [] },
+      releaseRunner: trustedTestRunner,
     });
     expect(authorized.status).toBe('pass');
 
@@ -238,6 +321,7 @@ describe('conditional release assurance', () => {
       packageRoot: root, mode: 'quick',
       buildCommand: { id: 'failing-build', command: process.execPath,
         args: ['-e', 'process.exit(1)'], expectedArtifacts: [] },
+      releaseRunner: trustedTestRunner,
     });
     expect(failed.status).toBe('fail');
     const after = await temporaryEntries('openspec-guardrails-artifact-');
@@ -264,6 +348,7 @@ describe('conditional release assurance', () => {
       packageRoot: root,
       mode: 'quick',
       config: { configuredCommands: [] },
+      releaseRunner: trustedTestRunner,
       candidates: [{
         candidateId: 'extension', surface: 'extension', applicable: true,
         activationEvidence: [], status: 'pending', checks: [],
@@ -289,14 +374,66 @@ describe('conditional release assurance', () => {
     const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')) as { version: string };
     manifest.version = '1.2.4';
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(manifest));
+    await fs.writeFile(path.join(root, 'upgrade-state.json'), JSON.stringify({ preserved: true, owner: 'example-package' }));
+    const stateContracts = [{
+      id: 'example-consumer-state',
+      seedFile: 'upgrade-state.json',
+      stateFile: 'consumer/state.json',
+      rollback: 'reversible' as const,
+      verifyCommand: {
+        id: 'verify-example-state',
+        command: process.execPath,
+        args: ['-e', [
+          'const fs = require("node:fs")',
+          'const path = require("node:path")',
+          'const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))',
+          'const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "node_modules", ...process.argv[2].split("/"), "package.json"), "utf8"))',
+          'if (!state.preserved || state.owner !== pkg.name) process.exit(1)',
+        ].join(';'), '{state}', '{package}'],
+        expectedArtifacts: [],
+      },
+    }];
     const api = release as Record<string, unknown>;
     const verification = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{
       status: string; checks: Array<{ checkId: string; status: string }>;
-    }>)({ packageRoot: root, mode: 'guarded', previousArtifactPath });
+    }>)({ packageRoot: root, mode: 'guarded', previousArtifactPath, releaseRunner: trustedTestRunner, stateContracts });
     expect(verification).toMatchObject({ status: 'human_needed', checks: expect.arrayContaining([
       expect.objectContaining({ checkId: 'upgrade', status: 'pass' }),
       expect.objectContaining({ checkId: 'rollback', status: 'pass' }),
       expect.objectContaining({ checkId: 'compatibility-evidence:@fission-ai/openspec', status: 'human_needed' }),
     ]) });
+  }, 30_000);
+
+  it('refuses synthetic upgrade claims and escalates declared irreversible rollback', async () => {
+    const root = await packageProject();
+    const packed = JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', root], {
+      cwd: root, encoding: 'utf8',
+    })) as Array<{ filename: string }>;
+    const previousArtifactPath = path.join(root, packed[0].filename);
+    const withoutContract = await release.verifyNodePackageRelease({
+      packageRoot: root, mode: 'guarded', previousArtifactPath, releaseRunner: trustedTestRunner,
+    });
+    expect(withoutContract.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ checkId: 'upgrade', status: 'human_needed',
+        summary: expect.stringMatching(/state contract/i) }),
+    ]));
+
+    await fs.writeFile(path.join(root, 'upgrade-state.json'), JSON.stringify({ preserved: true, owner: 'example-package' }));
+    const irreversible = await release.verifyNodePackageRelease({
+      packageRoot: root, mode: 'guarded', previousArtifactPath, releaseRunner: trustedTestRunner,
+      stateContracts: [{
+        id: 'irreversible-state', seedFile: 'upgrade-state.json', stateFile: 'consumer/state.json', rollback: 'irreversible',
+        verifyCommand: {
+          id: 'verify-state', command: process.execPath,
+          args: ['-e', 'require("node:fs").accessSync(process.argv[1]); require("node:fs").accessSync(require("node:path").join(process.cwd(), "node_modules", ...process.argv[2].split("/"), "package.json"))', '{state}', '{package}'],
+          expectedArtifacts: [],
+        },
+      }],
+    });
+    expect(irreversible.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ checkId: 'upgrade', status: 'pass' }),
+      expect.objectContaining({ checkId: 'rollback', status: 'human_needed',
+        summary: expect.stringMatching(/irreversible/i) }),
+    ]));
   }, 30_000);
 });
