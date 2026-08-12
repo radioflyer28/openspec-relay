@@ -490,6 +490,31 @@ export const DebugConclusionV2Schema = z.object({
   sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 
+export const DebugVerificationV2Schema = z.object({
+  verificationId: z.string().min(1),
+  findingId: z.string().min(1),
+  verifier: z.object({
+    kind: z.enum(['verifier', 'human']),
+    id: z.string().min(1),
+  }).strict(),
+  evidence: z.array(PortableReferenceV2Schema).min(1),
+  failBeforeEvidence: PortableReferenceV2Schema.optional(),
+  passAfterEvidence: PortableReferenceV2Schema.optional(),
+  exemption: z.object({ reason: z.string().min(1), acceptedBy: z.string().min(1) }).strict().optional(),
+  sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  verifiedAt: z.string().datetime(),
+}).strict().superRefine((value, context) => {
+  const regressionPair = Boolean(value.failBeforeEvidence && value.passAfterEvidence);
+  if (!regressionPair && !value.exemption) context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'Debug verification requires distinct fail-before and pass-after evidence or an accepted exemption.',
+  });
+  if (regressionPair && value.failBeforeEvidence!.digest === value.passAfterEvidence!.digest) context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'Fail-before and pass-after evidence must preserve distinct observed result digests.',
+  });
+});
+
 export const DebugSessionV2Schema = z.object({
   sessionId: z.string().min(1),
   logicalFailureId: z.string().min(1),
@@ -505,6 +530,7 @@ export const DebugSessionV2Schema = z.object({
   unresolvedQuestions: z.array(z.string().min(1)).default([]),
   nextAction: z.string().min(1).optional(),
   regressionEvidence: z.array(PortableReferenceV2Schema).default([]),
+  verification: DebugVerificationV2Schema.optional(),
 }).strict();
 
 export const UatScenarioV2Schema = z.object({
@@ -594,6 +620,8 @@ export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('debug.reference_changed'), sessionId: z.string().min(1), reference: PortableReferenceV2Schema }).strict(),
   z.object({ type: z.literal('debug.question_recorded'), sessionId: z.string().min(1), question: z.string().min(1) }).strict(),
   z.object({ type: z.literal('debug.next_action_recorded'), sessionId: z.string().min(1), nextAction: z.string().min(1) }).strict(),
+  z.object({ type: z.literal('debug.verification_recorded'), sessionId: z.string().min(1), verification: DebugVerificationV2Schema }).strict(),
+  z.object({ type: z.literal('debug.session_resolved'), sessionId: z.string().min(1), verificationId: z.string().min(1), nextAction: z.string().min(1) }).strict(),
   z.object({ type: z.literal('debug.session_updated'), sessionId: z.string().min(1), status: z.enum(['active', 'resolved', 'human_needed']), nextAction: z.string().min(1).optional(), regressionEvidence: z.array(PortableReferenceV2Schema).optional() }).strict(),
   z.object({ type: z.literal('uat.scenario_recorded'), scenario: UatScenarioV2Schema }).strict(),
   z.object({ type: z.literal('uat.scenario_retest'), scenarioId: z.string().min(1), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
@@ -674,10 +702,12 @@ export type FindingTransitionV2 = z.infer<typeof FindingTransitionV2Schema>;
 export type DebugHypothesisV2 = z.infer<typeof DebugHypothesisV2Schema>;
 export type DebugExperimentV2 = z.infer<typeof DebugExperimentV2Schema>;
 export type DebugConclusionV2 = z.infer<typeof DebugConclusionV2Schema>;
+export type DebugVerificationV2 = z.infer<typeof DebugVerificationV2Schema>;
 export type DebugSessionV2 = z.infer<typeof DebugSessionV2Schema>;
 export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;
 export type GuardrailsEventPayloadV2 = z.infer<typeof GuardrailsEventPayloadV2Schema>;
+export type GuardrailsEventActorV2 = z.infer<typeof GuardrailsEventActorV2Schema>;
 export type GuardrailsEventEnvelopeV2 = z.infer<typeof GuardrailsEventEnvelopeV2Schema>;
 export type GuardrailsRunV2 = z.infer<typeof GuardrailsRunV2Schema>;
 export type GuardrailsAssuranceV2 = z.infer<typeof GuardrailsAssuranceV2Schema>;
