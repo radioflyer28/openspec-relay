@@ -150,13 +150,14 @@ export function assertReleaseCommandSafe(command: string, args: string[]): void 
 export async function createNodePackageReleasePlan(options: {
   packageRoot: string;
   mode: RunMode;
-}): Promise<{ artifactDirectory: string; installDirectory: string; commands: ReleaseCommandV2[] }> {
+}): Promise<{ artifactDirectory: string; sourceDirectory: string; installDirectory: string; commands: ReleaseCommandV2[] }> {
   const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-guardrails-artifact-'));
+  const sourceDirectory = path.join(artifactDirectory, 'source');
   const installDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-guardrails-install-'));
   const archive = path.join(artifactDirectory, 'candidate.tgz');
   const commands: ReleaseCommandV2[] = [
-    { command: 'npm', args: ['run', 'build', '--if-present'], cwd: options.packageRoot },
-    { command: 'npm', args: ['pack', '--json', '--ignore-scripts', '--pack-destination', artifactDirectory], cwd: options.packageRoot },
+    { command: 'npm', args: ['run', 'build', '--if-present'], cwd: sourceDirectory, isolated: true },
+    { command: 'npm', args: ['pack', '--json', '--ignore-scripts', '--pack-destination', artifactDirectory], cwd: sourceDirectory, isolated: true },
     { command: 'node', args: ['-e', '/* inspect packed content and package metadata */'], cwd: artifactDirectory },
     { command: 'npm', args: ['install', '--ignore-scripts', archive], cwd: installDirectory },
     { command: 'node', args: ['--input-type=module', '-e', '/* smoke declared exports and CLI entry points */'], cwd: installDirectory },
@@ -169,7 +170,7 @@ export async function createNodePackageReleasePlan(options: {
     { command: 'node', args: ['-e', '/* verify configured platform and compatibility matrix */'], cwd: installDirectory },
   );
   commands.forEach((item) => assertReleaseCommandSafe(item.command, item.args));
-  return { artifactDirectory, installDirectory, commands };
+  return { artifactDirectory, sourceDirectory, installDirectory, commands };
 }
 
 export async function runLocalReleaseCommand(options: ReleaseCommandV2): Promise<{
@@ -230,6 +231,18 @@ async function exists(filename: string): Promise<boolean> {
   return fs.access(filename).then(() => true).catch(() => false);
 }
 
+async function copyPackageSource(packageRoot: string, destination: string): Promise<void> {
+  const excluded = new Set(['.git', 'node_modules', '.guardrails']);
+  await fs.cp(packageRoot, destination, {
+    recursive: true,
+    filter: (source) => {
+      const relative = path.relative(packageRoot, source);
+      if (!relative) return true;
+      return !relative.split(path.sep).some((segment) => excluded.has(segment));
+    },
+  });
+}
+
 async function importPublicEntries(packageRoot: string, entries: string[]): Promise<void> {
   for (const entry of entries) {
     if (entry.startsWith('./')) await import(pathToFileURL(path.join(packageRoot, entry)).href);
@@ -248,13 +261,15 @@ export async function verifyNodePackageRelease(options: {
   manifestSurfaces?: Array<'extension' | 'plugin'>;
 }): Promise<NodeReleaseVerificationV2> {
   const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-guardrails-artifact-'));
+  const sourceDirectory = path.join(artifactDirectory, 'source');
   let installDirectory: string | undefined;
   const checks: ReleaseCheck[] = [];
   let artifactDigest: string | undefined;
   try {
     const metadata = await inspectNodePackageMetadata(options.packageRoot);
+    await copyPackageSource(options.packageRoot, sourceDirectory);
     const build = await runLocalReleaseCommand({
-      command: 'npm', args: ['run', 'build', '--if-present'], cwd: options.packageRoot, timeoutMs: 120_000,
+      command: 'npm', args: ['run', 'build', '--if-present'], cwd: sourceDirectory, timeoutMs: 120_000,
     });
     checks.push(check('build', build.exitCode === 0 ? 'pass' : 'fail',
       build.exitCode === 0 ? 'Local build completed.' : `Local build failed: ${build.stderr || build.stdout}`));
@@ -262,7 +277,7 @@ export async function verifyNodePackageRelease(options: {
 
     const packed = await runLocalReleaseCommand({
       command: 'npm', args: ['pack', '--json', '--ignore-scripts', '--pack-destination', artifactDirectory],
-      cwd: options.packageRoot, timeoutMs: 120_000,
+      cwd: sourceDirectory, timeoutMs: 120_000,
     });
     if (packed.exitCode !== 0) {
       checks.push(check('pack', 'fail', `Local pack failed: ${packed.stderr || packed.stdout}`));
@@ -610,6 +625,12 @@ export function createConfiguredCommandPlan(options: {
   timeoutMs?: number;
 }): ReleaseCommandV2 {
   assertReleaseCommandSafe(options.command, options.args);
+  for (const artifact of options.expectedArtifacts) {
+    if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(artifact) || artifact.includes('\\') ||
+        !artifact.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')) {
+      throw new Error(`Expected release artifact '${artifact}' must be a portable relative path inside the isolated workspace.`);
+    }
+  }
   return {
     command: options.command,
     args: options.args,
