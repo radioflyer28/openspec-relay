@@ -985,28 +985,24 @@ export async function migrateV1ToV2EventStore(changeDir: string): Promise<Guardr
   return store;
 }
 
-/**
- * Restore the exact v1 records retained before migration. This is deliberately
- * explicit: it is a local downgrade aid for a prior companion version, not a
- * best-effort translation of v2 history back to a state model that cannot
- * represent it. Projections are written before the event-store cutover, so a
- * successful final rename makes the three v1 inputs coherent for the older
- * reader. The recovery backup itself is retained for audit and retry.
- */
-export async function restoreV1FromMigrationBackup(changeDir: string): Promise<{
-  restored: true;
+/** Export the exact pre-migration v1 representation without replacing the
+ * canonical v2 history. A downgrade tool may unpack this bundle into a
+ * separate copied change; the active run always remains readable as v2. */
+export async function exportV1CompatibilityBundle(changeDir: string): Promise<{
+  exported: true;
   runId: string;
   changeName: string;
+  filename: string;
 }> {
   const filename = guardrailsGeneratedPath(changeDir, 'v1MigrationBackup');
   let raw: unknown;
   try {
     raw = JSON.parse(await readGuardrailsText(changeDir, filename));
   } catch (error) {
-    throw new Error(`Cannot restore version 1 Guardrails state: ${(error as Error).message}`);
+    throw new Error(`Cannot export version 1 Guardrails state: ${(error as Error).message}`);
   }
   if (!raw || typeof raw !== 'object' || (raw as { version?: unknown }).version !== 1) {
-    throw new Error('Cannot restore version 1 Guardrails state: recovery backup has an invalid version.');
+    throw new Error('Cannot export version 1 Guardrails state: recovery backup has an invalid version.');
   }
   const backup = raw as { events?: unknown; run?: unknown; assurance?: unknown };
   const events = validateStore(backup.events);
@@ -1014,12 +1010,14 @@ export async function restoreV1FromMigrationBackup(changeDir: string): Promise<{
   const run = GuardrailsRunV1Schema.parse(backup.run);
   if (events.runId !== run.runId || events.changeName !== run.changeName ||
       assurance.runId !== run.runId || assurance.changeName !== run.changeName) {
-    throw new Error('Cannot restore version 1 Guardrails state: recovery records belong to different runs or changes.');
+    throw new Error('Cannot export version 1 Guardrails state: recovery records belong to different runs or changes.');
   }
-  // Write non-authoritative projections first. The v1 event store is the final
-  // cutover because it is what both v1 replay and subsequent v1 mutations read.
-  await atomicWriteGuardrailsJson(changeDir, assuranceStatePath(changeDir), assurance);
-  await atomicWriteGuardrailsJson(changeDir, runStatePath(changeDir), run);
-  await atomicWriteGuardrailsJson(changeDir, eventStorePath(changeDir), events);
-  return { restored: true, runId: run.runId, changeName: run.changeName };
+  const canonicalBefore = digestJson(await readEventStoreV2(changeDir));
+  const exportFilename = guardrailsGeneratedPath(changeDir, 'v1CompatibilityExport');
+  await atomicWriteGuardrailsJson(changeDir, exportFilename, {
+    version: 1, exportedFromCanonicalV2: canonicalBefore, events, run, assurance,
+  });
+  const canonicalAfter = digestJson(await readEventStoreV2(changeDir));
+  if (canonicalAfter !== canonicalBefore) throw new Error('Canonical version 2 history changed during compatibility export.');
+  return { exported: true, runId: run.runId, changeName: run.changeName, filename: exportFilename };
 }

@@ -15,6 +15,7 @@ describe('Guardrails-owned v2 paths', () => {
       events: 'events.json',
       v1MigrationBackup: 'reports/v1-migration-backup.json',
       migrationPreview: 'reports/migration-preview.json',
+      v1CompatibilityExport: 'reports/v1-compatibility-export.json',
       repositoryContext: 'reports/repository-context.json',
       readiness: 'reports/readiness.json',
       findings: 'reports/findings.json',

@@ -143,21 +143,24 @@ describe('Guardrails v1-to-v2 event migration', () => {
     expect(backup).toMatchObject({ version: 1, run: { version: 1 }, assurance: { version: 1 } });
   });
 
-  it('restores the validated v1 backup so a previous companion can resume the original records', async () => {
+  it('exports a validated v1 compatibility bundle without replacing canonical v2 history', async () => {
     const { changeDir } = await seedV1State();
     const api = events as Record<string, unknown>;
     await (api.migrateV1ToV2EventStore as (directory: string) => Promise<unknown>)(changeDir);
 
-    const restored = await (api.restoreV1FromMigrationBackup as (directory: string) => Promise<{
-      restored: boolean; runId: string;
+    const exported = await (api.exportV1CompatibilityBundle as (directory: string) => Promise<{
+      exported: boolean; runId: string; filename: string;
     }>)(changeDir);
-    expect(restored).toMatchObject({ restored: true, runId: 'v1-fixture-run' });
-    expect(await (api.readEventStore as (directory: string) => Promise<{ version: number }>)(changeDir))
-      .toMatchObject({ version: 1 });
+    expect(exported).toMatchObject({ exported: true, runId: 'v1-fixture-run' });
+    expect(JSON.parse(await fs.readFile(exported.filename, 'utf8'))).toMatchObject({
+      version: 1, events: { version: 1 }, run: { version: 1 }, assurance: { version: 1 },
+      exportedFromCanonicalV2: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(await (api.readEventStoreV2 as (directory: string) => Promise<{ version: number }>)(changeDir))
+      .toMatchObject({ version: 2 });
     expect(await (state as Record<string, (directory: string) => Promise<{ version: number }>>)
-      .readRunState(changeDir)).toMatchObject({ version: 1 });
+      .readRunStateV2(changeDir)).toMatchObject({ version: 2 });
     expect(await (state as Record<string, (directory: string) => Promise<{ version: number }>>)
-      .readAssuranceState(changeDir)).toMatchObject({ version: 1 });
-    await expect((api.readEventStoreV2 as (directory: string) => Promise<unknown>)(changeDir)).rejects.toThrow();
+      .readAssuranceStateV2(changeDir)).toMatchObject({ version: 2 });
   });
 });
