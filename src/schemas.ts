@@ -321,7 +321,12 @@ export const ConfiguredReleaseDriverV2Schema = z.object({
   id: z.string().min(1),
   command: z.string().min(1),
   args: z.array(z.string()).max(100).default([]),
-  expectedArtifacts: z.array(z.string().min(1)).max(50).default([]),
+  expectedArtifacts: z.array(z.string().min(1).refine(
+    (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) &&
+      value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..') &&
+      !value.includes('\\'),
+    'expected artifact path must be a portable relative path inside the isolated release workspace',
+  )).max(50).default([]),
   timeoutMs: z.number().int().positive().max(15 * 60_000).default(120_000),
 }).strict();
 
