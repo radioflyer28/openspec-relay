@@ -21,6 +21,10 @@ async function packageProject() {
   return root;
 }
 
+async function temporaryEntries(prefix: string): Promise<Set<string>> {
+  return new Set((await fs.readdir(os.tmpdir())).filter((entry) => entry.startsWith(prefix)));
+}
+
 describe('conditional release assurance', () => {
   it('routes Node packages, CLIs, extensions, configured distributions, and explicit disablement transparently', async () => {
     const root = await packageProject();
@@ -117,6 +121,57 @@ describe('conditional release assurance', () => {
     expect(result.status).toBe('pass');
     await expect(fs.access(path.join(root, 'artifact.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
+
+  it('fails closed for unavailable tools and offline registries without leaving a configured-driver workspace', async () => {
+    const root = await packageProject();
+    const api = release as Record<string, unknown>;
+    const command = api.runLocalReleaseCommand as (input: Record<string, unknown>) => Promise<unknown>;
+    await expect(command({ command: 'guardrails-tool-that-does-not-exist', args: [] }))
+      .rejects.toThrow(/failed to start/i);
+
+    const before = await temporaryEntries('openspec-guardrails-configured-release-');
+    const result = await (api.runConfiguredReleaseDriver as (input: Record<string, unknown>) => Promise<{ status: string }>)({
+      projectRoot: root,
+      driver: {
+        id: 'offline-registry', command: 'npm',
+        args: ['--offline', 'view', 'guardrails-package-not-in-local-cache-4e6d1'],
+        expectedArtifacts: [], timeoutMs: 15_000,
+      },
+    });
+    expect(result.status).toBe('fail');
+    const after = await temporaryEntries('openspec-guardrails-configured-release-');
+    expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
+  }, 30_000);
+
+  it('disables package lifecycle scripts and removes temporary package workspaces after a partial failure', async () => {
+    const root = await packageProject();
+    const sentinel = path.join(root, 'package-script-ran');
+    const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    manifest.scripts = {
+      preinstall: `${process.execPath} -e \"require('node:fs').writeFileSync('${sentinel}', 'preinstall')\"`,
+      prepack: `${process.execPath} -e \"require('node:fs').writeFileSync('${sentinel}', 'prepack')\"`,
+      publish: `${process.execPath} -e \"require('node:fs').writeFileSync('${sentinel}', 'publish')\"`,
+    };
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(manifest));
+    const api = release as Record<string, unknown>;
+    const verification = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{ status: string }>)({
+      packageRoot: root, mode: 'quick',
+    });
+    expect(verification.status).toBe('pass');
+    await expect(fs.access(sentinel)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    manifest.scripts = { build: `${process.execPath} -e \"process.exit(1)\"` };
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(manifest));
+    const before = await temporaryEntries('openspec-guardrails-artifact-');
+    const failed = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{ status: string }>)({
+      packageRoot: root, mode: 'quick',
+    });
+    expect(failed.status).toBe('fail');
+    const after = await temporaryEntries('openspec-guardrails-artifact-');
+    expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
+  }, 30_000);
 
   it('verifies an extension manifest and generated workflow entries from the clean installed artifact', async () => {
     const root = await packageProject();

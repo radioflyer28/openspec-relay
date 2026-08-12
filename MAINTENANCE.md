@@ -78,6 +78,11 @@ acceptance, or use the explicit `--override-gate` plus `--reason` audit path.
 Preserve `.guardrails/` and `.openspec-gates.json` when restoring an active
 change so evidence and decisions remain reviewable.
 
+For a change whose generated state has already migrated to v2, run the v2
+companion's `restoreV1FromMigrationBackup(changeDir)` before reinstalling the
+previous companion. This restores only the validated v1 recovery records; it
+does not collapse later v2-only assurance history into an older schema.
+
 ## Transition to official OpenSpec
 
 When official OpenSpec releases the generic API, verify its documented API
