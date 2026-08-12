@@ -120,7 +120,7 @@ describe('conditional release assurance', () => {
       projectRoot: root,
       driver: {
         id: 'artifact', command: process.execPath,
-        args: ['-e', "require('node:fs').writeFileSync('artifact.txt', process.env.GUARDRAILS_RELEASE_SOURCE)"],
+        args: ['-e', "require('node:fs').writeFileSync('artifact.txt', process.cwd())"],
         expectedArtifacts: ['artifact.txt'], timeoutMs: 30_000,
       },
     });
@@ -149,6 +149,44 @@ describe('conditional release assurance', () => {
     expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
   }, 30_000);
 
+  it('uses an allowlisted environment, redacts bounded output, and escalates unavailable strong isolation', async () => {
+    const root = await packageProject();
+    const api = release as Record<string, unknown>;
+    const run = api.runLocalReleaseCommand as (input: Record<string, unknown>) => Promise<{ stdout: string }>;
+    await expect(run({ command: process.execPath, args: ['-e', 'console.log("ok")'], cwd: root,
+      isolated: true, allowedRoot: root, env: { RELEASE_TOKEN: 'secret' } })).rejects.toThrow(/credential/i);
+    const output = await run({ command: process.execPath,
+      args: ['-e', 'console.log("token=supersecret " + "x".repeat(70000))'], cwd: root,
+      isolated: true, allowedRoot: root });
+    expect(output.stdout).not.toContain('supersecret');
+    expect(output.stdout).toContain('<redacted>');
+    expect(output.stdout.length).toBeLessThan(66_000);
+    const verification = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{
+      status: string; checks: Array<{ checkId: string; status: string }>;
+    }>)({ packageRoot: root, mode: 'quick', requireNetworkIsolation: true });
+    expect(verification).toMatchObject({ status: 'human_needed', checks: [
+      expect.objectContaining({ checkId: 'runner-isolation', status: 'human_needed' }),
+    ] });
+  });
+
+  it('honors configured surfaces and required platform obligations', async () => {
+    const root = await packageProject();
+    const api = release as Record<string, unknown>;
+    const candidates = await (api.detectReleaseApplicability as (input: Record<string, unknown>) => Promise<Array<{
+      surface: string; applicable: boolean;
+    }>>)({ projectRoot: root, changedFiles: ['README.md'], config: { enabled: 'auto', surfaces: ['plugin'] } });
+    expect(candidates).toEqual(expect.arrayContaining([expect.objectContaining({ surface: 'plugin', applicable: true })]));
+    const required = process.platform === 'darwin' ? 'windows' : 'macos';
+    const executed = await (api.executeReleaseCandidates as (input: Record<string, unknown>) => Promise<Array<{
+      status: string; checks: Array<{ checkId: string; status: string }>;
+    }>>)({ packageRoot: root, mode: 'quick', config: { configuredCommands: [], requiredPlatforms: [required] },
+      candidates: [{ candidateId: 'node', surface: 'node_package', applicable: true,
+        activationEvidence: [], status: 'pending', checks: [] }] });
+    expect(executed[0]).toMatchObject({ status: 'human_needed', checks: expect.arrayContaining([
+      expect.objectContaining({ checkId: `platform:${required}`, status: 'human_needed' }),
+    ]) });
+  });
+
   it('isolates build output, disables package lifecycle scripts, and removes temporary package workspaces after a partial failure', async () => {
     const root = await packageProject();
     const sentinel = path.join(root, 'package-script-ran');
@@ -166,15 +204,24 @@ describe('conditional release assurance', () => {
     const verification = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       packageRoot: root, mode: 'quick',
     });
-    expect(verification.status).toBe('pass');
+    expect(verification.status).toBe('human_needed');
     await expect(fs.access(sentinel)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.access(path.join(root, 'build-output'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const authorized = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{ status: string }>)({
+      packageRoot: root, mode: 'quick',
+      buildCommand: { id: 'authorized-build', command: process.execPath,
+        args: ['-e', "require('node:fs').writeFileSync('build-output', 'build')"], expectedArtifacts: [] },
+    });
+    expect(authorized.status).toBe('pass');
 
     manifest.scripts = { build: `${process.execPath} -e \"process.exit(1)\"` };
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(manifest));
     const before = await temporaryEntries('openspec-guardrails-artifact-');
     const failed = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       packageRoot: root, mode: 'quick',
+      buildCommand: { id: 'failing-build', command: process.execPath,
+        args: ['-e', 'process.exit(1)'], expectedArtifacts: [] },
     });
     expect(failed.status).toBe('fail');
     const after = await temporaryEntries('openspec-guardrails-artifact-');
@@ -186,9 +233,15 @@ describe('conditional release assurance', () => {
     await fs.mkdir(path.join(root, 'workflows'));
     await fs.writeFile(path.join(root, 'workflows', 'run.md'), 'Run the extension.\n');
     await fs.writeFile(path.join(root, 'openspec-extension.json'), JSON.stringify({
-      id: 'example-extension', version: '1.2.3', contributes: { workflows: [{ entry: 'workflows/run.md' }] },
+      apiVersion: 'openspec.dev/extensions/v1', id: 'example-extension', version: '1.2.3',
+      requires: { openspec: '>=1.8.0-guardrails.1 <2.0.0',
+        hostCapabilities: { required: ['structuredResults'], optional: [] } },
+      contributes: { workflows: [{ id: 'run', name: 'Run', description: 'Run.', entry: 'workflows/run.md',
+        artifactRequirements: ['tasks'], gateDependencies: [], requiredHostCapabilities: ['structuredResults'] }], gates: [] },
     }));
     const api = release as Record<string, unknown>;
+    const previousCoreRoot = process.env.OPENSPEC_CORE_ROOT;
+    process.env.OPENSPEC_CORE_ROOT = path.resolve('..', 'OpenSpec');
     const candidates = await (api.executeReleaseCandidates as (input: Record<string, unknown>) => Promise<Array<{
       surface: string; status: string; checks: Array<{ checkId: string; status: string }>;
     }>>)({
@@ -200,9 +253,14 @@ describe('conditional release assurance', () => {
         activationEvidence: [], status: 'pending', checks: [],
       }],
     });
+    if (previousCoreRoot) process.env.OPENSPEC_CORE_ROOT = previousCoreRoot;
+    else delete process.env.OPENSPEC_CORE_ROOT;
     expect(candidates).toEqual([expect.objectContaining({
       surface: 'extension', status: 'pass',
-      checks: expect.arrayContaining([expect.objectContaining({ checkId: 'extension-manifest', status: 'pass' })]),
+      checks: expect.arrayContaining([
+        expect.objectContaining({ checkId: 'extension-manifest', status: 'pass' }),
+        expect.objectContaining({ checkId: 'extension-host-discovery', status: 'pass' }),
+      ]),
     })]);
   }, 30_000);
 
@@ -219,9 +277,10 @@ describe('conditional release assurance', () => {
     const verification = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{
       status: string; checks: Array<{ checkId: string; status: string }>;
     }>)({ packageRoot: root, mode: 'guarded', previousArtifactPath });
-    expect(verification).toMatchObject({ status: 'pass', checks: expect.arrayContaining([
+    expect(verification).toMatchObject({ status: 'human_needed', checks: expect.arrayContaining([
       expect.objectContaining({ checkId: 'upgrade', status: 'pass' }),
       expect.objectContaining({ checkId: 'rollback', status: 'pass' }),
+      expect.objectContaining({ checkId: 'compatibility-evidence:@fission-ai/openspec', status: 'human_needed' }),
     ]) });
   }, 30_000);
 });

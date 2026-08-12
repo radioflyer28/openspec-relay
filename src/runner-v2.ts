@@ -251,7 +251,7 @@ export async function startGuardrailsRunV2(options: {
   const { context, readiness, scenarioCoverage } = planning;
   const releaseCandidates = await detectReleaseApplicability({
     projectRoot: resolved.projectRoot,
-    changedFiles: options.changedFiles,
+    changedFiles: planning.changedFiles,
     config: config.features.releaseAssurance,
   });
   const blockedBeforeExecution = config.features.readiness.rollout === 'required' && readiness.status !== 'pass';
@@ -335,11 +335,19 @@ export async function checkGuardrailsRunV2(options: {
     changeName: resolved.changeName, compiled, config, tier: store.seed.tier, adapters: options.adapters,
     changedFiles: options.changedFiles, now });
   const sourceDigests = Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
+  const detectedReleaseCandidates = await detectReleaseApplicability({
+    projectRoot: resolved.projectRoot,
+    changedFiles: planning.changedFiles,
+    config: config.features.releaseAssurance,
+  });
+  const previousArtifactPath = config.features.releaseAssurance.previousArtifactPath
+    ? `${resolved.projectRoot}/${config.features.releaseAssurance.previousArtifactPath}` : undefined;
   const releaseCandidates = await executeReleaseCandidates({
     packageRoot: resolved.projectRoot,
-    candidates: current.assurance.releaseCandidates,
+    candidates: detectedReleaseCandidates,
     mode: store.seed.mode,
     config: store.seed.config.features.releaseAssurance,
+    previousArtifactPath,
   });
   await refreshPlanningEvents({ changeDir: resolved.changeDir, store, compiled, current,
     context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
