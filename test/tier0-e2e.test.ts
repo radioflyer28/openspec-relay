@@ -15,10 +15,11 @@ import {
   recordLegacyPayloadV2,
   recordUatV2,
   resolveDebugSessionV2,
-  startOrResumeDebugV2,
+  recordDebugConclusionV2,
   transitionFindingV2,
 } from '../src/v2-operations.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
+import { readAssuranceStateV2 } from '../src/state.js';
 
 afterEach(cleanupTemporaryRoots);
 
@@ -162,9 +163,8 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
         changedReferences: ['index.js'], result: 'fail',
       } },
     });
-    const debugging = await startOrResumeDebugV2({
-      change: 'demo', projectRoot: root, findingId: defect.findingId, now: '2026-08-11T20:44:02.000Z',
-    });
+    const debugging = { session: (await readAssuranceStateV2(changeDir)).debugSessions.find((item) =>
+      item.logicalFailureId === 'check:targeted-tests')! };
     const hypothesis = await recordDebugHypothesisV2({
       change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,
       statement: 'The public behavior lacks its required condition.', now: '2026-08-11T20:44:03.000Z',
@@ -178,6 +178,12 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,
       experimentId: experiment.experiments[0].experimentId, result: 'passed',
       observation: 'The focused regression check confirms the condition.', now: '2026-08-11T20:44:05.000Z',
+    });
+    await recordDebugConclusionV2({
+      change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,
+      kind: 'root_cause', statement: 'The public behavior omitted its required condition.',
+      experimentIds: [experiment.experiments[0].experimentId], evidence: portableEvidence,
+      now: '2026-08-11T20:44:05.500Z',
     });
     await resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,

@@ -16,6 +16,7 @@ import {
   acceptGuardrailsGateV2,
   observeDebugExperimentV2,
   planDebugExperimentV2,
+  recordDebugConclusionV2,
   presentUatV2,
   recordDebugHypothesisV2,
   recordLegacyPayloadV2,
@@ -122,6 +123,8 @@ program.command('debug')
   .option('--experiment-id <id>')
   .option('--result <result>', 'passed, failed, or inconclusive')
   .option('--observation <text>')
+  .option('--conclusion <text>')
+  .option('--root-cause <text>')
   .option('--evidence <json-file|->')
   .option('--resolve')
   .option('--exemption-reason <text>')
@@ -159,6 +162,20 @@ program.command('debug')
         result: options.result, observation: options.observation,
       });
       print(options.json ? { session } : `Recorded experiment result for ${session.sessionId}.`, Boolean(options.json));
+      return;
+    }
+    if (options.conclusion || options.rootCause) {
+      if (!options.session || !options.experimentId) {
+        throw new Error('Debug conclusion recording requires --session and --experiment-id.');
+      }
+      const session = await recordDebugConclusionV2({
+        change, projectRoot: options.project, sessionId: options.session,
+        kind: options.rootCause ? 'root_cause' : 'conclusion',
+        statement: options.rootCause ?? options.conclusion, experimentIds: [options.experimentId],
+        ...(evidence.length ? { evidence } : {}),
+      });
+      print(options.json ? { session } : `Recorded ${options.rootCause ? 'root cause' : 'conclusion'} for ${session.sessionId}.`,
+        Boolean(options.json));
       return;
     }
     if (options.resolve) {

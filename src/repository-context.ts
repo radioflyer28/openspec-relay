@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import type { CompiledOpenSpecChangeV1 } from './artifacts.js';
 import type {
   PortableReferenceV2,
@@ -15,6 +17,7 @@ const MANIFEST_NAMES = new Set([
   'package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'composer.json', 'Gemfile',
 ]);
 const IGNORED_DIRECTORIES = new Set(['.git', '.guardrails', 'node_modules', 'dist', 'coverage', '.next']);
+const execFileAsync = promisify(execFile);
 
 export type RepositoryAnalysisTierV2 = 'tier0' | 'tier1' | 'tier2';
 
@@ -50,6 +53,23 @@ export function portableRepositoryPath(
 
 function portable(root: string, filename: string): string {
   return portableRepositoryPath(root, filename);
+}
+
+export async function discoverRepositoryChangedFiles(projectRoot: string): Promise<{
+  files: string[];
+  source: 'git' | 'unknown';
+}> {
+  try {
+    const [tracked, untracked] = await Promise.all([
+      execFileAsync('git', ['diff', '--name-only', '--relative', 'HEAD', '--'], { cwd: projectRoot }),
+      execFileAsync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: projectRoot }),
+    ]);
+    const files = [...new Set(`${tracked.stdout}\n${untracked.stdout}`.split(/\r?\n/)
+      .map((item) => item.trim().replaceAll('\\', '/')).filter(Boolean))].sort();
+    return { files, source: 'git' };
+  } catch {
+    return { files: [], source: 'unknown' };
+  }
 }
 
 async function walk(root: string): Promise<string[]> {
@@ -126,7 +146,10 @@ export async function compileRepositoryContext(options: {
   const manifests = allFiles.filter((filename) => MANIFEST_NAMES.has(path.basename(filename)));
   const sourceSet = new Set(sourceFiles);
   const byPortable = new Map(allFiles.map((filename) => [portable(options.projectRoot, filename), filename]));
-  const changed = (options.changedFiles ?? []).map((item) => item.replaceAll('\\', '/'));
+  const discovered = options.changedFiles === undefined
+    ? await discoverRepositoryChangedFiles(options.projectRoot)
+    : { files: options.changedFiles, source: 'git' as const };
+  const changed = discovered.files.map((item) => item.replaceAll('\\', '/'));
   const fileReferences = new Map<string, PortableReferenceV2>();
   const getReference = async (filename: string, kind: PortableReferenceV2['kind'] = 'repository') => {
     const key = `${kind}:${filename}`;
@@ -221,7 +244,7 @@ export async function compileRepositoryContext(options: {
   }
 
   const artifact = options.compiled.artifacts.find((item) => item.kind === 'tasks');
-  if (claims.length === 0 && artifact) claims.push(claim({
+  if (!claims.some((item) => item.category === 'implementation_analog' || item.category === 'affected_module') && artifact) claims.push(claim({
     category: 'unknown', classification: 'unknown',
     summary: 'No reliable implementation analog or affected module was observed.', confidence: 'low',
     evidence: [{
@@ -240,7 +263,9 @@ export async function compileRepositoryContext(options: {
       const file = byPortable.get(item);
       return [item, file ? fileReferences.get(`repository:${file}`)?.digest ?? null : null];
     }),
-    claims: claims.map((item) => item.claimId),
+    discovery: discovered.source,
+    claims: claims.map((item) => [item.claimId, item.evidence.map((evidence) =>
+      [evidence.referenceId, evidence.digest ?? null, evidence.available])]),
   });
   const context = RepositoryContextV2Schema.parse({
     contextId: `context:${inputRevision.slice(0, 20)}`,

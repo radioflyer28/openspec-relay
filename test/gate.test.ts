@@ -13,6 +13,9 @@ import {
   startGuardrailsRunV2,
   startGuardrailsRun,
 } from '../src/index.js';
+import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { compileOpenSpecChange } from '../src/artifacts.js';
+import { startDebugSession } from '../src/debug-sessions.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -40,7 +43,7 @@ describe('Guardrails archive gate', () => {
     expect(checked.run).toMatchObject({ version: 2, status: 'blocked' });
     expect(checked.assurance.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ checkId: 'repository-context', status: 'pass' }),
-      expect.objectContaining({ checkId: 'plan-readiness', status: 'warn' }),
+      expect.objectContaining({ checkId: 'plan-readiness', status: 'fail' }),
     ]));
     expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
       .toMatchObject({ status: 'fail', summary: expect.stringContaining('repository-checks') });
@@ -88,6 +91,27 @@ describe('Guardrails archive gate', () => {
 
     expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
       status: 'error', summary: expect.stringMatching(/canonical|replay|projection/i),
+    });
+  });
+
+  it('blocks archive while a blocking debug session is unresolved', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const store = await readEventStoreV2(changeDir);
+    const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: store.seed.config.taskOverrides });
+    const session = startDebugSession({ logicalFailureId: 'check:targeted-tests', references: ['targeted-tests'],
+      failedEvidence: [{ referenceId: 'check:targeted-tests', kind: 'generated', externalId: 'targeted-tests', available: true }],
+      existing: [], now: '2026-08-12T12:00:00.000Z' });
+    await appendGuardrailsEventV2({ changeDir, event: createGuardrailsEventV2({
+      eventId: 'debug:blocking', runId: store.runId, changeName: store.changeName,
+      occurredAt: '2026-08-12T12:00:00.000Z',
+      sourceDigests: Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest])),
+      actor: { kind: 'host' }, provenance: { origin: 'gate-test' },
+      payload: { type: 'debug.session_started', session },
+    }) });
+    await writeReplayedProjectionsV2({ changeDir, store: await readEventStoreV2(changeDir), compiled });
+    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+      status: expect.stringMatching(/fail|human_needed/), summary: expect.stringMatching(/debug|investigation/i),
     });
   });
 });
