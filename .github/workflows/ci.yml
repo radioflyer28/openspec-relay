@@ -92,3 +92,72 @@ jobs:
         run: |
           pnpm --dir OpenSpec pack --pack-destination "$RUNNER_TEMP"
           pnpm --dir openspec-guardrails pack --pack-destination "$RUNNER_TEMP"
+
+  upstream-survivability:
+    name: Upstream seam survivability
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Guardrails
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: openspec-guardrails
+          persist-credentials: false
+
+      - name: Checkout maintained extension seam
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ vars.OPENSPEC_CORE_REPOSITORY || format('{0}/OpenSpec', github.repository_owner) }}
+          ref: ${{ vars.OPENSPEC_SEAM_REF || 'codex/upstream-extension-seam-v1' }}
+          path: seam-source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout current official OpenSpec
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Fission-AI/OpenSpec
+          ref: main
+          path: OpenSpec
+          persist-credentials: false
+
+      - name: Apply the generic extension seam
+        shell: bash
+        run: |
+          git -C seam-source remote add official https://github.com/Fission-AI/OpenSpec.git
+          git -C seam-source fetch --no-tags official main
+          seam_commit=$(git -C seam-source rev-parse HEAD)
+          git -C OpenSpec fetch --no-tags ../seam-source "$seam_commit"
+          git -C seam-source diff --binary official/main...HEAD -- . ':(exclude)pnpm-lock.yaml' > "$RUNNER_TEMP/openspec-extension-seam.patch"
+          git -C OpenSpec apply --3way "$RUNNER_TEMP/openspec-extension-seam.patch"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+          cache-dependency-path: |
+            OpenSpec/pnpm-lock.yaml
+            openspec-guardrails/pnpm-lock.yaml
+
+      - name: Build patched OpenSpec
+        working-directory: OpenSpec
+        run: pnpm install --frozen-lockfile && pnpm build
+
+      - name: Verify Guardrails against patched upstream
+        working-directory: openspec-guardrails
+        env:
+          OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
+          OPENSPEC_NO_UPDATE_CHECK: '1'
+          OPENSPEC_TELEMETRY: '0'
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm build
+          pnpm typecheck
+          pnpm lint
+          pnpm exec vitest run test/workflows.test.ts test/conformance.test.ts test/cross-repository-archive.test.ts
