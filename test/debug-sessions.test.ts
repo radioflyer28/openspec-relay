@@ -45,6 +45,7 @@ describe('persistent scientific debugging', () => {
     const observe = api.observeDebugExperiment as (input: Record<string, unknown>) => any;
     const conclude = api.recordDebugConclusion as (input: Record<string, unknown>) => any;
     const session = exhausted({ logicalFailureId: 'check:security', references: ['1.1'], failedEvidence: evidence,
+      findingId: 'finding:security',
       repairAttempts: [{ result: 'fail' }, { result: 'fail' }], limit: 2, now: '2026-08-09T12:00:00.000Z', existing: [] });
     expect(session.status).toBe('active');
     expect(() => resolve({ session, regressionEvidence: [], now: '2026-08-09T12:05:00.000Z' }))
@@ -56,7 +57,16 @@ describe('persistent scientific debugging', () => {
       result: 'passed', observation: 'The check isolates the missing condition.' });
     const concluded = conclude({ session: observed, kind: 'root_cause', statement: 'The condition is missing.',
       experimentIds: [planned.experiments[0].experimentId], evidence });
-    expect(resolve({ session: concluded, regressionEvidence: [{ referenceId: 'evidence:red-green', kind: 'generated', externalId: 'red-green', available: true }],
+    const regressionEvidence = [
+      { referenceId: 'evidence:red', kind: 'generated', externalId: 'red', digest, available: true },
+      { referenceId: 'evidence:green', kind: 'generated', externalId: 'green', digest: '1'.repeat(64), available: true },
+    ];
+    expect(resolve({ session: concluded, regressionEvidence, verification: {
+      verificationId: 'verification:independent', findingId: 'finding:security',
+      verifier: { kind: 'verifier', id: 'verifier-1' }, evidence: regressionEvidence,
+      failBeforeEvidence: regressionEvidence[0], passAfterEvidence: regressionEvidence[1],
+      sourceRevision: digest, verifiedAt: '2026-08-09T12:05:00.000Z',
+    },
       now: '2026-08-09T12:05:00.000Z' })).toMatchObject({ status: 'resolved' });
   });
 
@@ -76,6 +86,11 @@ describe('persistent scientific debugging', () => {
       now: '2026-08-12T12:00:00.000Z', existing: [] });
     expect(() => conclude({ session, statement: 'A guessed root cause.', kind: 'root_cause', experimentIds: [] }))
       .toThrow(/observation|experiment/i);
-    expect(() => resolve({ session, regressionEvidence: evidence })).toThrow(/root.cause|conclusion/i);
+    expect(() => resolve({ session, regressionEvidence: evidence, verification: {
+      verificationId: 'verification:independent', findingId: 'finding:root-cause',
+      verifier: { kind: 'verifier', id: 'verifier-1' }, evidence, sourceRevision: digest,
+      failBeforeEvidence: evidence[0], passAfterEvidence: { ...evidence[0], referenceId: 'evidence:pass', digest: '1'.repeat(64) },
+      verifiedAt: '2026-08-12T12:01:00.000Z',
+    } })).toThrow(/root.cause|conclusion/i);
   });
 });

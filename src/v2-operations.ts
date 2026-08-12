@@ -22,6 +22,7 @@ import { transitionFinding } from './findings.js';
 import { recordUatDisposition, nextUatScenario, projectUatScenarios } from './uat.js';
 import { resolveChangeDirectory } from './state.js';
 import { atomicWriteText } from './state.js';
+import { digestJson } from './state.js';
 import { bindRepositoryEvidenceDigests, computeMaterialRevision } from './repository-context.js';
 import { acceptRequiredGate, readRequiredGateRecord } from '@fission-ai/openspec/extensions';
 import {
@@ -29,6 +30,7 @@ import {
   type FindingStateV2,
   type FindingTransitionV2,
   type GuardrailsEventPayloadV1,
+  type GuardrailsEventActorV2,
   type PortableReferenceV2,
 } from './schemas.js';
 
@@ -178,6 +180,7 @@ async function appendDebugEvent(options: {
   eventId: string;
   now: string;
   payload: Extract<Parameters<typeof createGuardrailsEventV2>[0]['payload'], { type: `debug.${string}` }>;
+  actor?: GuardrailsEventActorV2;
 }) {
   await appendGuardrailsEventV2({
     changeDir: options.current.resolved.changeDir,
@@ -187,7 +190,7 @@ async function appendDebugEvent(options: {
       changeName: options.current.store.changeName,
       occurredAt: options.now,
       sourceDigests: sources(options.current.compiled),
-      actor: { kind: 'executor' },
+      actor: options.actor ?? { kind: 'executor' },
       provenance: { origin: 'guardrails-debug' },
       payload: options.payload,
     }),
@@ -198,6 +201,49 @@ async function appendDebugEvent(options: {
     compiled: options.current.compiled,
   });
   return projection.assurance.debugSessions;
+}
+
+export async function recordDebugReferenceChangeV2(options: {
+  change: string; projectRoot?: string; sessionId: string; reference: PortableReferenceV2; now?: string;
+}) {
+  const current = await currentV2(options);
+  const now = options.now ?? new Date().toISOString();
+  const [reference] = await bindRepositoryEvidenceDigests({
+    projectRoot: current.resolved.projectRoot,
+    evidence: [options.reference],
+  });
+  const sessions = await appendDebugEvent({
+    current, now,
+    eventId: `debug-reference:${options.sessionId}:${reference.referenceId}:${reference.digest ?? 'unavailable'}`,
+    payload: { type: 'debug.reference_changed', sessionId: options.sessionId, reference },
+  });
+  return sessions.find((item) => item.sessionId === options.sessionId)!;
+}
+
+export async function recordDebugQuestionV2(options: {
+  change: string; projectRoot?: string; sessionId: string; question: string; now?: string;
+}) {
+  const current = await currentV2(options);
+  const now = options.now ?? new Date().toISOString();
+  const sessions = await appendDebugEvent({
+    current, now,
+    eventId: `debug-question:${options.sessionId}:${digestJson(options.question).slice(0, 16)}`,
+    payload: { type: 'debug.question_recorded', sessionId: options.sessionId, question: options.question },
+  });
+  return sessions.find((item) => item.sessionId === options.sessionId)!;
+}
+
+export async function recordDebugNextActionV2(options: {
+  change: string; projectRoot?: string; sessionId: string; nextAction: string; now?: string;
+}) {
+  const current = await currentV2(options);
+  const now = options.now ?? new Date().toISOString();
+  const sessions = await appendDebugEvent({
+    current, now,
+    eventId: `debug-next-action:${options.sessionId}:${digestJson(options.nextAction).slice(0, 16)}`,
+    payload: { type: 'debug.next_action_recorded', sessionId: options.sessionId, nextAction: options.nextAction },
+  });
+  return sessions.find((item) => item.sessionId === options.sessionId)!;
 }
 
 export async function recordDebugHypothesisV2(options: {
@@ -257,9 +303,13 @@ export async function recordDebugConclusionV2(options: {
 }) {
   const current = await currentV2(options);
   const now = options.now ?? new Date().toISOString();
+  const evidence = options.evidence ? await bindRepositoryEvidenceDigests({
+    projectRoot: current.resolved.projectRoot,
+    evidence: options.evidence,
+  }) : undefined;
   const updated = recordDebugConclusion({ session: debugSession(current, options.sessionId), kind: options.kind,
-    statement: options.statement, experimentIds: options.experimentIds, evidence: options.evidence,
-    sourceRevision: await sourceRevision(current, options.evidence), now });
+    statement: options.statement, experimentIds: options.experimentIds, evidence,
+    sourceRevision: await sourceRevision(current, evidence), now });
   const conclusion = updated.conclusions.at(-1)!;
   const sessions = await appendDebugEvent({ current, now,
     eventId: `debug-conclusion:${options.sessionId}:${conclusion.conclusionId}`,
@@ -270,18 +320,78 @@ export async function recordDebugConclusionV2(options: {
 
 export async function resolveDebugSessionV2(options: {
   change: string; projectRoot?: string; sessionId: string; regressionEvidence: PortableReferenceV2[];
+  verifier: { kind: 'verifier' | 'human'; id: string };
   exemption?: { reason: string; acceptedBy: string }; now?: string;
 }) {
   const current = await currentV2(options);
   const now = options.now ?? new Date().toISOString();
+  const session = debugSession(current, options.sessionId);
+  if (!session.findingId) throw new Error('Debug resolution requires a linked finding or equivalent independently verified check.');
+  const finding = current.projection.assurance.findings.find((item) => item.findingId === session.findingId);
+  if (!finding || finding.state !== 'independently_verified') {
+    throw new Error('Debug resolution requires the linked finding to be independently verified first.');
+  }
+  const repairingActors = new Set(finding.transitions.filter((item) => item.actor.kind === 'executor')
+    .map((item) => item.actor.id).filter(Boolean));
+  if (repairingActors.has(options.verifier.id)) {
+    throw new Error('Debug resolution verifier must be distinct from the executor who repaired the finding.');
+  }
+  let regressionEvidence = await bindRepositoryEvidenceDigests({
+    projectRoot: current.resolved.projectRoot,
+    evidence: options.regressionEvidence,
+  });
+  if (options.exemption && regressionEvidence.length === 0) regressionEvidence = [{
+    referenceId: `debug-exemption:${digestJson(options.exemption).slice(0, 24)}`,
+    kind: 'generated',
+    externalId: options.exemption.acceptedBy,
+    digest: digestJson(options.exemption),
+    available: true,
+  }];
+  if (!options.exemption && regressionEvidence.length < 2) {
+    throw new Error('Debug resolution requires distinct fail-before and pass-after regression evidence.');
+  }
+  if (!options.exemption && regressionEvidence.some((item) => !item.available || !item.digest)) {
+    throw new Error('Debug resolution requires current digest-bound regression evidence.');
+  }
+  const revision = await sourceRevision(current, regressionEvidence);
+  const findingRevision = await sourceRevision(current, [
+    ...finding.evidence,
+    ...finding.transitions.flatMap((transition) => transition.evidence),
+  ]);
+  if (finding.transitions.at(-1)?.sourceRevision !== findingRevision) {
+    throw new Error('Debug resolution requires a current independently verified linked finding.');
+  }
+  const verification = {
+    verificationId: `debug-verification:${digestJson({
+      sessionId: session.sessionId, findingId: finding.findingId, verifier: options.verifier, revision,
+      evidence: regressionEvidence.map((item) => [item.referenceId, item.digest]),
+    }).slice(0, 24)}`,
+    findingId: finding.findingId,
+    verifier: options.verifier,
+    evidence: regressionEvidence,
+    ...(!options.exemption ? {
+      failBeforeEvidence: regressionEvidence[0],
+      passAfterEvidence: regressionEvidence[1],
+    } : { exemption: options.exemption }),
+    sourceRevision: revision,
+    verifiedAt: now,
+  };
   const updated = resolveDebugSession({
-    session: debugSession(current, options.sessionId), regressionEvidence: options.regressionEvidence, now,
+    session, regressionEvidence, verification, now,
     ...(options.exemption ? { exemption: options.exemption } : {}),
   });
-  const sessions = await appendDebugEvent({ current, now,
-    eventId: `debug-resolved:${options.sessionId}:${now}`,
-    payload: { type: 'debug.session_updated', sessionId: options.sessionId, status: updated.status,
-      nextAction: updated.nextAction, regressionEvidence: updated.regressionEvidence },
+  await appendDebugEvent({ current, now,
+    eventId: `debug-verification:${options.sessionId}:${verification.verificationId}`,
+    actor: options.verifier,
+    payload: { type: 'debug.verification_recorded', sessionId: options.sessionId, verification },
+  });
+  const refreshed = await currentV2(options);
+  const resolutionAt = new Date(Date.parse(now) + 1).toISOString();
+  const sessions = await appendDebugEvent({ current: refreshed, now: resolutionAt,
+    eventId: `debug-resolved:${options.sessionId}:${verification.verificationId}`,
+    actor: options.verifier,
+    payload: { type: 'debug.session_resolved', sessionId: options.sessionId,
+      verificationId: verification.verificationId, nextAction: updated.nextAction! },
   });
   return sessions.find((item) => item.sessionId === options.sessionId)!;
 }
