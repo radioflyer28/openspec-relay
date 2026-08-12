@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "owner": "openspec-guardrails",
+  "runId": "v1-fixture-run",
+  "changeName": "baseline",
+  "createdAt": "2026-08-09T00:00:00.000Z",
+  "seed": {
+    "changeRef": "openspec/changes/baseline",
+    "mode": "guarded",
+    "tier": "tier0",
+    "status": "running",
+    "startedAt": "2026-08-09T00:00:00.000Z",
+    "gateIds": ["guardrails.assurance"],
+    "config": {
+      "version": 1,
+      "mode": "guarded",
+      "tdd": "auto",
+      "repairLimit": 2,
+      "allowAgentDispatch": false,
+      "allowParallel": false,
+      "git": { "commits": false, "branches": false, "worktrees": false },
+      "requiredCheckers": [],
+      "disabledCheckers": [],
+      "taskOverrides": {}
+    },
+    "checks": [{
+      "checkId": "artifact-validation",
+      "kind": "artifact-validation",
+      "status": "pass",
+      "summary": "Required OpenSpec artifacts were compiled.",
+      "evidenceIds": [],
+      "readOnly": false,
+      "independent": false,
+      "remediation": []
+    }],
+    "scenarioCoverage": []
+  },
+  "events": []
+}

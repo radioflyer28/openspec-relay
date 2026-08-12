@@ -6,6 +6,8 @@ import {
   guardrailsAssuranceGate,
   readAssuranceState,
   seedAssuranceState,
+  checkGuardrailsRunV2,
+  startGuardrailsRunV2,
   startGuardrailsRun,
 } from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
@@ -28,6 +30,19 @@ function context(root: string, changeDir: string): GateContextV1 {
 }
 
 describe('Guardrails archive gate', () => {
+  it('evaluates v2 projections and preserves their subordinate archive obligations', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const checked = await checkGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    expect(checked.run).toMatchObject({ version: 2, status: 'blocked' });
+    expect(checked.assurance.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ checkId: 'repository-context', status: 'pass' }),
+      expect.objectContaining({ checkId: 'plan-readiness', status: 'warn' }),
+    ]));
+    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
+      .toMatchObject({ status: 'fail', summary: expect.stringContaining('repository-checks') });
+  });
+
   it('fails closed for incomplete assurance and returns human-needed state', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await startGuardrailsRun({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });

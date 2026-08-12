@@ -18,9 +18,9 @@ every tier enforces the same assurance outcomes.
 - Node.js 20.19 or newer
 - an API-bearing OpenSpec distribution in the manifest's supported range
 
-Until the generic extension API is released by official OpenSpec, install the
-maintained fork prerelease first, verify its identity, and then install
-Guardrails into the project:
+Until the generic extension API is released by official OpenSpec, use the
+maintained fork prerelease locally, verify its identity, and then link or
+install a private Guardrails artifact into the project:
 
 ```bash
 npm install --global github:radioflyer28/OpenSpec#v1.8.0-guardrails.1
@@ -43,7 +43,7 @@ openspec extension doctor guardrails
 ```
 
 The local development dependency uses `../OpenSpec`; it is not included in the
-published package. Runtime imports use only `@fission-ai/openspec/extensions`.
+private packed artifact. Runtime imports use only `@fission-ai/openspec/extensions`.
 
 ## Workflows and CLI
 
@@ -52,6 +52,8 @@ After OpenSpec reconciles the extension, supported tools receive:
 - `/opsx:run <change> [--mode quick|guarded|full]`
 - `/opsx:check <change> [--repair]`
 - `/opsx:run-status <change>`
+- `/opsx:debug <change> [--finding <id>]`
+- `/opsx:uat <change>`
 
 The generated workflows invoke the portable companion CLI:
 
@@ -59,6 +61,8 @@ The generated workflows invoke the portable companion CLI:
 openspec-guardrails run add-feature
 openspec-guardrails check add-feature
 openspec-guardrails run-status add-feature --json
+openspec-guardrails debug add-feature --finding <id> --json
+openspec-guardrails uat add-feature --json
 ```
 
 `quick` performs artifact validation, deterministic checks, targeted tests,
@@ -75,7 +79,7 @@ precedence:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "mode": "guarded",
   "tdd": "auto",
   "repairLimit": 2,
@@ -88,6 +92,13 @@ precedence:
   },
   "requiredCheckers": [],
   "disabledCheckers": [],
+  "features": {
+    "repositoryContext": { "enabled": true, "boundaries": [] },
+    "readiness": { "rollout": "report_only", "independentRequired": true },
+    "debug": { "enabled": true, "automaticTransition": true },
+    "uat": { "enabled": true, "required": false },
+    "releaseAssurance": { "enabled": "auto", "surfaces": [], "drivers": [], "configuredCommands": [], "requiredPlatforms": [] }
+  },
   "taskOverrides": {
     "2.1": {
       "tdd": "always",
@@ -99,7 +110,8 @@ precedence:
 ```
 
 Generated state is stored under
-`openspec/changes/<change>/.guardrails/{run,assurance}.json`. The core-owned
+`openspec/changes/<change>/.guardrails/events.json`; `run.json`,
+`assurance.json`, and `reports/` are replaceable v2 projections. The core-owned
 `.openspec-gates.json` records the durable `guardrails.assurance` archive
 obligation. Acceptance is digest-bound; stale evidence requires renewed human
 acceptance. Missing, disabled, corrupt, timed-out, or mismatched providers fail
@@ -109,17 +121,21 @@ closed through OpenSpec's archive gate protocol.
 
 1. Upgrade the maintained fork prerelease and run
    `openspec extension doctor guardrails`.
-2. Upgrade Guardrails with `openspec extension install openspec-guardrails@<version>`.
+2. Upgrade Guardrails by relinking its checked-out directory. To verify a
+   private packed artifact, unpack or locally install that artifact first, then
+   link its unpacked extension directory with `openspec extension link <path>`;
+   the current core `install` command is registry-only.
 3. Run `openspec extension doctor guardrails` again and regenerate configured
    workflows with `openspec update` if needed.
 4. Finish or explicitly override any active change gate obligations before
    disabling or removing an older package. Disabling an extension does not erase
    existing obligations.
 
-OpenSpec and Guardrails are packaged and released independently. The companion
+OpenSpec and Guardrails are packaged and versioned independently. The companion
 CI builds both the selected OpenSpec integration branch and Guardrails, runs the
 conformance and cross-repository suites on Linux, macOS, and Windows, and packs
-both release units before publication.
+both release units for private installation. Registry publication is not part of
+this workflow.
 
 When official OpenSpec publishes this API, install its first documented
 API-bearing release, run `openspec extension doctor guardrails`, and only then

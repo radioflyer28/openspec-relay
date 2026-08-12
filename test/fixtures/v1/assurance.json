@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "runId": "v1-fixture-run",
+  "changeName": "baseline",
+  "mode": "guarded",
+  "status": "pending",
+  "updatedAt": "2026-08-09T00:00:00.000Z",
+  "checks": [{
+    "checkId": "artifact-validation",
+    "kind": "artifact-validation",
+    "status": "pass",
+    "summary": "Required OpenSpec artifacts were compiled.",
+    "evidenceIds": [],
+    "readOnly": false,
+    "independent": false,
+    "remediation": []
+  }],
+  "evidence": [],
+  "scenarioCoverage": [],
+  "repairs": [],
+  "findings": [],
+  "staleEvidenceIds": [],
+  "unresolvedHumanActions": []
+}

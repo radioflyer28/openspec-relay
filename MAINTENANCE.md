@@ -19,9 +19,10 @@ human-maintained planning truth.
    resulting allowlist and budget report.
 5. In this repository, point `OPENSPEC_CORE_ROOT` at the candidate checkout and
    run build, type-check, lint, full tests, and conformance.
-6. Run the cross-repository lifecycle suite and package both release units.
+6. Run the cross-repository lifecycle suite and pack both release units for
+   private link or packed-artifact installation.
 7. Push both candidate branches and require real Linux, macOS, and Windows CI
-   results before release.
+   results before sharing a new private artifact.
 
 The OpenSpec seam-specific conflict history, file budget, and rationale live in
 `docs/extension-seam-maintenance.md` in the fork. A new production edit outside
@@ -51,16 +52,18 @@ must remain a fail-closed archive condition.
 
 1. Assign the fork a unique prerelease such as `1.8.0-guardrails.2`; never reuse
    an official stable version.
-2. Build, test, pack, and publish the API-bearing fork artifact. Verify its
-   repository identity and public extension export from the installed artifact.
+2. Build, test, and pack the API-bearing fork artifact. Verify its repository
+   identity and public extension export from the locally installed artifact.
 3. Install that exact artifact in a clean environment and run this repository's
    conformance and cross-repository suites against it.
-4. Assign and publish the companion version only after the fork artifact passes.
-5. Install both published artifacts in a clean project, link or install
-   Guardrails, run doctor, generate workflows, exercise a guarded run, satisfy a
-   human gate, exercise an audited override, and archive.
-6. Publish release notes with the supported core range, API feature marker,
-   migration notes, and rollback pair.
+4. Assign the companion version only after the fork artifact passes.
+5. Install both private artifacts in a clean project, unpack or locally install
+   Guardrails, link its unpacked directory, run doctor, generate workflows,
+   exercise a guarded run, satisfy a human gate, exercise an audited override,
+   and archive.
+6. Record private release notes with the supported core range, API feature
+   marker, migration notes, and rollback pair. Do not publish to a package
+   registry as part of this workflow.
 
 ## Rollback
 

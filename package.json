@@ -26,7 +26,8 @@
     "workflows",
     "openspec-extension.json",
     "README.md",
-    "MAINTENANCE.md"
+    "MAINTENANCE.md",
+    "COMPATIBILITY.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
