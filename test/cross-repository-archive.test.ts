@@ -48,6 +48,8 @@ describe('cross-repository archive gate flow', () => {
       update: (assurance) => ({
         ...assurance,
         status: 'human_needed',
+        checks: assurance.checks.map((check) => ({ ...check, status: 'pass' as const })),
+        scenarioCoverage: assurance.scenarioCoverage.map((scenario) => ({ ...scenario, status: 'covered' as const })),
         unresolvedHumanActions: ['Confirm the observable result.'],
       }),
     });
@@ -68,8 +70,13 @@ describe('cross-repository archive gate flow', () => {
       actor: 'integration-test',
     });
     expect(acceptance).toMatchObject({ accepted: true, eventType: 'human.decision' });
+    const stillBlocked = openspec(root, [
+      'archive', 'demo', '--yes', '--no-validate', '--skip-specs', '--json',
+    ]);
+    expect(stillBlocked.status).not.toBe(0);
     const archived = openspec(root, [
       'archive', 'demo', '--yes', '--no-validate', '--skip-specs', '--json',
+      '--override-gate', 'guardrails.assurance', '--reason', 'Cross-repository fixture intentionally leaves deterministic checks pending.',
     ]);
     expect(archived.status, archived.stderr || archived.stdout).toBe(0);
     const archiveRoot = path.join(root, 'openspec', 'changes', 'archive');

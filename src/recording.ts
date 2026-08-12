@@ -288,6 +288,14 @@ export async function acceptGuardrailsGate(options: {
     },
   });
   const appended = await appendGuardrailsEvent({ changeDir: resolved.changeDir, event });
+  const compiled = await compileCurrentOpenSpecChange({
+    projectRoot: resolved.projectRoot,
+    changeName: resolved.changeName,
+    changeDir: resolved.changeDir,
+    taskMetadata: appended.store.seed.config.taskOverrides,
+  });
+  const projection = await writeReplayedProjections({ changeDir: resolved.changeDir,
+    store: appended.store, compiled });
   return {
     accepted: true,
     appended: appended.appended,
@@ -295,7 +303,7 @@ export async function acceptGuardrailsGate(options: {
     eventType: event.payload.type,
     runId: event.runId,
     changeName: event.changeName,
-    projectionRepaired: false,
-    nextAction: nextAction(run),
+    projectionRepaired: projection.repaired,
+    nextAction: nextAction(projection.run),
   };
 }
