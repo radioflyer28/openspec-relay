@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as release from '../src/release-assurance.js';
+import { ConfiguredReleaseDriverV2Schema } from '../src/schemas.js';
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
@@ -90,6 +91,11 @@ describe('conditional release assurance', () => {
     const configured = api.createConfiguredCommandPlan as (input: Record<string, unknown>) => { expectedArtifacts: string[]; isolated: boolean };
     expect(configured({ command: 'node', args: ['--version'], expectedArtifacts: ['artifact.zip'] }))
       .toEqual(expect.objectContaining({ expectedArtifacts: ['artifact.zip'], isolated: true }));
+    expect(() => configured({ command: 'node', args: ['--version'], expectedArtifacts: ['../outside'] }))
+      .toThrow(/isolated workspace/i);
+    expect(() => ConfiguredReleaseDriverV2Schema.parse({
+      id: 'unsafe-artifact-path', command: 'node', expectedArtifacts: ['/outside'],
+    })).toThrow(/isolated release workspace/i);
   });
 
   it('executes a private build, pack, clean install, and installed public smoke without publication', async () => {
@@ -143,13 +149,14 @@ describe('conditional release assurance', () => {
     expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
   }, 30_000);
 
-  it('disables package lifecycle scripts and removes temporary package workspaces after a partial failure', async () => {
+  it('isolates build output, disables package lifecycle scripts, and removes temporary package workspaces after a partial failure', async () => {
     const root = await packageProject();
     const sentinel = path.join(root, 'package-script-ran');
     const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')) as {
       scripts?: Record<string, string>;
     };
     manifest.scripts = {
+      build: `${process.execPath} -e \"require('node:fs').writeFileSync('build-output', 'build')\"`,
       preinstall: `${process.execPath} -e \"require('node:fs').writeFileSync('${sentinel}', 'preinstall')\"`,
       prepack: `${process.execPath} -e \"require('node:fs').writeFileSync('${sentinel}', 'prepack')\"`,
       publish: `${process.execPath} -e \"require('node:fs').writeFileSync('${sentinel}', 'publish')\"`,
@@ -161,6 +168,7 @@ describe('conditional release assurance', () => {
     });
     expect(verification.status).toBe('pass');
     await expect(fs.access(sentinel)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(path.join(root, 'build-output'))).rejects.toMatchObject({ code: 'ENOENT' });
 
     manifest.scripts = { build: `${process.execPath} -e \"process.exit(1)\"` };
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(manifest));
