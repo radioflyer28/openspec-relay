@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import type { CompiledOpenSpecChangeV1 } from './artifacts.js';
+import { evaluateFindingObligations } from './findings.js';
 import { materializeCompiledTasks } from './reconciliation.js';
 import {
   AssuranceCheckV2Schema,
@@ -597,7 +598,7 @@ function assuranceStatusV2(options: {
       options.releaseCandidates.some((candidate) => candidate.status === 'error')) return 'error';
   if (options.checks.some((check) => check.status === 'fail') ||
       options.releaseCandidates.some((candidate) => candidate.status === 'fail') ||
-      options.findings.some((finding) => finding.blocking && !['independently_verified', 'accepted_risk'].includes(finding.state))) return 'fail';
+      evaluateFindingObligations({ findings: options.findings, scenarios: options.uatScenarios }).blocking.length > 0) return 'fail';
   if (options.uatScenarios.some((scenario) =>
     ['awaiting_human', 'blocked', 'stale'].includes(scenario.status)) ||
       options.releaseCandidates.some((candidate) => candidate.status === 'human_needed')) return 'human_needed';

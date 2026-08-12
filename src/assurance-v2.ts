@@ -1,4 +1,5 @@
 import { AssuranceCheckV2Schema, type GuardrailsAssuranceV2, type GuardrailsRunV2 } from './schemas.js';
+import { evaluateFindingObligations } from './findings.js';
 import { validateTddEvidence } from './tdd.js';
 import { mapScenarioCoverage } from './verification.js';
 
@@ -12,7 +13,7 @@ function overall(checks: GuardrailsAssuranceV2['checks'], assurance: GuardrailsA
   if (checks.some((item) => item.status === 'fail')) return 'fail';
   if (checks.some((item) => item.status === 'human_needed')) return 'human_needed';
   if (checks.some((item) => item.status === 'pending')) return 'pending';
-  if (assurance.findings.some((item) => item.blocking && !['independently_verified', 'accepted_risk'].includes(item.state))) return 'fail';
+  if (evaluateFindingObligations({ findings: assurance.findings, scenarios: assurance.uatScenarios }).blocking.length > 0) return 'fail';
   if (assurance.uatScenarios.some((item) => ['awaiting_human', 'awaiting_retest', 'failed', 'blocked', 'stale'].includes(item.status))) return 'human_needed';
   if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'error')) return 'error';
   if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'fail')) return 'fail';

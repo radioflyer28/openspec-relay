@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { discoverFinding, evaluateFindingObligations, transitionFinding } from '../src/findings.js';
 import * as uat from '../src/uat.js';
 
 const digest = '0'.repeat(64);
@@ -47,5 +48,30 @@ describe('conversational UAT', () => {
     expect(retest({ scenario, independentlyVerified: true })).toMatchObject({ status: 'awaiting_retest' });
     expect(invalidate({ scenarios: [accepted.scenario], sourceRevision: '1'.repeat(64) }))
       .toEqual([expect.objectContaining({ status: 'stale' })]);
+  });
+
+  it('treats a passed UAT scenario as the recorded human disposition for its originating human-needed finding', () => {
+    const api = uat as Record<string, unknown>;
+    const project = api.projectUatScenarios as (input: Record<string, unknown>) => Array<unknown>;
+    const record = api.recordUatDisposition as (input: Record<string, unknown>) => { scenario: unknown };
+    const discovered = discoverFinding({
+      providerId: 'review', ruleId: 'human-observation', category: 'acceptance',
+      scope: { kind: 'scenario', identity: scenarioId }, severity: 'error', blocking: true,
+      summary: 'A maintainer must observe the behavior.', requirementIds: [requirementId], taskIds: ['1.1'],
+      evidence: [], occurredAt: '2026-08-11T20:30:00.000Z', sourceRevision: digest,
+      actor: { kind: 'reviewer', id: 'reviewer-1' },
+    });
+    const humanNeeded = transitionFinding({
+      finding: discovered, to: 'human_needed', actor: { kind: 'reviewer', id: 'reviewer-1' },
+      reason: 'Automated evidence cannot establish this behavior.', evidence: [], sourceRevision: digest,
+      occurredAt: '2026-08-11T20:30:01.000Z',
+    });
+    const [scenario] = project({ coverage: [], findings: [humanNeeded], sourceRevision: digest });
+    const passed = record({
+      scenario, status: 'passed', actor: 'maintainer', notes: 'Observed the expected result.', evidence: [],
+      now: '2026-08-11T20:30:02.000Z',
+    });
+    expect(evaluateFindingObligations({ findings: [humanNeeded], scenarios: [passed.scenario] }))
+      .toEqual({ blocking: [], warnings: [] });
   });
 });

@@ -6,6 +6,7 @@ import {
   type FindingStateV2,
   type FindingTransitionV2,
   type PortableReferenceV2,
+  type UatScenarioV2,
 } from './schemas.js';
 
 export interface FindingDiscoveryInputV2 {
@@ -184,12 +185,21 @@ export function markFindingsStale(options: {
 
 export function evaluateFindingObligations(options: {
   findings: FindingLifecycleRecordV2[];
+  scenarios?: UatScenarioV2[];
   elevateWarnings?: boolean;
 }): { blocking: string[]; warnings: string[] } {
   const unresolved = new Set(['open', 'repaired', 'human_needed', 'stale']);
-  const blocking = options.findings.filter((finding) => finding.blocking && unresolved.has(finding.state))
+  const humanDispositions = new Set((options.scenarios ?? [])
+    .filter((scenario) => ['passed', 'accepted_limitation'].includes(scenario.status))
+    .map((scenario) => scenario.scenarioId));
+  const requiresMoreThanRecordedUat = (finding: FindingLifecycleRecordV2) =>
+    finding.state !== 'human_needed' || finding.scope.kind !== 'scenario' ||
+    !humanDispositions.has(finding.scope.identity);
+  const blocking = options.findings.filter((finding) => finding.blocking && unresolved.has(finding.state) &&
+    requiresMoreThanRecordedUat(finding))
     .map((finding) => finding.findingId).sort();
-  const warnings = options.findings.filter((finding) => !finding.blocking && unresolved.has(finding.state))
+  const warnings = options.findings.filter((finding) => !finding.blocking && unresolved.has(finding.state) &&
+    requiresMoreThanRecordedUat(finding))
     .map((finding) => finding.findingId).sort();
   return {
     blocking: options.elevateWarnings ? [...new Set([...blocking, ...warnings])].sort() : blocking,
