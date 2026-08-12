@@ -884,6 +884,14 @@ export function replayGuardrailsEventsV2(options: {
         ...(payload.regressionEvidence ? { regressionEvidence: payload.regressionEvidence } : {}),
         updatedAt: event.occurredAt });
     } else if (payload.type === 'uat.scenario_recorded') uatScenarios.set(payload.scenario.scenarioId, payload.scenario);
+    else if (payload.type === 'uat.scenario_retest') {
+      const scenario = uatScenarios.get(payload.scenarioId);
+      if (scenario) {
+        const updated = { ...scenario, status: 'awaiting_retest' as const, sourceRevision: payload.sourceRevision };
+        delete updated.disposition;
+        uatScenarios.set(payload.scenarioId, updated);
+      }
+    }
     else if (payload.type === 'uat.scenario_stale') {
       const scenario = uatScenarios.get(payload.scenarioId);
       if (scenario) uatScenarios.set(payload.scenarioId, { ...scenario, status: 'stale', sourceRevision: payload.sourceRevision });
@@ -891,6 +899,7 @@ export function replayGuardrailsEventsV2(options: {
     else if (payload.type === 'uat.disposition_recorded') {
       const scenario = uatScenarios.get(payload.scenarioId);
       if (scenario) uatScenarios.set(payload.scenarioId, { ...scenario, status: payload.status,
+        sourceRevision: payload.sourceRevision,
         disposition: { actor: payload.actor, recordedAt: event.occurredAt, notes: payload.notes, evidence: payload.evidence } });
     } else if (payload.type === 'release.evaluated') releaseCandidates.set(payload.candidate.candidateId, payload.candidate);
     else if (payload.type === 'checks.evaluated') checks = payload.checks.map((check) => AssuranceCheckV2Schema.parse(check));

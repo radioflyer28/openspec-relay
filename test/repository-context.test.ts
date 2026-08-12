@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { compileOpenSpecChange } from '../src/artifacts.js';
@@ -8,6 +9,42 @@ import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 afterEach(cleanupTemporaryRoots);
 
 describe('repository context', () => {
+  it('discovers committed clean-branch changes relative to explicit and conventional bases', async () => {
+    const { root } = await createOpenSpecProject();
+    await fs.mkdir(path.join(root, 'src'), { recursive: true });
+    await fs.writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 1;\n');
+    execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'guardrails@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'Guardrails Test'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-m', 'baseline'], { cwd: root });
+    execFileSync('git', ['checkout', '-b', 'feature'], { cwd: root });
+    await fs.writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 2;\n');
+    execFileSync('git', ['add', 'src/index.ts'], { cwd: root });
+    execFileSync('git', ['commit', '-m', 'feature'], { cwd: root });
+
+    const explicit = await repositoryContext.discoverRepositoryChangedFiles(root, 'main');
+    expect(explicit).toMatchObject({ files: ['src/index.ts'], source: 'git', comparisonBase: 'main' });
+    execFileSync('git', ['branch', '--set-upstream-to=main', 'feature'], { cwd: root });
+    const upstream = await repositoryContext.discoverRepositoryChangedFiles(root);
+    expect(upstream).toMatchObject({ files: ['src/index.ts'], source: 'git', comparisonBase: '@{upstream}' });
+    execFileSync('git', ['branch', '--unset-upstream'], { cwd: root });
+    const conventional = await repositoryContext.discoverRepositoryChangedFiles(root);
+    expect(conventional).toMatchObject({ files: ['src/index.ts'], source: 'git', comparisonBase: 'main' });
+  });
+
+  it('reports an unresolved comparison base instead of an empty impact set', async () => {
+    const { root } = await createOpenSpecProject();
+    execFileSync('git', ['init', '-b', 'topic'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'guardrails@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'Guardrails Test'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-m', 'only revision'], { cwd: root });
+
+    const discovered = await repositoryContext.discoverRepositoryChangedFiles(root);
+    expect(discovered).toMatchObject({ files: [], source: 'git', unresolved: expect.stringContaining('comparison base') });
+  });
+
   it('collects traceable analogs, modules, conventions, boundaries, consumers, and conflicts', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.mkdir(path.join(root, 'src'), { recursive: true });

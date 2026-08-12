@@ -14,9 +14,10 @@ import {
 } from './events.js';
 import { selectAssurancePipeline } from './modes.js';
 import { evaluateAssuranceV2 } from './assurance-v2.js';
-import { compileRepositoryContext, discoverRepositoryChangedFiles } from './repository-context.js';
+import { compileRepositoryContext, computeMaterialRevision, discoverRepositoryChangedFiles } from './repository-context.js';
 import { evaluatePlanReadiness, evaluatePlanReadinessWithAdapter } from './readiness.js';
 import { detectReleaseApplicability, executeReleaseCandidates } from './release-assurance.js';
+import { projectUatScenarios, requiredUatProjectionError } from './uat.js';
 import {
   AssuranceCheckV2Schema,
   GuardrailsConfigV1Schema,
@@ -111,10 +112,15 @@ async function planningInputs(options: {
   changedFiles?: string[];
   now: string;
 }) {
-  const changedFiles = options.changedFiles ?? (await discoverRepositoryChangedFiles(options.projectRoot)).files;
+  const discovery = options.changedFiles === undefined
+    ? await discoverRepositoryChangedFiles(options.projectRoot, options.config.features.repositoryContext.comparisonBase)
+    : { files: options.changedFiles, source: 'git' as const };
+  const changedFiles = discovery.files;
   const context = await compileRepositoryContext({
     projectRoot: options.projectRoot, changeDir: options.changeDir, changeName: options.changeName,
     compiled: options.compiled, changedFiles, boundaries: options.config.features.repositoryContext.boundaries,
+    comparisonBase: options.config.features.repositoryContext.comparisonBase,
+    impactUnknown: discovery.unresolved,
     tier: options.tier, adapter: options.adapters?.repositoryAnalyzer, now: options.now,
   });
   const readinessOptions = {
@@ -131,10 +137,22 @@ async function planningInputs(options: {
   const scenarioCoverage = mapScenarioCoverage({
     scenarioIds: options.compiled.scenarioIds, evidence: [], humanNeeded,
   });
-  return { changedFiles, context, readiness, scenarioCoverage };
+  const revision = await computeMaterialRevision({ projectRoot: options.projectRoot, compiled: options.compiled, context });
+  const uatScenarios = projectUatScenarios({
+    coverage: scenarioCoverage,
+    findings: [],
+    taskIdsByScenario: Object.fromEntries(options.compiled.graph.nodes.flatMap((task) =>
+      task.scenarioRefs.map((scenarioId) => [scenarioId, [task.taskId]]))),
+    sourceRevision: revision,
+  });
+  if (options.config.features.uat.required && uatScenarios.length === 0) {
+    uatScenarios.push(requiredUatProjectionError(revision));
+  }
+  return { changedFiles, impactUnknown: discovery.unresolved, context, readiness, scenarioCoverage, uatScenarios };
 }
 
 async function refreshPlanningEvents(options: {
+  projectRoot: string;
   changeDir: string;
   store: Awaited<ReturnType<typeof readEventStoreV2>>;
   compiled: Awaited<ReturnType<typeof compileOpenSpecChange>>;
@@ -142,6 +160,7 @@ async function refreshPlanningEvents(options: {
   context: Awaited<ReturnType<typeof compileRepositoryContext>>;
   readiness: ReturnType<typeof evaluatePlanReadiness>;
   scenarioCoverage: GuardrailsAssuranceV2['scenarioCoverage'];
+  uatScenarios: GuardrailsAssuranceV2['uatScenarios'];
   now: string;
   origin: string;
 }) {
@@ -175,18 +194,38 @@ async function refreshPlanningEvents(options: {
     { type: 'readiness.evaluated', result: options.readiness });
   await append(`scenario-coverage:${controllingRevision(options.compiled)}:${options.now}`, { kind: 'automation' },
     { type: 'scenario.coverage_reconciled', coverage: options.scenarioCoverage });
-  const sourceRevision = controllingRevision(options.compiled);
+  const existingScenarioIds = new Set(options.current.assurance.uatScenarios.map((scenario) => scenario.scenarioId));
+  for (const scenario of options.uatScenarios.filter((item) => !existingScenarioIds.has(item.scenarioId))) await append(
+    `uat:${scenario.scenarioId}:${scenario.sourceRevision.slice(0, 12)}`,
+    { kind: 'automation' },
+    { type: 'uat.scenario_recorded', scenario },
+  );
   for (const finding of options.current.assurance.findings.filter((item) =>
-    ['repaired', 'independently_verified', 'accepted_risk'].includes(item.state) &&
-      item.transitions.at(-1)?.sourceRevision !== sourceRevision)) await append(
-    `finding-stale:${finding.findingId}:${sourceRevision.slice(0, 12)}`, { kind: 'automation' },
-    { type: 'finding.stale', findingId: finding.findingId, sourceRevision },
-  );
+    ['repaired', 'independently_verified', 'accepted_risk'].includes(item.state))) {
+    const sourceRevision = await computeMaterialRevision({
+      projectRoot: options.projectRoot,
+      compiled: options.compiled,
+      context: options.context,
+      evidence: [...finding.evidence, ...finding.transitions.flatMap((transition) => transition.evidence)],
+    });
+    if (finding.transitions.at(-1)?.sourceRevision !== sourceRevision) await append(
+      `finding-stale:${finding.findingId}:${sourceRevision.slice(0, 12)}`, { kind: 'automation' },
+      { type: 'finding.stale', findingId: finding.findingId, sourceRevision },
+    );
+  }
   for (const scenario of options.current.assurance.uatScenarios.filter((item) =>
-    ['passed', 'accepted_limitation'].includes(item.status) && item.sourceRevision !== sourceRevision)) await append(
-    `uat-stale:${scenario.scenarioId}:${sourceRevision.slice(0, 12)}`, { kind: 'automation' },
-    { type: 'uat.scenario_stale', scenarioId: scenario.scenarioId, sourceRevision },
-  );
+    ['passed', 'accepted_limitation'].includes(item.status))) {
+    const sourceRevision = await computeMaterialRevision({
+      projectRoot: options.projectRoot,
+      compiled: options.compiled,
+      context: options.context,
+      evidence: scenario.disposition?.evidence,
+    });
+    if (scenario.sourceRevision !== sourceRevision) await append(
+      `uat-stale:${scenario.scenarioId}:${sourceRevision.slice(0, 12)}`, { kind: 'automation' },
+      { type: 'uat.scenario_stale', scenarioId: scenario.scenarioId, sourceRevision },
+    );
+  }
 }
 
 export async function startGuardrailsRunV2(options: {
@@ -220,8 +259,9 @@ export async function startGuardrailsRunV2(options: {
     const planning = await planningInputs({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir,
       changeName: resolved.changeName, compiled, config: store.seed.config, tier: store.seed.tier,
       adapters: options.adapters, changedFiles: options.changedFiles, now });
-    await refreshPlanningEvents({ changeDir: resolved.changeDir, store, compiled, current,
+    await refreshPlanningEvents({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, store, compiled, current,
       context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
+      uatScenarios: planning.uatScenarios,
       now, origin: 'guardrails-v2-resume' });
     const refreshedStore = await readEventStoreV2(resolved.changeDir);
     const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store: refreshedStore, compiled });
@@ -252,6 +292,7 @@ export async function startGuardrailsRunV2(options: {
   const releaseCandidates = await detectReleaseApplicability({
     projectRoot: resolved.projectRoot,
     changedFiles: planning.changedFiles,
+    impactUnknown: planning.impactUnknown,
     config: config.features.releaseAssurance,
   });
   const blockedBeforeExecution = config.features.readiness.rollout === 'required' && readiness.status !== 'pass';
@@ -280,6 +321,16 @@ export async function startGuardrailsRunV2(options: {
       sourceDigests, actor: { kind: 'automation' }, provenance: { origin: 'guardrails-v2-run', adapter: tier },
       payload: { type: 'scenario.coverage_reconciled', coverage: scenarioCoverage },
     }),
+    ...planning.uatScenarios.map((scenario) => createGuardrailsEventV2({
+      eventId: `uat:${scenario.scenarioId}:${scenario.sourceRevision.slice(0, 12)}`,
+      runId,
+      changeName: resolved.changeName,
+      occurredAt: now,
+      sourceDigests,
+      actor: { kind: 'automation' },
+      provenance: { origin: 'guardrails-v2-run', adapter: tier },
+      payload: { type: 'uat.scenario_recorded', scenario },
+    })),
     ...releaseCandidates.map((candidate) => createGuardrailsEventV2({
       eventId: `release:${candidate.candidateId}`, runId, changeName: resolved.changeName, occurredAt: now,
       sourceDigests, actor: { kind: 'release_driver', id: 'applicability' },
@@ -338,6 +389,7 @@ export async function checkGuardrailsRunV2(options: {
   const detectedReleaseCandidates = await detectReleaseApplicability({
     projectRoot: resolved.projectRoot,
     changedFiles: planning.changedFiles,
+    impactUnknown: planning.impactUnknown,
     config: config.features.releaseAssurance,
   });
   const previousArtifactPath = config.features.releaseAssurance.previousArtifactPath
@@ -349,8 +401,9 @@ export async function checkGuardrailsRunV2(options: {
     config: store.seed.config.features.releaseAssurance,
     previousArtifactPath,
   });
-  await refreshPlanningEvents({ changeDir: resolved.changeDir, store, compiled, current,
+  await refreshPlanningEvents({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, store, compiled, current,
     context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
+    uatScenarios: planning.uatScenarios,
     now, origin: 'guardrails-v2-check' });
   let releaseStore = await readEventStoreV2(resolved.changeDir);
   for (const candidate of releaseCandidates) {

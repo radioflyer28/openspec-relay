@@ -91,6 +91,7 @@ function candidateStatus(applicable: boolean): ReleaseCandidateV2['status'] {
 export async function detectReleaseApplicability(options: {
   projectRoot: string;
   changedFiles?: string[];
+  impactUnknown?: string;
   config?: Partial<{
     enabled: 'auto' | 'always' | 'off';
     disabledReason: string;
@@ -107,6 +108,7 @@ export async function detectReleaseApplicability(options: {
   const config = ReleaseAssuranceConfigV2Schema.parse(options.config ?? {});
   const changed = new Set((options.changedFiles ?? []).map((file) => file.replaceAll('\\', '/')));
   const candidates: ReleaseCandidateV2[] = [];
+  const impactUnknown = config.enabled === 'off' ? undefined : options.impactUnknown;
   const manifestPath = path.join(options.projectRoot, SUPPORTED_RELEASE_MANIFESTS.node_package.filename);
   try {
     const packageJson = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as { name?: string; bin?: unknown };
@@ -116,13 +118,19 @@ export async function detectReleaseApplicability(options: {
     const enabled = config.enabled === 'always' || (config.enabled === 'auto' && packageChanged);
     const applicable = config.enabled !== 'off' && Boolean(packageJson.name) && enabled;
     candidates.push(candidate({
-      surface: 'node_package', applicable, activationEvidence: evidence, status: candidateStatus(applicable), checks: [],
+      surface: 'node_package', applicable: Boolean(impactUnknown) || applicable, activationEvidence: evidence,
+      status: impactUnknown ? 'human_needed' : candidateStatus(applicable),
+      checks: impactUnknown ? [{ checkId: 'release-impact', status: 'human_needed',
+        summary: impactUnknown, evidence }] : [],
     }));
     if (packageJson.bin) {
       const cliChanged = changed.has('package.json') || [...changed].some((file) => /(?:cli|bin)/i.test(file));
       const cliApplicable = config.enabled !== 'off' && (config.enabled === 'always' || (config.enabled === 'auto' && cliChanged));
       candidates.push(candidate({
-        surface: 'cli', applicable: cliApplicable, activationEvidence: evidence, status: candidateStatus(cliApplicable), checks: [],
+        surface: 'cli', applicable: Boolean(impactUnknown) || cliApplicable, activationEvidence: evidence,
+        status: impactUnknown ? 'human_needed' : candidateStatus(cliApplicable),
+        checks: impactUnknown ? [{ checkId: 'release-impact', status: 'human_needed',
+          summary: impactUnknown, evidence }] : [],
       }));
     }
   } catch {
@@ -136,7 +144,11 @@ export async function detectReleaseApplicability(options: {
       const applicable = config.enabled !== 'off' && (config.enabled === 'always' || changed.has(relative));
       candidates.push(candidate({
         surface: surface === 'openspec_extension' ? 'extension' : 'plugin',
-        applicable, activationEvidence: evidence, status: candidateStatus(applicable), checks: [],
+        applicable: Boolean(impactUnknown) || applicable,
+        activationEvidence: evidence,
+        status: impactUnknown ? 'human_needed' : candidateStatus(applicable),
+        checks: impactUnknown ? [{ checkId: 'release-impact', status: 'human_needed',
+          summary: impactUnknown, evidence }] : [],
       }));
     } catch {
       // The surface is not present in this repository.

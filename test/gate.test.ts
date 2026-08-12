@@ -39,8 +39,8 @@ function context(root: string, changeDir: string): GateContextV1 {
 describe('Guardrails archive gate', () => {
   it('evaluates v2 projections and preserves their subordinate archive obligations', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
-    const checked = await checkGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: [], config: { mode: 'quick' } });
+    const checked = await checkGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
     expect(checked.run).toMatchObject({ version: 2, status: 'blocked' });
     expect(checked.assurance.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ checkId: 'repository-context', status: 'pass' }),
@@ -48,6 +48,24 @@ describe('Guardrails archive gate', () => {
     ]));
     expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
       .toMatchObject({ status: 'fail', summary: expect.stringContaining('repository-checks') });
+  });
+
+  it('records an archive-blocking projection error when required UAT has no OpenSpec scenario', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await fs.writeFile(`${changeDir}/specs/demo/spec.md`, [
+      '## ADDED Requirements',
+      '',
+      '### Requirement: Demonstrate behavior',
+      'The system SHALL demonstrate behavior.',
+      '',
+    ].join('\n'));
+    await startGuardrailsRunV2({
+      change: 'demo', projectRoot: root, changedFiles: [],
+      config: { features: { uat: { enabled: true, required: true } } },
+    });
+    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+      status: 'error', summary: expect.stringMatching(/required UAT.*no projected/i),
+    });
   });
 
   it('fails closed for incomplete assurance and returns human-needed state', async () => {
