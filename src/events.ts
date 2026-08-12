@@ -741,7 +741,7 @@ function assuranceStatusV2(options: {
   if (options.checks.some((check) => check.status === 'fail') ||
       options.releaseCandidates.some((candidate) => candidate.status === 'fail') ||
       evaluateFindingObligations({ findings: options.findings, scenarios: options.uatScenarios }).blocking.length > 0) return 'fail';
-  if (options.debugSessions.some((session) => session.status !== 'resolved')) return 'human_needed';
+  if (options.debugSessions.some((session) => session.status !== 'resolved' || !session.verification)) return 'human_needed';
   if (options.uatScenarios.some((scenario) =>
     ['awaiting_human', 'blocked', 'stale'].includes(scenario.status)) ||
       options.releaseCandidates.some((candidate) => candidate.status === 'human_needed')) return 'human_needed';
@@ -868,6 +868,7 @@ export function replayGuardrailsEventsV2(options: {
       if (session) debugSessions.set(payload.sessionId, { ...session,
         changedReferences: session.changedReferences.some((item) => item.referenceId === payload.reference.referenceId &&
           item.digest === payload.reference.digest) ? session.changedReferences : [...session.changedReferences, payload.reference],
+        nextAction: 'Reevaluate affected hypotheses, conclusions, and planned actions against the changed reference.',
         updatedAt: event.occurredAt });
     } else if (payload.type === 'debug.question_recorded') {
       const session = debugSessions.get(payload.sessionId);
@@ -877,9 +878,24 @@ export function replayGuardrailsEventsV2(options: {
       const session = debugSessions.get(payload.sessionId);
       if (session) debugSessions.set(payload.sessionId, { ...session,
         nextAction: payload.nextAction, updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.verification_recorded') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session) debugSessions.set(payload.sessionId, { ...session,
+        verification: payload.verification,
+        regressionEvidence: payload.verification.evidence,
+        updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.session_resolved') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session?.verification?.verificationId === payload.verificationId) debugSessions.set(payload.sessionId, {
+        ...session,
+        status: 'resolved',
+        nextAction: payload.nextAction,
+        updatedAt: event.occurredAt,
+      });
     } else if (payload.type === 'debug.session_updated') {
       const session = debugSessions.get(payload.sessionId);
-      if (session) debugSessions.set(payload.sessionId, { ...session, status: payload.status,
+      if (session) debugSessions.set(payload.sessionId, { ...session,
+        status: payload.status === 'resolved' && !session.verification ? 'human_needed' : payload.status,
         ...(payload.nextAction ? { nextAction: payload.nextAction } : {}),
         ...(payload.regressionEvidence ? { regressionEvidence: payload.regressionEvidence } : {}),
         updatedAt: event.occurredAt });

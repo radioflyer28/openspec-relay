@@ -5,6 +5,7 @@ import {
   type DebugExperimentV2,
   type DebugHypothesisV2,
   type DebugSessionV2,
+  type DebugVerificationV2,
   type PortableReferenceV2,
 } from './schemas.js';
 
@@ -221,6 +222,7 @@ export function debugSessionForRepairExhaustion(options: {
 export function resolveDebugSession(options: {
   session: DebugSessionV2;
   regressionEvidence: PortableReferenceV2[];
+  verification: DebugVerificationV2;
   now?: string;
   exemption?: { reason: string; acceptedBy: string };
 }): DebugSessionV2 {
@@ -234,11 +236,21 @@ export function resolveDebugSession(options: {
   if (!options.exemption && !session.conclusions.some((item) => item.kind === 'root_cause')) {
     throw new Error('Resolved behavior defects require an evidence-backed root-cause conclusion.');
   }
+  if (!session.findingId || !options.verification || options.verification.findingId !== session.findingId) {
+    throw new Error('Debug resolution requires independent verification of the linked finding.');
+  }
+  if (!options.verification.verifier.id || !['verifier', 'human'].includes(options.verification.verifier.kind)) {
+    throw new Error('Debug resolution requires a distinct authorized verifier actor.');
+  }
+  if (!options.exemption && (!options.verification.failBeforeEvidence || !options.verification.passAfterEvidence)) {
+    throw new Error('Debug resolution requires distinct fail-before and pass-after regression evidence.');
+  }
   return DebugSessionV2Schema.parse({
     ...session,
     status: 'resolved',
     updatedAt: options.now ?? new Date().toISOString(),
     regressionEvidence: options.regressionEvidence,
+    verification: options.verification,
     nextAction: options.exemption ? `Regression exemption accepted by ${options.exemption.acceptedBy}: ${options.exemption.reason}`
       : 'Regression evidence is ready for independent verification.',
   });

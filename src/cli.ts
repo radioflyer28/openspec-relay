@@ -17,6 +17,9 @@ import {
   observeDebugExperimentV2,
   planDebugExperimentV2,
   recordDebugConclusionV2,
+  recordDebugNextActionV2,
+  recordDebugQuestionV2,
+  recordDebugReferenceChangeV2,
   presentUatV2,
   recordDebugHypothesisV2,
   recordLegacyPayloadV2,
@@ -125,8 +128,13 @@ program.command('debug')
   .option('--observation <text>')
   .option('--conclusion <text>')
   .option('--root-cause <text>')
+  .option('--changed-reference', 'Record each --evidence reference as changed')
+  .option('--question <text>')
+  .option('--next-action <text>')
   .option('--evidence <json-file|->')
   .option('--resolve')
+  .option('--verifier <id>')
+  .option('--verifier-kind <kind>', 'verifier or human', 'verifier')
   .option('--exemption-reason <text>')
   .option('--accepted-by <human>')
   .option('--project <path>')
@@ -178,12 +186,41 @@ program.command('debug')
         Boolean(options.json));
       return;
     }
+    if (options.changedReference) {
+      if (!options.session || evidence.length === 0) {
+        throw new Error('Recording changed references requires --session and --evidence.');
+      }
+      let session;
+      for (const reference of evidence) session = await recordDebugReferenceChangeV2({
+        change, projectRoot: options.project, sessionId: options.session, reference,
+      });
+      print(options.json ? { session } : `Recorded changed references for ${options.session}.`, Boolean(options.json));
+      return;
+    }
+    if (options.question) {
+      if (!options.session) throw new Error('Recording an unresolved question requires --session.');
+      const session = await recordDebugQuestionV2({
+        change, projectRoot: options.project, sessionId: options.session, question: options.question,
+      });
+      print(options.json ? { session } : `Recorded unresolved question for ${session.sessionId}.`, Boolean(options.json));
+      return;
+    }
+    if (options.nextAction) {
+      if (!options.session) throw new Error('Recording a next action requires --session.');
+      const session = await recordDebugNextActionV2({
+        change, projectRoot: options.project, sessionId: options.session, nextAction: options.nextAction,
+      });
+      print(options.json ? { session } : `Recorded next action for ${session.sessionId}.`, Boolean(options.json));
+      return;
+    }
     if (options.resolve) {
-      if (!options.session || (options.exemptionReason && !options.acceptedBy)) {
-        throw new Error('Debug resolution requires --session and an --accepted-by actor for any exemption.');
+      if (!options.session || !options.verifier || !['verifier', 'human'].includes(options.verifierKind) ||
+          (options.exemptionReason && !options.acceptedBy)) {
+        throw new Error('Debug resolution requires --session, --verifier, a valid --verifier-kind, and an --accepted-by actor for any exemption.');
       }
       const session = await resolveDebugSessionV2({
         change, projectRoot: options.project, sessionId: options.session, regressionEvidence: evidence,
+        verifier: { kind: options.verifierKind, id: options.verifier },
         ...(options.exemptionReason ? { exemption: { reason: options.exemptionReason, acceptedBy: options.acceptedBy } } : {}),
       });
       print(options.json ? { session } : `Resolved debug session ${session.sessionId}.`, Boolean(options.json));

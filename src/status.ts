@@ -127,7 +127,8 @@ export async function getRunStatusV2(options: {
     findings,
     debugSessions: {
       active: assurance.debugSessions.filter((session) => session.status === 'active').map((session) => session.sessionId),
-      humanNeeded: assurance.debugSessions.filter((session) => session.status === 'human_needed').map((session) => session.sessionId),
+      humanNeeded: assurance.debugSessions.filter((session) => session.status === 'human_needed' ||
+        (session.status === 'resolved' && !session.verification)).map((session) => session.sessionId),
     },
     uat: {
       pending: pendingUat.map((scenario) => scenario.scenarioId),

@@ -103,7 +103,7 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
           evidence,
           ['Repair the findings and record independent verification or an explicit accepted risk.'],
         );
-        const debugging = assurance.debugSessions.filter((session) => session.status !== 'resolved');
+        const debugging = assurance.debugSessions.filter((session) => session.status !== 'resolved' || !session.verification);
         if (debugging.length > 0) return result(
           'human_needed',
           `Guardrails has unresolved debugging investigations: ${debugging.map((session) =>

@@ -7,7 +7,13 @@ import { compileOpenSpecChange } from '../src/artifacts.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { startGuardrailsRunV2 } from '../src/runner-v2.js';
 import { readAssuranceStateV2 } from '../src/state.js';
-import { presentUatV2, recordLegacyPayloadV2, recordUatV2, transitionFindingV2 } from '../src/v2-operations.js';
+import {
+  presentUatV2,
+  recordLegacyPayloadV2,
+  recordUatV2,
+  resolveDebugSessionV2,
+  transitionFindingV2,
+} from '../src/v2-operations.js';
 import { checkGuardrailsRunV2 } from '../src/runner-v2.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
@@ -230,6 +236,10 @@ describe('v2 debug and UAT operations', () => {
     const { root, changeDir } = await createOpenSpecProject();
     await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
     const finding = await addHumanFinding(root, changeDir);
+    const initialPresentation = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'uat', 'demo', '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    const uatScenarioId = initialPresentation.next.scenarioId;
     const debug = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'debug', 'demo', '--project', root, '--finding', finding.findingId, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
@@ -240,7 +250,10 @@ describe('v2 debug and UAT operations', () => {
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     const evidenceFile = `${root}/debug-evidence.json`;
     await fs.writeFile(evidenceFile, JSON.stringify([
-      { referenceId: 'test:debug', kind: 'generated', externalId: 'debug', available: true },
+      { referenceId: 'test:debug:red', kind: 'generated', externalId: 'debug-red',
+        digest: createHash('sha256').update('debug-red').digest('hex'), available: true },
+      { referenceId: 'test:debug:green', kind: 'generated', externalId: 'debug-green',
+        digest: createHash('sha256').update('debug-green').digest('hex'), available: true },
     ]));
     const experiment = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
@@ -259,15 +272,70 @@ describe('v2 debug and UAT operations', () => {
       '--root-cause', 'The required condition was missing.', '--evidence', evidenceFile, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(concluded.session.conclusions).toEqual([expect.objectContaining({ kind: 'root_cause' })]);
+    const changed = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
+      '--changed-reference', '--evidence', evidenceFile, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(changed.session.changedReferences).toEqual(expect.arrayContaining([
+      expect.objectContaining({ referenceId: 'test:debug:red' }),
+      expect.objectContaining({ referenceId: 'test:debug:green' }),
+    ]));
+    const questioned = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
+      '--question', 'Does the repair cover the public contract?', '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(questioned.session.unresolvedQuestions).toContain('Does the repair cover the public contract?');
+    const actioned = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
+      '--next-action', 'Verify the repaired public contract.', '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(actioned.session.nextAction).toBe('Verify the repaired public contract.');
+    await expect(resolveDebugSessionV2({
+      change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
+      regressionEvidence: [
+        { referenceId: 'test:debug:red', kind: 'generated', externalId: 'debug-red',
+          digest: createHash('sha256').update('debug-red').digest('hex'), available: true },
+        { referenceId: 'test:debug:green', kind: 'generated', externalId: 'debug-green',
+          digest: createHash('sha256').update('debug-green').digest('hex'), available: true },
+      ],
+      verifier: { kind: 'verifier', id: 'verifier-1' },
+    })).rejects.toThrow(/linked finding.*independently verified/i);
+    const lifecycleEvidence = [
+      { referenceId: 'test:debug:red', kind: 'generated' as const, externalId: 'debug-red',
+        digest: createHash('sha256').update('debug-red').digest('hex'), available: true },
+      { referenceId: 'test:debug:green', kind: 'generated' as const, externalId: 'debug-green',
+        digest: createHash('sha256').update('debug-green').digest('hex'), available: true },
+    ];
+    await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
+      actor: { kind: 'executor', id: 'executor-1' }, reason: 'Repaired the root cause.', evidence: lifecycleEvidence,
+    });
+    await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
+      actor: { kind: 'verifier', id: 'verifier-1' }, reason: 'Verified current regression evidence.',
+      evidence: lifecycleEvidence,
+    });
+    await expect(resolveDebugSessionV2({
+      change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
+      regressionEvidence: lifecycleEvidence,
+      verifier: { kind: 'verifier', id: 'executor-1' },
+    })).rejects.toThrow(/distinct from the executor/i);
     const resolved = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
-      '--resolve', '--evidence', evidenceFile, '--json',
+      '--resolve', '--verifier', 'verifier-1', '--evidence', evidenceFile, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(resolved.session).toMatchObject({ status: 'resolved' });
+    expect(resolved.session).toMatchObject({ status: 'resolved', verification: {
+      verifier: { kind: 'verifier', id: 'verifier-1' }, findingId: finding.findingId,
+    } });
+    const eventTypes = (await readEventStoreV2(changeDir)).events.map((event) => event.payload.type);
+    expect(eventTypes).toEqual(expect.arrayContaining([
+      'debug.reference_changed', 'debug.question_recorded', 'debug.next_action_recorded',
+      'debug.verification_recorded', 'debug.session_resolved',
+    ]));
     const presentation = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'uat', 'demo', '--project', root, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(presentation.next).toMatchObject({ scenarioId: expect.stringContaining('/scenario:works') });
+    expect(presentation.next).toMatchObject({ scenarioId: uatScenarioId });
     const recording = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'uat', 'demo', '--project', root,
       '--scenario', presentation.next.scenarioId, '--status', 'passed', '--actor', 'maintainer',
