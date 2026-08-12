@@ -42,6 +42,22 @@ describe('conditional release assurance', () => {
       .toEqual(expect.arrayContaining([expect.objectContaining({ applicable: false, status: 'not_applicable' })]));
   });
 
+  it('fails closed when repository impact cannot be compared', async () => {
+    const root = await packageProject();
+    const candidates = await release.detectReleaseApplicability({
+      projectRoot: root,
+      changedFiles: [],
+      impactUnknown: 'No trustworthy comparison base is available.',
+      config: { enabled: 'auto' },
+    });
+    expect(candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ surface: 'node_package', applicable: true, status: 'human_needed', checks: [
+        expect.objectContaining({ checkId: 'release-impact', status: 'human_needed' }),
+      ] }),
+      expect.objectContaining({ surface: 'cli', applicable: true, status: 'human_needed' }),
+    ]));
+  });
+
   it('builds pack, inspect, clean-install, and public-smoke plans without publication', async () => {
     const root = await packageProject();
     const api = release as Record<string, unknown>;

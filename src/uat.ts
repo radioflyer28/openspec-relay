@@ -12,6 +12,21 @@ function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+export const REQUIRED_UAT_PROJECTION_ERROR_ID = 'guardrails:required-uat-projection-error';
+
+export function requiredUatProjectionError(sourceRevision: string): UatScenarioV2 {
+  return UatScenarioV2Schema.parse({
+    scenarioId: REQUIRED_UAT_PROJECTION_ERROR_ID,
+    requirementId: 'guardrails:required-uat',
+    taskIds: [],
+    prerequisites: [],
+    action: 'Repair OpenSpec scenario coverage or record an explicit non-applicability decision.',
+    expectedResult: 'At least one current OpenSpec acceptance scenario is projected for required UAT.',
+    status: 'blocked',
+    sourceRevision,
+  });
+}
+
 export function projectUatScenarios(options: {
   coverage: ScenarioCoverageV1[];
   findings: FindingLifecycleRecordV2[];

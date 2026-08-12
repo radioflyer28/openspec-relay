@@ -22,7 +22,7 @@ import { transitionFinding } from './findings.js';
 import { recordUatDisposition, nextUatScenario, projectUatScenarios } from './uat.js';
 import { resolveChangeDirectory } from './state.js';
 import { atomicWriteText } from './state.js';
-import { digestJson } from './state.js';
+import { bindRepositoryEvidenceDigests, computeMaterialRevision } from './repository-context.js';
 import { acceptRequiredGate, readRequiredGateRecord } from '@fission-ai/openspec/extensions';
 import {
   GuardrailsEventPayloadV1Schema,
@@ -43,8 +43,16 @@ function sources(compiled: Awaited<ReturnType<typeof currentV2>>['compiled']): R
   return Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
 }
 
-function sourceRevision(compiled: Awaited<ReturnType<typeof currentV2>>['compiled']): string {
-  return digestJson(sources(compiled));
+async function sourceRevision(
+  current: Awaited<ReturnType<typeof currentV2>>,
+  evidence: PortableReferenceV2[] = [],
+): Promise<string> {
+  return computeMaterialRevision({
+    projectRoot: current.resolved.projectRoot,
+    compiled: current.compiled,
+    context: current.projection.assurance.repositoryContext,
+    evidence,
+  });
 }
 
 export async function startOrResumeDebugV2(options: {
@@ -110,13 +118,17 @@ export async function transitionFindingV2(options: {
   const finding = current.projection.assurance.findings.find((item) => item.findingId === options.findingId);
   if (!finding) throw new Error(`Unknown finding '${options.findingId}'. Record or reconcile it before transitioning.`);
   const now = options.now ?? new Date().toISOString();
+  const evidence = await bindRepositoryEvidenceDigests({
+    projectRoot: current.resolved.projectRoot,
+    evidence: options.evidence ?? [],
+  });
   const updated = transitionFinding({
     finding,
     to: options.to,
     actor: options.actor,
     reason: options.reason,
-    evidence: options.evidence ?? [],
-    sourceRevision: sourceRevision(current.compiled),
+    evidence,
+    sourceRevision: await sourceRevision(current, [...finding.evidence, ...finding.transitions.flatMap((item) => item.evidence), ...evidence]),
     occurredAt: now,
     ...(options.expiry ? { expiry: options.expiry } : {}),
     ...(options.followUp ? { followUp: options.followUp } : {}),
@@ -135,6 +147,24 @@ export async function transitionFindingV2(options: {
       payload: { type: 'finding.transitioned', findingId: finding.findingId, transition },
     }),
   });
+  if (transition.to === 'independently_verified' && finding.providerId === 'uat' &&
+      finding.ruleId === 'scenario-failed' && finding.scope.kind === 'scenario') {
+    const scenario = current.projection.assurance.uatScenarios.find((item) => item.scenarioId === finding.scope.identity);
+    if (!scenario) throw new Error(`Failed UAT finding '${finding.findingId}' has no projected scenario to retest.`);
+    await appendGuardrailsEventV2({
+      changeDir: current.resolved.changeDir,
+      event: createGuardrailsEventV2({
+        eventId: `uat-retest:${scenario.scenarioId}:${transition.transitionId}`,
+        runId: current.store.runId,
+        changeName: current.store.changeName,
+        occurredAt: now,
+        sourceDigests: sources(current.compiled),
+        actor: options.actor,
+        provenance: { origin: 'tier0-finding-lifecycle' },
+        payload: { type: 'uat.scenario_retest', scenarioId: scenario.scenarioId, sourceRevision: transition.sourceRevision },
+      }),
+    });
+  }
   const projection = await writeReplayedProjectionsV2({
     changeDir: current.resolved.changeDir,
     store: await readEventStoreV2(current.resolved.changeDir),
@@ -192,7 +222,7 @@ export async function planDebugExperimentV2(options: {
   const now = options.now ?? new Date().toISOString();
   const updated = planDebugExperiment({
     session: debugSession(current, options.sessionId), hypothesisId: options.hypothesisId, action: options.action,
-    targetedEvidence: options.evidence, sourceRevision: sourceRevision(current.compiled), now,
+    targetedEvidence: options.evidence, sourceRevision: await sourceRevision(current, options.evidence), now,
     ...(options.humanRationale ? { humanRationale: options.humanRationale } : {}),
   });
   const experiment = updated.experiments.at(-1)!;
@@ -229,7 +259,7 @@ export async function recordDebugConclusionV2(options: {
   const now = options.now ?? new Date().toISOString();
   const updated = recordDebugConclusion({ session: debugSession(current, options.sessionId), kind: options.kind,
     statement: options.statement, experimentIds: options.experimentIds, evidence: options.evidence,
-    sourceRevision: sourceRevision(current.compiled), now });
+    sourceRevision: await sourceRevision(current, options.evidence), now });
   const conclusion = updated.conclusions.at(-1)!;
   const sessions = await appendDebugEvent({ current, now,
     eventId: `debug-conclusion:${options.sessionId}:${conclusion.conclusionId}`,
@@ -265,7 +295,7 @@ export async function presentUatV2(options: { change: string; projectRoot?: stri
     findings: current.projection.assurance.findings,
     taskIdsByScenario: Object.fromEntries(current.projection.run.tasks.flatMap((task) =>
       task.scenarioRefs.map((scenarioId) => [scenarioId, [task.taskId]]))),
-    sourceRevision: sourceRevision(current.compiled),
+    sourceRevision: await sourceRevision(current),
   });
   if (!existing.length) {
     for (const scenario of scenarios) await appendGuardrailsEventV2({
@@ -297,7 +327,13 @@ export async function recordUatV2(options: {
   const scenario = current.projection.assurance.uatScenarios.find((item) => item.scenarioId === options.scenarioId);
   if (!scenario) throw new Error(`Unknown UAT scenario '${options.scenarioId}'. Run uat first to project applicable scenarios.`);
   const now = options.now ?? new Date().toISOString();
-  const result = recordUatDisposition({ ...options, scenario, evidence: options.evidence ?? [], now });
+  const evidence = await bindRepositoryEvidenceDigests({
+    projectRoot: current.resolved.projectRoot,
+    evidence: options.evidence ?? [],
+  });
+  const currentSourceRevision = await sourceRevision(current, [...(scenario.disposition?.evidence ?? []), ...evidence]);
+  const currentScenario = { ...scenario, sourceRevision: currentSourceRevision };
+  const result = recordUatDisposition({ ...options, scenario: currentScenario, evidence, now });
   await appendGuardrailsEventV2({
     changeDir: current.resolved.changeDir,
     event: createGuardrailsEventV2({
@@ -305,7 +341,7 @@ export async function recordUatV2(options: {
       occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'human', id: options.actor },
       provenance: { origin: 'guardrails-uat' }, payload: {
         type: 'uat.disposition_recorded', scenarioId: options.scenarioId, status: options.status,
-        actor: options.actor, notes: options.notes, evidence: options.evidence ?? [],
+        actor: options.actor, notes: options.notes, sourceRevision: currentSourceRevision, evidence,
       },
     }),
   });
