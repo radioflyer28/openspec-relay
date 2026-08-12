@@ -206,7 +206,8 @@ export async function readEventStore(changeDir: string): Promise<GuardrailsEvent
 export async function appendGuardrailsEvent(options: {
   changeDir: string;
   event: GuardrailsEventEnvelopeV1;
-  rename?: typeof fs.rename;
+  beforeCommit?: () => Promise<void>;
+  failBeforeCommit?: boolean;
   lock?: EventStoreLockOptions;
 }): Promise<{ store: GuardrailsEventStoreV1; appended: boolean }> {
   const event = GuardrailsEventEnvelopeV1Schema.parse(options.event);
@@ -231,8 +232,10 @@ export async function appendGuardrailsEvent(options: {
         left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
     });
     await lease.assertOwned();
-    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next,
-      options.rename ? { rename: options.rename } : {});
+    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next, {
+      ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
+      ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
+    });
     await lease.assertOwned();
     const committed = await readEventStore(options.changeDir);
     if (!committed.events.some((candidate) => candidate.eventId === event.eventId && digestJson(candidate) === digestJson(event))) {
@@ -505,7 +508,8 @@ export async function readOrMigrateEventStoreV2(changeDir: string): Promise<Guar
 export async function appendGuardrailsEventV2(options: {
   changeDir: string;
   event: GuardrailsEventEnvelopeV2;
-  rename?: typeof fs.rename;
+  beforeCommit?: () => Promise<void>;
+  failBeforeCommit?: boolean;
   lock?: EventStoreLockOptions;
 }): Promise<{ store: GuardrailsEventStoreV2; appended: boolean }> {
   const event = GuardrailsEventEnvelopeV2Schema.parse(options.event);
@@ -530,8 +534,10 @@ export async function appendGuardrailsEventV2(options: {
         left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
     });
     await lease.assertOwned();
-    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next,
-      options.rename ? { rename: options.rename } : {});
+    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next, {
+      ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
+      ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
+    });
     await lease.assertOwned();
     const committed = await readEventStoreV2(options.changeDir);
     if (!committed.events.some((candidate) => candidate.eventId === event.eventId && digestJson(candidate) === digestJson(event))) {

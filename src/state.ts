@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
@@ -259,13 +260,74 @@ export async function atomicWriteGuardrailsJson(
   changeDir: string,
   filename: string,
   value: unknown,
-  operations: { rename?: typeof fs.rename } = {},
+  operations: { beforeCommit?: () => Promise<void>; failBeforeCommit?: boolean } = {},
 ): Promise<void> {
   const safe = await assertGuardrailsGeneratedPath({
     changeDir, filename, createParents: true, allowMissingFile: true,
   });
-  await atomicWriteJson(safe, value, operations);
+  const parent = path.dirname(safe);
+  const identity = await fs.stat(parent, { bigint: true });
+  await operations.beforeCommit?.();
+  const content = `${JSON.stringify(value, null, 2)}\n`;
+  const script = [
+    "import { promises as fs } from 'node:fs';",
+    "import { randomUUID } from 'node:crypto';",
+    'const [filename, expectedDev, expectedIno, fail] = process.argv.slice(1);',
+    "const actual = await fs.stat('.', { bigint: true });",
+    "if (String(actual.dev) !== expectedDev || String(actual.ino) !== expectedIno) throw new Error('Guardrails generated-state ancestor changed before commit.');",
+    "let content = ''; for await (const chunk of process.stdin) content += chunk;",
+    "const temporary = `.${filename}.${process.pid}.${randomUUID()}.tmp`;",
+    'try {',
+    "  await fs.writeFile(temporary, content, { flag: 'wx' });",
+    "  if (fail === 'true') throw new Error('interrupted');",
+    '  await fs.rename(temporary, filename);',
+    '} finally { await fs.rm(temporary, { force: true }).catch(() => undefined); }',
+  ].join('\n');
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      '--input-type=module', '-e', script, path.basename(safe), String(identity.dev), String(identity.ino),
+      String(Boolean(operations.failBeforeCommit)),
+    ], { cwd: parent, stdio: ['pipe', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-4_096); });
+    child.once('error', reject);
+    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(
+      stderr.match(/Error: ([^\n]+)/)?.[1] ?? `Guardrails state writer exited with code ${code}.`,
+    )));
+    child.stdin.end(content);
+  });
   await assertGuardrailsGeneratedPath({ changeDir, filename: safe });
+}
+
+export async function removeGuardrailsGeneratedFile(
+  changeDir: string,
+  filename: string,
+  operations: { beforeRemove?: () => Promise<void> } = {},
+): Promise<void> {
+  const safe = await assertGuardrailsGeneratedPath({ changeDir, filename, allowMissingFile: true });
+  const parent = path.dirname(safe);
+  const identity = await fs.stat(parent, { bigint: true });
+  await operations.beforeRemove?.();
+  const script = [
+    "import { promises as fs } from 'node:fs';",
+    'const [filename, expectedDev, expectedIno] = process.argv.slice(1);',
+    "const actual = await fs.stat('.', { bigint: true });",
+    "if (String(actual.dev) !== expectedDev || String(actual.ino) !== expectedIno) throw new Error('Guardrails generated-state ancestor changed before removal.');",
+    'await fs.rm(filename, { force: true });',
+  ].join('\n');
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      '--input-type=module', '-e', script, path.basename(safe), String(identity.dev), String(identity.ino),
+    ], { cwd: parent, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-4_096); });
+    child.once('error', reject);
+    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(
+      stderr.match(/Error: ([^\n]+)/)?.[1] ?? `Guardrails state remover exited with code ${code}.`,
+    )));
+  });
 }
 
 export async function readRunState(changeDir: string): Promise<GuardrailsRunV1> {
