@@ -1,5 +1,12 @@
 import path from 'node:path';
 import type { GateProviderV1, GateResultV1 } from '@fission-ai/openspec/extensions';
+import { compileOpenSpecChange } from './artifacts.js';
+import {
+  readEventStore,
+  readEventStoreV2,
+  replayGuardrailsEvents,
+  replayGuardrailsEventsV2,
+} from './events.js';
 import { evaluateFindingObligations } from './findings.js';
 import { evaluateUatObligations } from './uat.js';
 import {
@@ -26,16 +33,48 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
     try {
       let run: Awaited<ReturnType<typeof readRunState>> | Awaited<ReturnType<typeof readRunStateV2>>;
       let assurance: Awaited<ReturnType<typeof readAssuranceState>> | Awaited<ReturnType<typeof readAssuranceStateV2>>;
+      let canonicalRun: typeof run;
+      let canonicalAssurance: typeof assurance;
+      let canonicalRevision: string;
+      let canonicalProjectionRequired = false;
       try {
+        const store = await readEventStoreV2(context.changeDir);
+        const compiled = await compileOpenSpecChange({
+          changeDir: context.changeDir,
+          taskMetadata: store.seed.config.taskOverrides,
+        });
+        const canonical = replayGuardrailsEventsV2({ store, compiled });
+        canonicalRun = canonical.run;
+        canonicalAssurance = canonical.assurance;
+        canonicalRevision = digestJson(store);
+        canonicalProjectionRequired = true;
         run = await readRunStateV2(context.changeDir);
         assurance = await readAssuranceStateV2(context.changeDir);
       } catch (v2Error) {
         try {
+          const store = await readEventStore(context.changeDir);
+          const compiled = await compileOpenSpecChange({
+            changeDir: context.changeDir,
+            taskMetadata: store.seed.config.taskOverrides,
+          });
+          const canonical = replayGuardrailsEvents({ store, compiled });
+          canonicalAssurance = canonical.assurance;
+          canonicalRun = { ...canonical.run, assuranceDigest: digestJson(canonical.assurance) };
+          canonicalRevision = digestJson(store);
           run = await readRunState(context.changeDir);
           assurance = await readAssuranceState(context.changeDir);
         } catch {
           throw v2Error;
         }
+      }
+      if (canonicalProjectionRequired &&
+          (digestJson(run) !== digestJson(canonicalRun) || digestJson(assurance) !== digestJson(canonicalAssurance))) {
+        return result(
+          'error',
+          'Guardrails projections do not match canonical event replay.',
+          [`${path.join('.guardrails', 'events.json')}#sha256=${canonicalRevision}`],
+          ['Run openspec-guardrails check to regenerate projections from canonical events.'],
+        );
       }
       if (run.runId !== assurance.runId || run.changeName !== context.changeName ||
           assurance.changeName !== context.changeName) {
@@ -48,6 +87,7 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
       }
       const assuranceDigest = digestJson(assurance);
       const evidence = [
+        `${path.join('.guardrails', 'events.json')}#sha256=${canonicalRevision}`,
         `${path.join('.guardrails', 'assurance.json')}#sha256=${assuranceDigest}`,
       ];
       if (run.assuranceDigest !== assuranceDigest) {

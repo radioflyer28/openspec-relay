@@ -35,9 +35,11 @@ import {
 } from './schemas.js';
 import {
   assuranceStatePath,
-  atomicWriteJson,
+  assertGuardrailsGeneratedPath,
+  atomicWriteGuardrailsJson,
   digestJson,
   guardrailsGeneratedPath,
+  readGuardrailsText,
   readAssuranceState,
   readRunState,
   runStatePath,
@@ -45,6 +47,78 @@ import {
 
 export function eventStorePath(changeDir: string): string {
   return guardrailsGeneratedPath(changeDir, 'events');
+}
+
+const EVENT_LOCK_TIMEOUT_MS = 10_000;
+const EVENT_LOCK_LEASE_MS = 30_000;
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function withEventStoreLock<T>(changeDir: string, operation: () => Promise<T>): Promise<T> {
+  const lockPath = guardrailsGeneratedPath(changeDir, 'eventsLock');
+  await assertGuardrailsGeneratedPath({ changeDir, filename: lockPath, createParents: true, allowMissingFile: true });
+  const token = `${process.pid}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+  const started = Date.now();
+  while (true) {
+    try {
+      const handle = await fs.open(lockPath, 'wx');
+      await handle.writeFile(`${JSON.stringify({ token, pid: process.pid, acquiredAt: new Date().toISOString() })}\n`);
+      await handle.close();
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      let stale = false;
+      try {
+        await assertGuardrailsGeneratedPath({ changeDir, filename: lockPath });
+        const owner = JSON.parse(await readGuardrailsText(changeDir, lockPath)) as {
+          pid?: number; acquiredAt?: string;
+        };
+        const age = owner.acquiredAt ? Date.now() - Date.parse(owner.acquiredAt) : EVENT_LOCK_LEASE_MS + 1;
+        stale = age > EVENT_LOCK_LEASE_MS ||
+          (typeof owner.pid === 'number' && !processIsAlive(owner.pid) && age > 1_000);
+      } catch {
+        const stat = await fs.lstat(lockPath).catch(() => undefined);
+        stale = Boolean(stat && Date.now() - stat.mtimeMs > EVENT_LOCK_LEASE_MS);
+      }
+      if (stale) {
+        const quarantine = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+        try {
+          await fs.rename(lockPath, quarantine);
+          await assertGuardrailsGeneratedPath({ changeDir, filename: quarantine });
+          await fs.rm(quarantine, { force: true });
+        } catch (staleError) {
+          if (!['ENOENT', 'EEXIST'].includes((staleError as NodeJS.ErrnoException).code ?? '')) throw staleError;
+        }
+        continue;
+      }
+      if (Date.now() - started >= EVENT_LOCK_TIMEOUT_MS) {
+        throw new Error(`Timed out waiting for the canonical Guardrails event-store lock '${lockPath}'.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10 + Math.floor(Math.random() * 20)));
+    }
+  }
+  try {
+    return await operation();
+  } finally {
+    try {
+      const owner = JSON.parse(await readGuardrailsText(changeDir, lockPath)) as { token?: string };
+      if (owner.token === token) {
+        const quarantine = `${lockPath}.release.${process.pid}.${Date.now()}`;
+        await fs.rename(lockPath, quarantine);
+        await assertGuardrailsGeneratedPath({ changeDir, filename: quarantine });
+        await fs.rm(quarantine, { force: true });
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
 }
 
 function artifactDigests(run: GuardrailsRunV1): Record<string, string> {
@@ -84,7 +158,7 @@ function validateStore(value: unknown): GuardrailsEventStoreV1 {
 }
 
 export async function readEventStore(changeDir: string): Promise<GuardrailsEventStoreV1> {
-  return validateStore(JSON.parse(await fs.readFile(eventStorePath(changeDir), 'utf8')));
+  return validateStore(JSON.parse(await readGuardrailsText(changeDir, eventStorePath(changeDir))));
 }
 
 export async function appendGuardrailsEvent(options: {
@@ -92,29 +166,35 @@ export async function appendGuardrailsEvent(options: {
   event: GuardrailsEventEnvelopeV1;
   rename?: typeof fs.rename;
 }): Promise<{ store: GuardrailsEventStoreV1; appended: boolean }> {
-  const store = await readEventStore(options.changeDir);
   const event = GuardrailsEventEnvelopeV1Schema.parse(options.event);
   if (event.payloadDigest !== digestJson(event.payload)) {
     throw new Error(`Event '${event.eventId}' payload digest does not match its payload.`);
   }
-  const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
-  if (existing) {
-    if (digestJson(existing) !== digestJson(event)) {
-      throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
+  return withEventStoreLock(options.changeDir, async () => {
+    const store = await readEventStore(options.changeDir);
+    const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
+    if (existing) {
+      if (digestJson(existing) !== digestJson(event)) {
+        throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
+      }
+      return { store, appended: false };
     }
-    return { store, appended: false };
-  }
-  if (event.runId !== store.runId || event.changeName !== store.changeName) {
-    throw new Error(`Event '${event.eventId}' targets a different run or change.`);
-  }
-  const next = validateStore({
-    ...store,
-    events: [...store.events, event].sort((left, right) =>
-      left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
+    if (event.runId !== store.runId || event.changeName !== store.changeName) {
+      throw new Error(`Event '${event.eventId}' targets a different run or change.`);
+    }
+    const next = validateStore({
+      ...store,
+      events: [...store.events, event].sort((left, right) =>
+        left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
+    });
+    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next,
+      options.rename ? { rename: options.rename } : {});
+    const committed = await readEventStore(options.changeDir);
+    if (!committed.events.some((candidate) => candidate.eventId === event.eventId && digestJson(candidate) === digestJson(event))) {
+      throw new Error(`Canonical event '${event.eventId}' was not present after commit.`);
+    }
+    return { store: committed, appended: true };
   });
-  await atomicWriteJson(eventStorePath(options.changeDir), next,
-    options.rename ? { rename: options.rename } : {});
-  return { store: next, appended: true };
 }
 
 function migratedEvent(
@@ -198,7 +278,7 @@ export async function migrateV1ProjectionsToEventStore(
     events: events.sort((left, right) =>
       left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
   });
-  await atomicWriteJson(eventStorePath(changeDir), store);
+  await atomicWriteGuardrailsJson(changeDir, eventStorePath(changeDir), store);
   return store;
 }
 
@@ -286,9 +366,9 @@ export function replayGuardrailsEvents(options: {
   return { run, assurance };
 }
 
-async function differs(filename: string, expected: unknown): Promise<boolean> {
+async function differs(changeDir: string, filename: string, expected: unknown): Promise<boolean> {
   try {
-    return digestJson(JSON.parse(await fs.readFile(filename, 'utf8'))) !== digestJson(expected);
+    return digestJson(JSON.parse(await readGuardrailsText(changeDir, filename))) !== digestJson(expected);
   } catch {
     return true;
   }
@@ -303,14 +383,14 @@ export async function writeReplayedProjections(options: {
   const replayed = replayGuardrailsEvents(options);
   const assuranceDigest = digestJson(replayed.assurance);
   const run = GuardrailsRunV1Schema.parse({ ...replayed.run, assuranceDigest });
-  const repaired = await differs(runStatePath(options.changeDir), run) ||
-    await differs(assuranceStatePath(options.changeDir), replayed.assurance);
+  const repaired = await differs(options.changeDir, runStatePath(options.changeDir), run) ||
+    await differs(options.changeDir, assuranceStatePath(options.changeDir), replayed.assurance);
   if (repaired && options.repair === false) {
     throw new Error('Generated Guardrails projections differ from deterministic event replay.');
   }
   if (repaired) {
-    await atomicWriteJson(assuranceStatePath(options.changeDir), replayed.assurance);
-    await atomicWriteJson(runStatePath(options.changeDir), run);
+    await atomicWriteGuardrailsJson(options.changeDir, assuranceStatePath(options.changeDir), replayed.assurance);
+    await atomicWriteGuardrailsJson(options.changeDir, runStatePath(options.changeDir), run);
   }
   return { run, assurance: replayed.assurance, repaired };
 }
@@ -359,7 +439,7 @@ export function createGuardrailsEventV2(options: {
 }
 
 export async function readEventStoreV2(changeDir: string): Promise<GuardrailsEventStoreV2> {
-  return eventStoreV2(JSON.parse(await fs.readFile(eventStorePath(changeDir), 'utf8')));
+  return eventStoreV2(JSON.parse(await readGuardrailsText(changeDir, eventStorePath(changeDir))));
 }
 
 /**
@@ -382,34 +462,40 @@ export async function appendGuardrailsEventV2(options: {
   event: GuardrailsEventEnvelopeV2;
   rename?: typeof fs.rename;
 }): Promise<{ store: GuardrailsEventStoreV2; appended: boolean }> {
-  const store = await readEventStoreV2(options.changeDir);
   const event = GuardrailsEventEnvelopeV2Schema.parse(options.event);
   if (event.payloadDigest !== digestJson(event.payload)) {
     throw new Error(`Event '${event.eventId}' payload digest does not match its payload.`);
   }
-  if (event.runId !== store.runId || event.changeName !== store.changeName) {
-    throw new Error(`Event '${event.eventId}' targets a different run or change.`);
-  }
-  const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
-  if (existing) {
-    if (digestJson(existing) !== digestJson(event)) {
-      throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
+  return withEventStoreLock(options.changeDir, async () => {
+    const store = await readEventStoreV2(options.changeDir);
+    if (event.runId !== store.runId || event.changeName !== store.changeName) {
+      throw new Error(`Event '${event.eventId}' targets a different run or change.`);
     }
-    return { store, appended: false };
-  }
-  const next = eventStoreV2({
-    ...store,
-    events: [...store.events, event].sort((left, right) =>
-      left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
+    const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
+    if (existing) {
+      if (digestJson(existing) !== digestJson(event)) {
+        throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
+      }
+      return { store, appended: false };
+    }
+    const next = eventStoreV2({
+      ...store,
+      events: [...store.events, event].sort((left, right) =>
+        left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
+    });
+    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next,
+      options.rename ? { rename: options.rename } : {});
+    const committed = await readEventStoreV2(options.changeDir);
+    if (!committed.events.some((candidate) => candidate.eventId === event.eventId && digestJson(candidate) === digestJson(event))) {
+      throw new Error(`Canonical event '${event.eventId}' was not present after commit.`);
+    }
+    return { store: committed, appended: true };
   });
-  await atomicWriteJson(eventStorePath(options.changeDir), next,
-    options.rename ? { rename: options.rename } : {});
-  return { store: next, appended: true };
 }
 
 async function rawEventStore(changeDir: string): Promise<unknown | undefined> {
   try {
-    return JSON.parse(await fs.readFile(eventStorePath(changeDir), 'utf8'));
+    return JSON.parse(await readGuardrailsText(changeDir, eventStorePath(changeDir)));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -793,12 +879,12 @@ async function writeV2Reports(changeDir: string, projection: { run: GuardrailsRu
     data,
   });
   await Promise.all([
-    atomicWriteJson(guardrailsGeneratedPath(changeDir, 'repositoryContext'), report('repository-context', projection.assurance.repositoryContext ?? null)),
-    atomicWriteJson(guardrailsGeneratedPath(changeDir, 'readiness'), report('readiness', projection.assurance.readiness ?? null)),
-    atomicWriteJson(guardrailsGeneratedPath(changeDir, 'findings'), report('findings', projection.assurance.findings)),
-    atomicWriteJson(guardrailsGeneratedPath(changeDir, 'debug'), report('debug', projection.assurance.debugSessions)),
-    atomicWriteJson(guardrailsGeneratedPath(changeDir, 'uat'), report('uat', projection.assurance.uatScenarios)),
-    atomicWriteJson(guardrailsGeneratedPath(changeDir, 'release'), report('release', projection.assurance.releaseCandidates)),
+    atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'repositoryContext'), report('repository-context', projection.assurance.repositoryContext ?? null)),
+    atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'readiness'), report('readiness', projection.assurance.readiness ?? null)),
+    atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'findings'), report('findings', projection.assurance.findings)),
+    atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'debug'), report('debug', projection.assurance.debugSessions)),
+    atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'uat'), report('uat', projection.assurance.uatScenarios)),
+    atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'release'), report('release', projection.assurance.releaseCandidates)),
   ]);
 }
 
@@ -808,8 +894,8 @@ export async function writeReplayedProjectionsV2(options: {
   compiled: CompiledOpenSpecChangeV1;
 }): Promise<{ run: GuardrailsRunV2; assurance: GuardrailsAssuranceV2 }> {
   const projection = replayGuardrailsEventsV2(options);
-  await atomicWriteJson(assuranceStatePath(options.changeDir), projection.assurance);
-  await atomicWriteJson(runStatePath(options.changeDir), projection.run);
+  await atomicWriteGuardrailsJson(options.changeDir, assuranceStatePath(options.changeDir), projection.assurance);
+  await atomicWriteGuardrailsJson(options.changeDir, runStatePath(options.changeDir), projection.run);
   await writeV2Reports(options.changeDir, projection);
   return projection;
 }
@@ -848,18 +934,18 @@ export async function migrateV1ToV2EventStore(changeDir: string): Promise<Guardr
   const projection = replayGuardrailsEventsV2({ store, compiled });
   // Validate every projection before replacing any valid v1 file. The backup is
   // written before the v2 event store so interruption always has a recovery source.
-  await atomicWriteJson(guardrailsGeneratedPath(changeDir, 'v1MigrationBackup'), {
+  await atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'v1MigrationBackup'), {
     version: 1,
     sourceDigest: preview.sourceDigest,
     events: raw ?? legacyStore,
     run,
     assurance,
   });
-  await atomicWriteJson(eventStorePath(changeDir), store);
-  await atomicWriteJson(assuranceStatePath(changeDir), projection.assurance);
-  await atomicWriteJson(runStatePath(changeDir), projection.run);
+  await atomicWriteGuardrailsJson(changeDir, eventStorePath(changeDir), store);
+  await atomicWriteGuardrailsJson(changeDir, assuranceStatePath(changeDir), projection.assurance);
+  await atomicWriteGuardrailsJson(changeDir, runStatePath(changeDir), projection.run);
   await writeV2Reports(changeDir, projection);
-  await atomicWriteJson(guardrailsGeneratedPath(changeDir, 'migrationPreview'), {
+  await atomicWriteGuardrailsJson(changeDir, guardrailsGeneratedPath(changeDir, 'migrationPreview'), {
     ...preview,
     status: 'not_needed',
     needsMigration: false,
@@ -884,7 +970,7 @@ export async function restoreV1FromMigrationBackup(changeDir: string): Promise<{
   const filename = guardrailsGeneratedPath(changeDir, 'v1MigrationBackup');
   let raw: unknown;
   try {
-    raw = JSON.parse(await fs.readFile(filename, 'utf8'));
+    raw = JSON.parse(await readGuardrailsText(changeDir, filename));
   } catch (error) {
     throw new Error(`Cannot restore version 1 Guardrails state: ${(error as Error).message}`);
   }
@@ -901,8 +987,8 @@ export async function restoreV1FromMigrationBackup(changeDir: string): Promise<{
   }
   // Write non-authoritative projections first. The v1 event store is the final
   // cutover because it is what both v1 replay and subsequent v1 mutations read.
-  await atomicWriteJson(assuranceStatePath(changeDir), assurance);
-  await atomicWriteJson(runStatePath(changeDir), run);
-  await atomicWriteJson(eventStorePath(changeDir), events);
+  await atomicWriteGuardrailsJson(changeDir, assuranceStatePath(changeDir), assurance);
+  await atomicWriteGuardrailsJson(changeDir, runStatePath(changeDir), run);
+  await atomicWriteGuardrailsJson(changeDir, eventStorePath(changeDir), events);
   return { restored: true, runId: run.runId, changeName: run.changeName };
 }
