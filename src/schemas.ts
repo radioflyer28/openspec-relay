@@ -337,6 +337,13 @@ export const ReleaseAssuranceConfigV2Schema = z.object({
   drivers: z.array(z.string().min(1)).max(20).default([]),
   configuredCommands: z.array(ConfiguredReleaseDriverV2Schema).max(20).default([]),
   requiredPlatforms: z.array(z.enum(['linux', 'macos', 'windows'])).default([]),
+  previousArtifactPath: z.string().min(1).refine(
+    (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) && !value.split('/').includes('..') && !value.includes('\\'),
+    'previous artifact path must be project-relative',
+  ).optional(),
+  buildCommand: ConfiguredReleaseDriverV2Schema.optional(),
+  requireFilesystemIsolation: z.boolean().default(false),
+  requireNetworkIsolation: z.boolean().default(false),
 }).strict().refine((value) => value.enabled !== 'off' || Boolean(value.disabledReason), {
   message: 'release assurance disabled requires a recorded reason',
 });
@@ -348,6 +355,7 @@ export const GuardrailsFeatureConfigV2Schema = z.object({
   uat: UatConfigV2Schema.default({ enabled: true, required: false }),
   releaseAssurance: ReleaseAssuranceConfigV2Schema.default({
     enabled: 'auto', surfaces: [], drivers: [], configuredCommands: [], requiredPlatforms: [],
+    requireFilesystemIsolation: false, requireNetworkIsolation: false,
   }),
 }).strict();
 
@@ -358,7 +366,8 @@ export const GuardrailsConfigV2Schema = GuardrailsConfigV1Schema.omit({ version:
     readiness: { rollout: 'required', independentRequired: true },
     debug: { enabled: true, automaticTransition: true },
     uat: { enabled: true, required: false },
-    releaseAssurance: { enabled: 'auto', surfaces: [], drivers: [], configuredCommands: [], requiredPlatforms: [] },
+    releaseAssurance: { enabled: 'auto', surfaces: [], drivers: [], configuredCommands: [], requiredPlatforms: [],
+      requireFilesystemIsolation: false, requireNetworkIsolation: false },
   }),
 }).strict();
 

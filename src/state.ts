@@ -31,6 +31,7 @@ export const GUARDRAILS_GENERATED_FILES = {
   eventsLock: 'events.lock',
   v1MigrationBackup: 'reports/v1-migration-backup.json',
   migrationPreview: 'reports/migration-preview.json',
+  v1CompatibilityExport: 'reports/v1-compatibility-export.json',
   repositoryContext: 'reports/repository-context.json',
   readiness: 'reports/readiness.json',
   findings: 'reports/findings.json',
