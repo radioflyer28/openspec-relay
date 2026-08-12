@@ -303,7 +303,7 @@ export const RepositoryAnalysisConfigV2Schema = z.object({
 }).strict();
 
 export const ReadinessConfigV2Schema = z.object({
-  rollout: z.enum(['report_only', 'required']).default('report_only'),
+  rollout: z.enum(['report_only', 'required']).default('required'),
   independentRequired: z.boolean().default(true),
 }).strict();
 
@@ -343,7 +343,7 @@ export const ReleaseAssuranceConfigV2Schema = z.object({
 
 export const GuardrailsFeatureConfigV2Schema = z.object({
   repositoryContext: RepositoryAnalysisConfigV2Schema.default({ enabled: true, boundaries: [] }),
-  readiness: ReadinessConfigV2Schema.default({ rollout: 'report_only', independentRequired: true }),
+  readiness: ReadinessConfigV2Schema.default({ rollout: 'required', independentRequired: true }),
   debug: DebugConfigV2Schema.default({ enabled: true, automaticTransition: true }),
   uat: UatConfigV2Schema.default({ enabled: true, required: false }),
   releaseAssurance: ReleaseAssuranceConfigV2Schema.default({
@@ -355,7 +355,7 @@ export const GuardrailsConfigV2Schema = GuardrailsConfigV1Schema.omit({ version:
   version: z.literal(GUARDRAILS_STATE_VERSION).default(GUARDRAILS_STATE_VERSION),
   features: GuardrailsFeatureConfigV2Schema.default({
     repositoryContext: { enabled: true, boundaries: [] },
-    readiness: { rollout: 'report_only', independentRequired: true },
+    readiness: { rollout: 'required', independentRequired: true },
     debug: { enabled: true, automaticTransition: true },
     uat: { enabled: true, required: false },
     releaseAssurance: { enabled: 'auto', surfaces: [], drivers: [], configuredCommands: [], requiredPlatforms: [] },
@@ -471,6 +471,15 @@ export const DebugExperimentV2Schema = z.object({
   observation: z.string().min(1).optional(),
 }).strict();
 
+export const DebugConclusionV2Schema = z.object({
+  conclusionId: z.string().min(1),
+  kind: z.enum(['conclusion', 'root_cause']),
+  statement: z.string().min(1),
+  experimentIds: z.array(z.string().min(1)).min(1),
+  evidence: z.array(PortableReferenceV2Schema).min(1),
+  sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
 export const DebugSessionV2Schema = z.object({
   sessionId: z.string().min(1),
   logicalFailureId: z.string().min(1),
@@ -481,6 +490,8 @@ export const DebugSessionV2Schema = z.object({
   updatedAt: z.string().datetime(),
   hypotheses: z.array(DebugHypothesisV2Schema),
   experiments: z.array(DebugExperimentV2Schema),
+  conclusions: z.array(DebugConclusionV2Schema).default([]),
+  changedReferences: z.array(PortableReferenceV2Schema).default([]),
   unresolvedQuestions: z.array(z.string().min(1)).default([]),
   nextAction: z.string().min(1).optional(),
   regressionEvidence: z.array(PortableReferenceV2Schema).default([]),
@@ -569,8 +580,14 @@ export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('debug.session_started'), session: DebugSessionV2Schema }).strict(),
   z.object({ type: z.literal('debug.hypothesis_recorded'), sessionId: z.string().min(1), hypothesis: DebugHypothesisV2Schema }).strict(),
   z.object({ type: z.literal('debug.experiment_recorded'), sessionId: z.string().min(1), experiment: DebugExperimentV2Schema }).strict(),
-  z.object({ type: z.literal('debug.session_updated'), sessionId: z.string().min(1), status: z.enum(['active', 'resolved', 'human_needed']), nextAction: z.string().min(1).optional() }).strict(),
+  z.object({ type: z.literal('debug.conclusion_recorded'), sessionId: z.string().min(1), conclusion: DebugConclusionV2Schema }).strict(),
+  z.object({ type: z.literal('debug.reference_changed'), sessionId: z.string().min(1), reference: PortableReferenceV2Schema }).strict(),
+  z.object({ type: z.literal('debug.question_recorded'), sessionId: z.string().min(1), question: z.string().min(1) }).strict(),
+  z.object({ type: z.literal('debug.next_action_recorded'), sessionId: z.string().min(1), nextAction: z.string().min(1) }).strict(),
+  z.object({ type: z.literal('debug.session_updated'), sessionId: z.string().min(1), status: z.enum(['active', 'resolved', 'human_needed']), nextAction: z.string().min(1).optional(), regressionEvidence: z.array(PortableReferenceV2Schema).optional() }).strict(),
   z.object({ type: z.literal('uat.scenario_recorded'), scenario: UatScenarioV2Schema }).strict(),
+  z.object({ type: z.literal('uat.scenario_stale'), scenarioId: z.string().min(1), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ type: z.literal('scenario.coverage_reconciled'), coverage: z.array(ScenarioCoverageV1Schema) }).strict(),
   z.object({ type: z.literal('uat.disposition_recorded'), scenarioId: z.string().min(1), status: z.enum(['passed', 'failed', 'blocked', 'accepted_limitation']), actor: z.string().min(1), notes: z.string().min(1), evidence: z.array(PortableReferenceV2Schema).default([]) }).strict(),
   z.object({ type: z.literal('release.evaluated'), candidate: ReleaseCandidateV2Schema }).strict(),
   z.object({ type: z.literal('checks.evaluated'), checks: z.array(AssuranceCheckV2Schema) }).strict(),
@@ -645,6 +662,7 @@ export type FindingLifecycleRecordV2 = z.infer<typeof FindingLifecycleRecordV2Sc
 export type FindingTransitionV2 = z.infer<typeof FindingTransitionV2Schema>;
 export type DebugHypothesisV2 = z.infer<typeof DebugHypothesisV2Schema>;
 export type DebugExperimentV2 = z.infer<typeof DebugExperimentV2Schema>;
+export type DebugConclusionV2 = z.infer<typeof DebugConclusionV2Schema>;
 export type DebugSessionV2 = z.infer<typeof DebugSessionV2Schema>;
 export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;

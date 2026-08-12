@@ -530,7 +530,8 @@ export async function previewV1ToV2Migration(changeDir: string): Promise<Migrati
 }
 
 function v2Config(run: GuardrailsRunV1) {
-  return GuardrailsConfigV2Schema.parse({ ...GuardrailsConfigV1Schema.parse(run.config), version: 2 });
+  return GuardrailsConfigV2Schema.parse({ ...GuardrailsConfigV1Schema.parse(run.config), version: 2,
+    features: { readiness: { rollout: 'report_only' } } });
 }
 
 function v1EventAsV2(event: GuardrailsEventEnvelopeV1): GuardrailsEventEnvelopeV2 {
@@ -677,6 +678,7 @@ function v1RecordFromMigration(payload: GuardrailsEventPayloadV2): GuardrailsEve
 function assuranceStatusV2(options: {
   checks: GuardrailsAssuranceV2['checks'];
   findings: FindingLifecycleRecordV2[];
+  debugSessions: DebugSessionV2[];
   uatScenarios: UatScenarioV2[];
   releaseCandidates: ReleaseCandidateV2[];
 }): GuardrailsAssuranceV2['status'] {
@@ -685,6 +687,7 @@ function assuranceStatusV2(options: {
   if (options.checks.some((check) => check.status === 'fail') ||
       options.releaseCandidates.some((candidate) => candidate.status === 'fail') ||
       evaluateFindingObligations({ findings: options.findings, scenarios: options.uatScenarios }).blocking.length > 0) return 'fail';
+  if (options.debugSessions.some((session) => session.status !== 'resolved')) return 'human_needed';
   if (options.uatScenarios.some((scenario) =>
     ['awaiting_human', 'blocked', 'stale'].includes(scenario.status)) ||
       options.releaseCandidates.some((candidate) => candidate.status === 'human_needed')) return 'human_needed';
@@ -713,6 +716,7 @@ export function replayGuardrailsEventsV2(options: {
   const releaseCandidates = new Map<string, ReleaseCandidateV2>();
   let repositoryContext: RepositoryContextV2 | undefined;
   let readiness: ReadinessResultV2 | undefined;
+  let scenarioCoverage = store.seed.scenarioCoverage;
   let runStatus = store.seed.status;
   let checks = store.seed.checks.map((check) => AssuranceCheckV2Schema.parse(check));
   const humanActions: string[] = [];
@@ -800,11 +804,36 @@ export function replayGuardrailsEventsV2(options: {
           ? session.experiments.map((item) => item.experimentId === payload.experiment.experimentId ? payload.experiment : item)
           : [...session.experiments, payload.experiment],
         updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.conclusion_recorded') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session) debugSessions.set(payload.sessionId, { ...session,
+        conclusions: session.conclusions.some((item) => item.conclusionId === payload.conclusion.conclusionId)
+          ? session.conclusions : [...session.conclusions, payload.conclusion], updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.reference_changed') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session) debugSessions.set(payload.sessionId, { ...session,
+        changedReferences: session.changedReferences.some((item) => item.referenceId === payload.reference.referenceId &&
+          item.digest === payload.reference.digest) ? session.changedReferences : [...session.changedReferences, payload.reference],
+        updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.question_recorded') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session) debugSessions.set(payload.sessionId, { ...session,
+        unresolvedQuestions: [...new Set([...session.unresolvedQuestions, payload.question])], updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.next_action_recorded') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session) debugSessions.set(payload.sessionId, { ...session,
+        nextAction: payload.nextAction, updatedAt: event.occurredAt });
     } else if (payload.type === 'debug.session_updated') {
       const session = debugSessions.get(payload.sessionId);
       if (session) debugSessions.set(payload.sessionId, { ...session, status: payload.status,
-        ...(payload.nextAction ? { nextAction: payload.nextAction } : {}), updatedAt: event.occurredAt });
+        ...(payload.nextAction ? { nextAction: payload.nextAction } : {}),
+        ...(payload.regressionEvidence ? { regressionEvidence: payload.regressionEvidence } : {}),
+        updatedAt: event.occurredAt });
     } else if (payload.type === 'uat.scenario_recorded') uatScenarios.set(payload.scenario.scenarioId, payload.scenario);
+    else if (payload.type === 'uat.scenario_stale') {
+      const scenario = uatScenarios.get(payload.scenarioId);
+      if (scenario) uatScenarios.set(payload.scenarioId, { ...scenario, status: 'stale', sourceRevision: payload.sourceRevision });
+    } else if (payload.type === 'scenario.coverage_reconciled') scenarioCoverage = payload.coverage;
     else if (payload.type === 'uat.disposition_recorded') {
       const scenario = uatScenarios.get(payload.scenarioId);
       if (scenario) uatScenarios.set(payload.scenarioId, { ...scenario, status: payload.status,
@@ -825,23 +854,25 @@ export function replayGuardrailsEventsV2(options: {
   const findingValues = [...findings.values()].sort((left, right) => left.findingId.localeCompare(right.findingId));
   const uatValues = [...uatScenarios.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
   const releaseValues = [...releaseCandidates.values()].sort((left, right) => left.candidateId.localeCompare(right.candidateId));
+  const debugValues = [...debugSessions.values()].sort((left, right) => left.sessionId.localeCompare(right.sessionId));
   const assurance = GuardrailsAssuranceV2Schema.parse({
     version: 2,
     runId: store.runId,
     changeName: store.changeName,
     mode: store.seed.mode,
-    status: assuranceStatusV2({ checks, findings: findingValues, uatScenarios: uatValues, releaseCandidates: releaseValues }),
+    status: assuranceStatusV2({ checks, findings: findingValues, debugSessions: debugValues,
+      uatScenarios: uatValues, releaseCandidates: releaseValues }),
     updatedAt,
     checks,
     evidence,
-    scenarioCoverage: store.seed.scenarioCoverage,
+    scenarioCoverage,
     repairs,
     findings: findingValues,
     staleEvidenceIds,
     unresolvedHumanActions: [...new Set(humanActions)].sort(),
     ...(repositoryContext ? { repositoryContext } : {}),
     ...(readiness ? { readiness } : {}),
-    debugSessions: [...debugSessions.values()].sort((left, right) => left.sessionId.localeCompare(right.sessionId)),
+    debugSessions: debugValues,
     uatScenarios: uatValues,
     releaseCandidates: releaseValues,
   });

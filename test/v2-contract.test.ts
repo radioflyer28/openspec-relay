@@ -24,7 +24,7 @@ describe('Guardrails v2 contract (RED)', () => {
       version: 2,
       features: {
         repositoryContext: { enabled: true },
-        readiness: { rollout: 'report_only', independentRequired: true },
+        readiness: { rollout: 'required', independentRequired: true },
         debug: { enabled: true, automaticTransition: true },
         uat: { enabled: true, required: false },
         releaseAssurance: { enabled: 'auto', drivers: [] },

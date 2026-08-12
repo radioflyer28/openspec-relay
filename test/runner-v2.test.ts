@@ -8,6 +8,7 @@ import { executeWithTier } from '../src/execution-adapters.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { discoverFinding } from '../src/findings.js';
 import { transitionFindingV2 } from '../src/v2-operations.js';
+import { presentUatV2 } from '../src/v2-operations.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -54,9 +55,75 @@ describe('Guardrails v2 run pipeline', () => {
     expect(await fs.readFile(`${changeDir}/tasks.md`, 'utf8')).toContain('- [ ] 1.1');
 
     const { root: reportRoot } = await createOpenSpecProject('report-only');
-    const reportOnly = await start({ change: 'report-only', projectRoot: reportRoot });
+    const reportOnly = await start({ change: 'report-only', projectRoot: reportRoot, config: {
+      features: { readiness: { rollout: 'report_only' } },
+    } });
     expect(reportOnly).toMatchObject({ assurance: { readiness: { status: 'fail' } }, blockedBeforeExecution: false });
   }, 30_000);
+
+  it('recomputes required readiness before resuming an existing run', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    const first = await runner.startGuardrailsRunV2({
+      change: 'demo', projectRoot: root,
+      config: { taskOverrides: { '1.1': readinessTask, '1.2': readinessTask } },
+      now: '2026-08-12T12:00:00.000Z',
+    });
+    expect(first).toMatchObject({ assurance: { readiness: { status: 'pass' } }, blockedBeforeExecution: false });
+    await fs.appendFile(`${changeDir}/specs/demo/spec.md`, [
+      '', '### Requirement: Newly declared behavior', 'The system SHALL expose new behavior.', '',
+      '#### Scenario: New behavior works', '- **WHEN** invoked', '- **THEN** the new behavior works', '',
+    ].join('\n'));
+    const resumed = await runner.startGuardrailsRunV2({
+      change: 'demo', projectRoot: root, now: '2026-08-12T12:01:00.000Z',
+    });
+    expect(resumed).toMatchObject({ assurance: { readiness: { status: 'fail' } }, blockedBeforeExecution: true });
+    expect(resumed.assurance.readiness?.resultId).not.toBe(first.assurance.readiness?.resultId);
+  });
+
+  it('persists current OpenSpec scenarios for required UAT instead of producing an empty queue', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await runner.startGuardrailsRunV2({
+      change: 'demo', projectRoot: root,
+      config: {
+        taskOverrides: { '1.1': readinessTask, '1.2': readinessTask },
+        features: { uat: { enabled: true, required: true } },
+      },
+    });
+    const presented = await presentUatV2({ change: 'demo', projectRoot: root });
+    expect(presented.next).toMatchObject({ scenarioId });
+    const store = await readEventStoreV2(changeDir);
+    const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: store.seed.config.taskOverrides });
+    const projection = await writeReplayedProjectionsV2({ changeDir, store, compiled });
+    expect(projection.assurance.scenarioCoverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scenarioId, status: 'human_needed' }),
+    ]));
+  });
+
+  it('passes negotiated repository and readiness analyzers through the runner', async () => {
+    const { root } = await createOpenSpecProject();
+    let repositoryCalls = 0;
+    let readinessCalls = 0;
+    const result = await runner.startGuardrailsRunV2({
+      change: 'demo', projectRoot: root, hostCapabilities: higherTierHost,
+      adapters: {
+        dispatcher: true,
+        repositoryAnalyzer: { analyze: async ({ deterministicContext }) => {
+          repositoryCalls += 1;
+          return deterministicContext;
+        } },
+        readinessEvaluator: { evaluate: async ({ deterministicResult }) => {
+          readinessCalls += 1;
+          return deterministicResult;
+        } },
+      },
+      config: {
+        requestedTier: 'tier1', allowAgentDispatch: true,
+        taskOverrides: { '1.1': readinessTask, '1.2': readinessTask },
+      },
+    });
+    expect(result.run.tier).toBe('tier1');
+    expect({ repositoryCalls, readinessCalls }).toEqual({ repositoryCalls: 1, readinessCalls: 1 });
+  });
 
   it('keeps v2 readiness, finding authorization, evidence requirements, and assurance outcomes stable across Tier 1 and Tier 2 adapters', async () => {
     const outcomes: Array<{ tier: string; assurance: string; finding: string; isolated: boolean; usedWorktrees: boolean }> = [];
