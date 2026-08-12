@@ -37,6 +37,24 @@
         "artifactRequirements": ["tasks"],
         "gateDependencies": [],
         "requiredHostCapabilities": ["structuredResults"]
+      },
+      {
+        "id": "debug",
+        "name": "Guardrails Debug",
+        "description": "Start or resume a scientific debugging session for an unresolved finding.",
+        "entry": "workflows/debug.md",
+        "artifactRequirements": ["proposal", "specs", "design", "tasks"],
+        "gateDependencies": ["guardrails.assurance"],
+        "requiredHostCapabilities": ["structuredResults"]
+      },
+      {
+        "id": "uat",
+        "name": "Guardrails UAT",
+        "description": "Guide scenario-by-scenario human acceptance for a Guardrails run.",
+        "entry": "workflows/uat.md",
+        "artifactRequirements": ["tasks"],
+        "gateDependencies": ["guardrails.assurance"],
+        "requiredHostCapabilities": ["structuredResults"]
       }
     ],
     "gates": [
