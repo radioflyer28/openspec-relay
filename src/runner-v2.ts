@@ -26,7 +26,7 @@ import {
   type GuardrailsRunV2,
 } from './schemas.js';
 import { atomicWriteJson, resolveChangeDirectory, runStatePath } from './state.js';
-import { negotiateExecutionTier } from './tiers.js';
+import { negotiateExecutionTier, type TierAdaptersV1 } from './tiers.js';
 import { GUARDRAILS_VERSION } from './version.js';
 import { DEFAULT_HOST_CAPABILITIES } from './runner.js';
 
@@ -94,6 +94,7 @@ export async function startGuardrailsRunV2(options: {
   projectRoot?: string;
   config?: Partial<GuardrailsConfigV2>;
   hostCapabilities?: HostCapabilitiesV1;
+  adapters?: Partial<TierAdaptersV1>;
   changedFiles?: string[];
   now?: string;
 }): Promise<StartRunResultV2> {
@@ -123,7 +124,11 @@ export async function startGuardrailsRunV2(options: {
     projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, overrides: options.config,
   });
   const compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: config.taskOverrides });
-  const tier = negotiateExecutionTier(options.hostCapabilities ?? DEFAULT_HOST_CAPABILITIES, legacyConfig(config)).tier;
+  const tier = negotiateExecutionTier(
+    options.hostCapabilities ?? DEFAULT_HOST_CAPABILITIES,
+    legacyConfig(config),
+    options.adapters,
+  ).tier;
   const now = options.now ?? new Date().toISOString();
   const context = await compileRepositoryContext({
     projectRoot: resolved.projectRoot,

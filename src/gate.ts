@@ -59,7 +59,7 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
         );
       }
       if (assurance.version === 2) {
-        const findings = evaluateFindingObligations({ findings: assurance.findings });
+        const findings = evaluateFindingObligations({ findings: assurance.findings, scenarios: assurance.uatScenarios });
         if (findings.blocking.length > 0) return result(
           'fail',
           `Guardrails has unresolved blocking findings: ${findings.blocking.join(', ')}.`,
