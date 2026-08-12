@@ -4,8 +4,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   atomicWriteJson,
+  readRunStateV2,
   resolveChangeDirectory,
   resolveChangePathForPlatform,
+  startGuardrailsRunV2,
 } from '../src/index.js';
 
 const roots: string[] = [];
@@ -51,5 +53,25 @@ describe('change resolution and atomic state', () => {
     })).rejects.toThrow('interrupted');
     expect(await fs.readFile(filename, 'utf8')).toBe('{"old":true}\n');
     expect((await fs.readdir(root)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('rejects a generated-state symlink without writing outside the change', async () => {
+    const root = await project();
+    const changeDir = path.join(root, 'openspec', 'changes', 'demo');
+    await fs.mkdir(path.join(changeDir, 'specs', 'demo'), { recursive: true });
+    await fs.writeFile(path.join(changeDir, 'proposal.md'), '## Why\n\nDemo.\n');
+    await fs.writeFile(path.join(changeDir, 'design.md'), '## Decisions\n\nDemo.\n');
+    await fs.writeFile(path.join(changeDir, 'tasks.md'), '## 1. Work\n\n- [ ] 1.1 Implement behavior\n');
+    await fs.writeFile(path.join(changeDir, 'specs', 'demo', 'spec.md'), [
+      '## ADDED Requirements', '', '### Requirement: Demo', 'The system SHALL work.', '',
+      '#### Scenario: Works', '- **WHEN** invoked', '- **THEN** it works', '',
+    ].join('\n'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'guardrails-outside-'));
+    roots.push(outside);
+    await fs.symlink(outside, path.join(changeDir, '.guardrails'), 'dir');
+
+    await expect(startGuardrailsRunV2({ change: 'demo', projectRoot: root })).rejects.toThrow(/symlink|outside|contain/i);
+    await expect(readRunStateV2(changeDir)).rejects.toThrow(/symlink|outside|contain/i);
+    expect(await fs.readdir(outside)).toEqual([]);
   });
 });

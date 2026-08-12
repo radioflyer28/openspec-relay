@@ -25,7 +25,12 @@ import {
   type GuardrailsConfigV2,
   type GuardrailsRunV2,
 } from './schemas.js';
-import { atomicWriteJson, resolveChangeDirectory, runStatePath } from './state.js';
+import {
+  assertGuardrailsGeneratedPath,
+  atomicWriteGuardrailsJson,
+  resolveChangeDirectory,
+  runStatePath,
+} from './state.js';
 import { negotiateExecutionTier, type TierAdaptersV1 } from './tiers.js';
 import { GUARDRAILS_VERSION } from './version.js';
 import { DEFAULT_HOST_CAPABILITIES } from './runner.js';
@@ -100,10 +105,16 @@ export async function startGuardrailsRunV2(options: {
 }): Promise<StartRunResultV2> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
   if (resolved.archived) throw new Error(`Cannot start a new run for archived change '${resolved.changeName}'.`);
+  const safeRunPath = await assertGuardrailsGeneratedPath({
+    changeDir: resolved.changeDir,
+    filename: runStatePath(resolved.changeDir),
+    createParents: true,
+    allowMissingFile: true,
+  });
   // A run is an auditable history, not a reset button. Preserve an active v1
   // run by migrating it before any v2 command can append a new event, and make
   // repeated `run` invocations deterministic projections of the same history.
-  if (await fs.access(runStatePath(resolved.changeDir)).then(() => true).catch(() => false)) {
+  if (await fs.access(safeRunPath).then(() => true).catch(() => false)) {
     const store = await readOrMigrateEventStoreV2(resolved.changeDir);
     const compiled = await compileOpenSpecChange({
       changeDir: resolved.changeDir,
@@ -198,7 +209,7 @@ export async function startGuardrailsRunV2(options: {
     },
     events,
   });
-  await atomicWriteJson(eventStorePath(resolved.changeDir), store);
+  await atomicWriteGuardrailsJson(resolved.changeDir, eventStorePath(resolved.changeDir), store);
   const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store, compiled });
   await registerRequiredGate(resolved.changeDir, {
     extensionId: 'guardrails', extensionVersion: GUARDRAILS_VERSION,

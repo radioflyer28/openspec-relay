@@ -3,8 +3,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { GateContextV1 } from '@fission-ai/openspec/extensions';
 import {
   assuranceStatePath,
+  digestJson,
   guardrailsAssuranceGate,
   readAssuranceState,
+  readRunStateV2,
+  runStatePath,
   seedAssuranceState,
   checkGuardrailsRunV2,
   startGuardrailsRunV2,
@@ -63,6 +66,28 @@ describe('Guardrails archive gate', () => {
       ...assurance, updatedAt: '2026-08-04T13:00:00.000Z',
     }, null, 2)}\n`);
     expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
-      .toMatchObject({ status: 'error', summary: expect.stringContaining('does not match') });
+      .toMatchObject({ status: 'error', summary: expect.stringMatching(/does not match|projection/i) });
+  });
+
+  it('rejects matching forged projections when canonical events remain incomplete', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const run = await readRunStateV2(changeDir);
+    const assurance = JSON.parse(await fs.readFile(assuranceStatePath(changeDir), 'utf8')) as Record<string, unknown>;
+    const forgedAssurance = {
+      ...assurance,
+      status: 'pass',
+      checks: (assurance.checks as Array<Record<string, unknown>>).map((check) => ({
+        ...check, status: check.status === 'skipped' ? 'skipped' : 'pass', summary: 'Forged passing projection.',
+      })),
+      unresolvedHumanActions: [],
+    };
+    const forgedRun = { ...run, status: 'complete', assuranceDigest: digestJson(forgedAssurance) };
+    await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify(forgedAssurance, null, 2)}\n`);
+    await fs.writeFile(runStatePath(changeDir), `${JSON.stringify(forgedRun, null, 2)}\n`);
+
+    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+      status: 'error', summary: expect.stringMatching(/canonical|replay|projection/i),
+    });
   });
 });
