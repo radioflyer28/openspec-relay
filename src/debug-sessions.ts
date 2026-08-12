@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   DebugSessionV2Schema,
+  type DebugConclusionV2,
   type DebugExperimentV2,
   type DebugHypothesisV2,
   type DebugSessionV2,
@@ -57,9 +58,48 @@ export function startDebugSession(options: {
     updatedAt: now,
     hypotheses: [],
     experiments: [],
+    conclusions: [],
+    changedReferences: [],
     unresolvedQuestions: [],
     nextAction: 'Record a testable hypothesis before changing implementation.',
     regressionEvidence: [],
+  });
+}
+
+export function recordDebugConclusion(options: {
+  session: DebugSessionV2;
+  kind: DebugConclusionV2['kind'];
+  statement: string;
+  experimentIds: string[];
+  evidence?: PortableReferenceV2[];
+  sourceRevision?: string;
+  now?: string;
+}): DebugSessionV2 {
+  const session = DebugSessionV2Schema.parse(options.session);
+  const experiments = options.experimentIds.map((id) => session.experiments.find((item) => item.experimentId === id));
+  if (experiments.length === 0 || experiments.some((item) => !item?.observation)) {
+    throw new Error('A debug conclusion requires one or more recorded experiments with observations.');
+  }
+  const evidence = options.evidence?.length
+    ? options.evidence
+    : experiments.flatMap((item) => item?.targetedEvidence ?? []);
+  if (evidence.length === 0) throw new Error('A debug conclusion requires observable evidence.');
+  const conclusion: DebugConclusionV2 = {
+    conclusionId: `conclusion:${digest({ sessionId: session.sessionId, kind: options.kind, statement: options.statement,
+      experiments: options.experimentIds }).slice(0, 24)}`,
+    kind: options.kind,
+    statement: options.statement,
+    experimentIds: options.experimentIds,
+    evidence,
+    sourceRevision: options.sourceRevision ?? experiments[0]!.sourceRevision,
+  };
+  return DebugSessionV2Schema.parse({
+    ...session,
+    conclusions: [...session.conclusions, conclusion],
+    updatedAt: options.now ?? new Date().toISOString(),
+    nextAction: options.kind === 'root_cause'
+      ? 'Correct the evidenced root cause and record fail-before/pass-after regression proof.'
+      : 'Continue until an evidence-backed root cause is established.',
   });
 }
 
@@ -190,6 +230,9 @@ export function resolveDebugSession(options: {
   }
   if (options.exemption && !options.exemption.acceptedBy) {
     throw new Error('A regression exemption requires independent human acceptance.');
+  }
+  if (!options.exemption && !session.conclusions.some((item) => item.kind === 'root_cause')) {
+    throw new Error('Resolved behavior defects require an evidence-backed root-cause conclusion.');
   }
   return DebugSessionV2Schema.parse({
     ...session,

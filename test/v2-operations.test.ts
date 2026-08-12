@@ -7,7 +7,8 @@ import { compileOpenSpecChange } from '../src/artifacts.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { startGuardrailsRunV2 } from '../src/runner-v2.js';
 import { readAssuranceStateV2 } from '../src/state.js';
-import { recordLegacyPayloadV2, transitionFindingV2 } from '../src/v2-operations.js';
+import { presentUatV2, recordLegacyPayloadV2, recordUatV2, transitionFindingV2 } from '../src/v2-operations.js';
+import { checkGuardrailsRunV2 } from '../src/runner-v2.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -82,6 +83,30 @@ describe('v2 debug and UAT operations', () => {
     ]);
   });
 
+  it('invalidates verified findings and accepted UAT after a material specification change', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: {
+      features: { uat: { enabled: true, required: true } },
+    } });
+    const finding = await addHumanFinding(root, changeDir);
+    const repairEvidence = [{ referenceId: 'test:repair', kind: 'generated' as const, externalId: 'repair', available: true }];
+    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
+      actor: { kind: 'executor', id: 'executor' }, reason: 'Repaired.', evidence: repairEvidence });
+    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
+      actor: { kind: 'verifier', id: 'verifier' }, reason: 'Verified.', evidence: repairEvidence });
+    const presented = await presentUatV2({ change: 'demo', projectRoot: root });
+    await recordUatV2({ change: 'demo', projectRoot: root, scenarioId: presented.next!.scenarioId,
+      status: 'passed', actor: 'maintainer', notes: 'Observed.' });
+    await fs.appendFile(`${changeDir}/specs/demo/spec.md`, '\n<!-- materially revised acceptance contract -->\n');
+    const checked = await checkGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    expect(checked.assurance.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ findingId: finding.findingId, state: 'stale' }),
+    ]));
+    expect(checked.assurance.uatScenarios).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scenarioId: presented.next!.scenarioId, status: 'stale' }),
+    ]));
+  }, 30_000);
+
   it('automatically begins a resumable debug session after repair exhaustion and records human-needed when debugging is unavailable', async () => {
     const active = await createOpenSpecProject('active');
     await startGuardrailsRunV2({ change: 'active', projectRoot: active.root, config: { repairLimit: 1 } });
@@ -143,6 +168,12 @@ describe('v2 debug and UAT operations', () => {
       '--observation', 'The focused check confirms the hypothesis.', '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(observed.session.experiments[0]).toMatchObject({ result: 'passed' });
+    const concluded = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
+      '--experiment-id', experiment.session.experiments[0].experimentId,
+      '--root-cause', 'The required condition was missing.', '--evidence', evidenceFile, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(concluded.session.conclusions).toEqual([expect.objectContaining({ kind: 'root_cause' })]);
     const resolved = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
       '--resolve', '--evidence', evidenceFile, '--json',

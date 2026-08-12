@@ -14,6 +14,7 @@ function overall(checks: GuardrailsAssuranceV2['checks'], assurance: GuardrailsA
   if (checks.some((item) => item.status === 'human_needed')) return 'human_needed';
   if (checks.some((item) => item.status === 'pending')) return 'pending';
   if (evaluateFindingObligations({ findings: assurance.findings, scenarios: assurance.uatScenarios }).blocking.length > 0) return 'fail';
+  if (assurance.debugSessions.some((item) => item.status !== 'resolved')) return 'human_needed';
   if (assurance.uatScenarios.some((item) => ['awaiting_human', 'awaiting_retest', 'failed', 'blocked', 'stale'].includes(item.status))) return 'human_needed';
   if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'error')) return 'error';
   if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'fail')) return 'fail';

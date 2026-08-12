@@ -14,8 +14,8 @@ import {
 } from './events.js';
 import { selectAssurancePipeline } from './modes.js';
 import { evaluateAssuranceV2 } from './assurance-v2.js';
-import { compileRepositoryContext } from './repository-context.js';
-import { evaluatePlanReadiness } from './readiness.js';
+import { compileRepositoryContext, discoverRepositoryChangedFiles } from './repository-context.js';
+import { evaluatePlanReadiness, evaluatePlanReadinessWithAdapter } from './readiness.js';
 import { detectReleaseApplicability, executeReleaseCandidates } from './release-assurance.js';
 import {
   AssuranceCheckV2Schema,
@@ -28,12 +28,14 @@ import {
 import {
   assertGuardrailsGeneratedPath,
   atomicWriteGuardrailsJson,
+  digestJson,
   resolveChangeDirectory,
   runStatePath,
 } from './state.js';
 import { negotiateExecutionTier, type TierAdaptersV1 } from './tiers.js';
 import { GUARDRAILS_VERSION } from './version.js';
 import { DEFAULT_HOST_CAPABILITIES } from './runner.js';
+import { mapScenarioCoverage } from './verification.js';
 
 function legacyConfig(config: GuardrailsConfigV2) {
   const legacy = Object.fromEntries(Object.entries(config).filter(([key]) => key !== 'features'));
@@ -94,6 +96,99 @@ export interface StartRunResultV2 {
   blockedBeforeExecution: boolean;
 }
 
+function controllingRevision(compiled: Awaited<ReturnType<typeof compileOpenSpecChange>>): string {
+  return digestJson(Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest])));
+}
+
+async function planningInputs(options: {
+  projectRoot: string;
+  changeDir: string;
+  changeName: string;
+  compiled: Awaited<ReturnType<typeof compileOpenSpecChange>>;
+  config: GuardrailsConfigV2;
+  tier: GuardrailsRunV2['tier'];
+  adapters?: Partial<TierAdaptersV1>;
+  changedFiles?: string[];
+  now: string;
+}) {
+  const changedFiles = options.changedFiles ?? (await discoverRepositoryChangedFiles(options.projectRoot)).files;
+  const context = await compileRepositoryContext({
+    projectRoot: options.projectRoot, changeDir: options.changeDir, changeName: options.changeName,
+    compiled: options.compiled, changedFiles, boundaries: options.config.features.repositoryContext.boundaries,
+    tier: options.tier, adapter: options.adapters?.repositoryAnalyzer, now: options.now,
+  });
+  const readinessOptions = {
+    changeName: options.changeName, compiled: options.compiled, repositoryContext: context,
+    tier: options.tier, now: options.now,
+  };
+  const readiness = options.adapters?.readinessEvaluator
+    ? await evaluatePlanReadinessWithAdapter({ ...readinessOptions, adapter: options.adapters.readinessEvaluator })
+    : evaluatePlanReadiness(readinessOptions);
+  const humanNeeded = options.config.features.uat.required
+    ? Object.fromEntries(options.compiled.scenarioIds.map((scenarioId) =>
+      [scenarioId, `Validate OpenSpec scenario '${scenarioId}' and record the observed result.`]))
+    : {};
+  const scenarioCoverage = mapScenarioCoverage({
+    scenarioIds: options.compiled.scenarioIds, evidence: [], humanNeeded,
+  });
+  return { changedFiles, context, readiness, scenarioCoverage };
+}
+
+async function refreshPlanningEvents(options: {
+  changeDir: string;
+  store: Awaited<ReturnType<typeof readEventStoreV2>>;
+  compiled: Awaited<ReturnType<typeof compileOpenSpecChange>>;
+  current: ReturnType<typeof replayGuardrailsEventsV2>;
+  context: Awaited<ReturnType<typeof compileRepositoryContext>>;
+  readiness: ReturnType<typeof evaluatePlanReadiness>;
+  scenarioCoverage: GuardrailsAssuranceV2['scenarioCoverage'];
+  now: string;
+  origin: string;
+}) {
+  const sourceDigests = Object.fromEntries(options.compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
+  const append = async (eventId: string, actor: Parameters<typeof createGuardrailsEventV2>[0]['actor'],
+    payload: Parameters<typeof createGuardrailsEventV2>[0]['payload']) => appendGuardrailsEventV2({
+    changeDir: options.changeDir,
+    event: createGuardrailsEventV2({ eventId, runId: options.store.runId, changeName: options.store.changeName,
+      occurredAt: options.now, sourceDigests, actor,
+      provenance: { origin: options.origin, adapter: options.store.seed.tier }, payload }),
+  });
+  if (options.current.assurance.repositoryContext &&
+      options.current.assurance.repositoryContext.contextId !== options.context.contextId) {
+    const referenceIds = options.current.assurance.repositoryContext.claims
+      .flatMap((claim) => claim.evidence.map((item) => item.referenceId));
+    if (referenceIds.length) await append(
+      `context-stale:${options.current.assurance.repositoryContext.contextId}:${options.context.inputRevision.slice(0, 12)}`,
+      { kind: 'automation' }, { type: 'context.stale', contextId: options.current.assurance.repositoryContext.contextId,
+        referenceIds },
+    );
+  }
+  if (options.current.assurance.readiness &&
+      options.current.assurance.readiness.inputRevision !== options.readiness.inputRevision) await append(
+    `readiness-stale:${options.current.assurance.readiness.resultId}:${options.readiness.inputRevision.slice(0, 12)}`,
+    { kind: 'automation' }, { type: 'readiness.stale', resultId: options.current.assurance.readiness.resultId,
+      inputRevision: options.readiness.inputRevision },
+  );
+  await append(`context:${options.context.contextId}:${options.now}`, { kind: 'analyzer', id: 'repository-context' },
+    { type: 'context.compiled', context: options.context });
+  await append(`readiness:${options.readiness.resultId}:${options.now}`, { kind: 'analyzer', id: 'plan-readiness' },
+    { type: 'readiness.evaluated', result: options.readiness });
+  await append(`scenario-coverage:${controllingRevision(options.compiled)}:${options.now}`, { kind: 'automation' },
+    { type: 'scenario.coverage_reconciled', coverage: options.scenarioCoverage });
+  const sourceRevision = controllingRevision(options.compiled);
+  for (const finding of options.current.assurance.findings.filter((item) =>
+    ['repaired', 'independently_verified', 'accepted_risk'].includes(item.state) &&
+      item.transitions.at(-1)?.sourceRevision !== sourceRevision)) await append(
+    `finding-stale:${finding.findingId}:${sourceRevision.slice(0, 12)}`, { kind: 'automation' },
+    { type: 'finding.stale', findingId: finding.findingId, sourceRevision },
+  );
+  for (const scenario of options.current.assurance.uatScenarios.filter((item) =>
+    ['passed', 'accepted_limitation'].includes(item.status) && item.sourceRevision !== sourceRevision)) await append(
+    `uat-stale:${scenario.scenarioId}:${sourceRevision.slice(0, 12)}`, { kind: 'automation' },
+    { type: 'uat.scenario_stale', scenarioId: scenario.scenarioId, sourceRevision },
+  );
+}
+
 export async function startGuardrailsRunV2(options: {
   change: string;
   projectRoot?: string;
@@ -120,7 +215,16 @@ export async function startGuardrailsRunV2(options: {
       changeDir: resolved.changeDir,
       taskMetadata: store.seed.config.taskOverrides,
     });
-    const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store, compiled });
+    const now = options.now ?? new Date().toISOString();
+    const current = replayGuardrailsEventsV2({ store, compiled });
+    const planning = await planningInputs({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir,
+      changeName: resolved.changeName, compiled, config: store.seed.config, tier: store.seed.tier,
+      adapters: options.adapters, changedFiles: options.changedFiles, now });
+    await refreshPlanningEvents({ changeDir: resolved.changeDir, store, compiled, current,
+      context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
+      now, origin: 'guardrails-v2-resume' });
+    const refreshedStore = await readEventStoreV2(resolved.changeDir);
+    const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store: refreshedStore, compiled });
     await registerRequiredGate(resolved.changeDir, {
       extensionId: 'guardrails', extensionVersion: GUARDRAILS_VERSION,
       gateId: 'guardrails.assurance', workflowId: 'run',
@@ -141,23 +245,10 @@ export async function startGuardrailsRunV2(options: {
     options.adapters,
   ).tier;
   const now = options.now ?? new Date().toISOString();
-  const context = await compileRepositoryContext({
-    projectRoot: resolved.projectRoot,
-    changeDir: resolved.changeDir,
-    changeName: resolved.changeName,
-    compiled,
-    changedFiles: options.changedFiles,
-    boundaries: config.features.repositoryContext.boundaries,
-    tier,
-    now,
-  });
-  const readiness = evaluatePlanReadiness({
-    changeName: resolved.changeName,
-    compiled,
-    repositoryContext: context,
-    tier,
-    now,
-  });
+  const planning = await planningInputs({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir,
+    changeName: resolved.changeName, compiled, config, tier, adapters: options.adapters,
+    changedFiles: options.changedFiles, now });
+  const { context, readiness, scenarioCoverage } = planning;
   const releaseCandidates = await detectReleaseApplicability({
     projectRoot: resolved.projectRoot,
     changedFiles: options.changedFiles,
@@ -183,6 +274,11 @@ export async function startGuardrailsRunV2(options: {
       eventId: `readiness:${readiness.resultId}`, runId, changeName: resolved.changeName, occurredAt: now,
       sourceDigests, actor: { kind: 'analyzer', id: 'plan-readiness' },
       provenance: { origin: 'guardrails-v2-run', adapter: tier }, payload: { type: 'readiness.evaluated', result: readiness },
+    }),
+    createGuardrailsEventV2({
+      eventId: `scenario-coverage:${controllingRevision(compiled)}`, runId, changeName: resolved.changeName, occurredAt: now,
+      sourceDigests, actor: { kind: 'automation' }, provenance: { origin: 'guardrails-v2-run', adapter: tier },
+      payload: { type: 'scenario.coverage_reconciled', coverage: scenarioCoverage },
     }),
     ...releaseCandidates.map((candidate) => createGuardrailsEventV2({
       eventId: `release:${candidate.candidateId}`, runId, changeName: resolved.changeName, occurredAt: now,
@@ -226,6 +322,7 @@ export async function checkGuardrailsRunV2(options: {
   change: string;
   projectRoot?: string;
   changedFiles?: string[];
+  adapters?: Partial<TierAdaptersV1>;
   now?: string;
 }): Promise<{ run: GuardrailsRunV2; assurance: GuardrailsAssuranceV2 }> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
@@ -234,14 +331,9 @@ export async function checkGuardrailsRunV2(options: {
   const compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: config.taskOverrides });
   const current = replayGuardrailsEventsV2({ store, compiled });
   const now = options.now ?? new Date().toISOString();
-  const context = await compileRepositoryContext({
-    projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, changeName: resolved.changeName,
-    compiled, changedFiles: options.changedFiles, boundaries: config.features.repositoryContext.boundaries,
-    tier: store.seed.tier, now,
-  });
-  const readiness = evaluatePlanReadiness({
-    changeName: resolved.changeName, compiled, repositoryContext: context, tier: store.seed.tier, now,
-  });
+  const planning = await planningInputs({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir,
+    changeName: resolved.changeName, compiled, config, tier: store.seed.tier, adapters: options.adapters,
+    changedFiles: options.changedFiles, now });
   const sourceDigests = Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
   const releaseCandidates = await executeReleaseCandidates({
     packageRoot: resolved.projectRoot,
@@ -249,49 +341,9 @@ export async function checkGuardrailsRunV2(options: {
     mode: store.seed.mode,
     config: store.seed.config.features.releaseAssurance,
   });
-  if (current.assurance.repositoryContext && current.assurance.repositoryContext.contextId !== context.contextId) {
-    await appendGuardrailsEventV2({
-      changeDir: resolved.changeDir,
-      event: createGuardrailsEventV2({
-        eventId: `context-stale:${current.assurance.repositoryContext.contextId}:${context.inputRevision.slice(0, 12)}`,
-        runId: store.runId, changeName: store.changeName, occurredAt: now, sourceDigests,
-        actor: { kind: 'automation' }, provenance: { origin: 'guardrails-v2-check' },
-        payload: { type: 'context.stale', contextId: current.assurance.repositoryContext.contextId,
-          referenceIds: current.assurance.repositoryContext.claims.flatMap((claim) => claim.evidence.map((item) => item.referenceId)) },
-      }),
-    });
-  }
-  if (current.assurance.readiness && current.assurance.readiness.inputRevision !== readiness.inputRevision) {
-    await appendGuardrailsEventV2({
-      changeDir: resolved.changeDir,
-      event: createGuardrailsEventV2({
-        eventId: `readiness-stale:${current.assurance.readiness.resultId}:${readiness.inputRevision.slice(0, 12)}`,
-        runId: store.runId, changeName: store.changeName, occurredAt: now, sourceDigests,
-        actor: { kind: 'automation' }, provenance: { origin: 'guardrails-v2-check' },
-        payload: { type: 'readiness.stale', resultId: current.assurance.readiness.resultId, inputRevision: readiness.inputRevision },
-      }),
-    });
-  }
-  const refreshedStore = await readEventStoreV2(resolved.changeDir);
-  await appendGuardrailsEventV2({
-    changeDir: resolved.changeDir,
-    event: createGuardrailsEventV2({
-      eventId: `context:${context.contextId}:${now}`, runId: refreshedStore.runId, changeName: refreshedStore.changeName,
-      occurredAt: now, sourceDigests, actor: { kind: 'analyzer', id: 'repository-context' },
-      provenance: { origin: 'guardrails-v2-check', adapter: refreshedStore.seed.tier },
-      payload: { type: 'context.compiled', context },
-    }),
-  });
-  const latestStore = await readEventStoreV2(resolved.changeDir);
-  await appendGuardrailsEventV2({
-    changeDir: resolved.changeDir,
-    event: createGuardrailsEventV2({
-      eventId: `readiness:${readiness.resultId}:${now}`, runId: latestStore.runId, changeName: latestStore.changeName,
-      occurredAt: now, sourceDigests, actor: { kind: 'analyzer', id: 'plan-readiness' },
-      provenance: { origin: 'guardrails-v2-check', adapter: latestStore.seed.tier },
-      payload: { type: 'readiness.evaluated', result: readiness },
-    }),
-  });
+  await refreshPlanningEvents({ changeDir: resolved.changeDir, store, compiled, current,
+    context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
+    now, origin: 'guardrails-v2-check' });
   let releaseStore = await readEventStoreV2(resolved.changeDir);
   for (const candidate of releaseCandidates) {
     await appendGuardrailsEventV2({

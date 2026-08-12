@@ -106,6 +106,14 @@ export const guardrailsAssuranceGate: GateProviderV1 = {
           evidence,
           ['Repair the findings and record independent verification or an explicit accepted risk.'],
         );
+        const debugging = assurance.debugSessions.filter((session) => session.status !== 'resolved');
+        if (debugging.length > 0) return result(
+          'human_needed',
+          `Guardrails has unresolved debugging investigations: ${debugging.map((session) =>
+            `${session.sessionId}${session.nextAction ? ` (${session.nextAction})` : ''}`).join(', ')}.`,
+          evidence,
+          ['Continue the structured investigation, record an evidence-backed root cause, and verify the regression fix.'],
+        );
         const uat = evaluateUatObligations({ scenarios: assurance.uatScenarios });
         if (uat.blocking.length > 0) return result(
           'human_needed',

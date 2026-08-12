@@ -40,12 +40,23 @@ describe('persistent scientific debugging', () => {
     const api = debug as Record<string, unknown>;
     const exhausted = api.debugSessionForRepairExhaustion as (input: Record<string, unknown>) => { status: string };
     const resolve = api.resolveDebugSession as (input: Record<string, unknown>) => { status: string };
+    const addHypothesis = api.recordDebugHypothesis as (input: Record<string, unknown>) => any;
+    const plan = api.planDebugExperiment as (input: Record<string, unknown>) => any;
+    const observe = api.observeDebugExperiment as (input: Record<string, unknown>) => any;
+    const conclude = api.recordDebugConclusion as (input: Record<string, unknown>) => any;
     const session = exhausted({ logicalFailureId: 'check:security', references: ['1.1'], failedEvidence: evidence,
       repairAttempts: [{ result: 'fail' }, { result: 'fail' }], limit: 2, now: '2026-08-09T12:00:00.000Z', existing: [] });
     expect(session.status).toBe('active');
     expect(() => resolve({ session, regressionEvidence: [], now: '2026-08-09T12:05:00.000Z' }))
       .toThrow(/regression/i);
-    expect(resolve({ session, regressionEvidence: [{ referenceId: 'evidence:red-green', kind: 'generated', externalId: 'red-green', available: true }],
+    const hypothesized = addHypothesis({ session, statement: 'A condition is missing.' });
+    const planned = plan({ session: hypothesized, hypothesisId: hypothesized.hypotheses[0].hypothesisId,
+      action: 'Run a focused check.', targetedEvidence: evidence, sourceRevision: digest });
+    const observed = observe({ session: planned, experimentId: planned.experiments[0].experimentId,
+      result: 'passed', observation: 'The check isolates the missing condition.' });
+    const concluded = conclude({ session: observed, kind: 'root_cause', statement: 'The condition is missing.',
+      experimentIds: [planned.experiments[0].experimentId], evidence });
+    expect(resolve({ session: concluded, regressionEvidence: [{ referenceId: 'evidence:red-green', kind: 'generated', externalId: 'red-green', available: true }],
       now: '2026-08-09T12:05:00.000Z' })).toMatchObject({ status: 'resolved' });
   });
 
@@ -54,5 +65,17 @@ describe('persistent scientific debugging', () => {
       (input: Record<string, unknown>) => { readOnly: boolean; mayMutateWorkspace: boolean; requiresGitOptIn: boolean };
     expect(contract({ role: 'reviewer' })).toEqual({ readOnly: true, mayMutateWorkspace: false, requiresGitOptIn: false, role: 'reviewer' });
     expect(contract({ role: 'executor' })).toEqual({ readOnly: false, mayMutateWorkspace: true, requiresGitOptIn: true, role: 'executor' });
+  });
+
+  it('requires an evidence-backed root-cause conclusion before resolution', () => {
+    const api = debug as Record<string, unknown>;
+    const start = api.startDebugSession as (input: Record<string, unknown>) => unknown;
+    const conclude = api.recordDebugConclusion as (input: Record<string, unknown>) => unknown;
+    const resolve = api.resolveDebugSession as (input: Record<string, unknown>) => unknown;
+    const session = start({ logicalFailureId: 'finding:root-cause', references: ['1.1'], failedEvidence: evidence,
+      now: '2026-08-12T12:00:00.000Z', existing: [] });
+    expect(() => conclude({ session, statement: 'A guessed root cause.', kind: 'root_cause', experimentIds: [] }))
+      .toThrow(/observation|experiment/i);
+    expect(() => resolve({ session, regressionEvidence: evidence })).toThrow(/root.cause|conclusion/i);
   });
 });

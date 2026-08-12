@@ -13,6 +13,7 @@ import {
   debugSessionForRepairExhaustion,
   observeDebugExperiment,
   planDebugExperiment,
+  recordDebugConclusion,
   recordDebugHypothesis,
   resolveDebugSession,
   startDebugSession,
@@ -21,6 +22,7 @@ import { transitionFinding } from './findings.js';
 import { recordUatDisposition, nextUatScenario, projectUatScenarios } from './uat.js';
 import { resolveChangeDirectory } from './state.js';
 import { atomicWriteText } from './state.js';
+import { digestJson } from './state.js';
 import { acceptRequiredGate, readRequiredGateRecord } from '@fission-ai/openspec/extensions';
 import {
   GuardrailsEventPayloadV1Schema,
@@ -39,6 +41,10 @@ async function currentV2(options: { change: string; projectRoot?: string }) {
 
 function sources(compiled: Awaited<ReturnType<typeof currentV2>>['compiled']): Record<string, string> {
   return Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
+}
+
+function sourceRevision(compiled: Awaited<ReturnType<typeof currentV2>>['compiled']): string {
+  return digestJson(sources(compiled));
 }
 
 export async function startOrResumeDebugV2(options: {
@@ -110,7 +116,7 @@ export async function transitionFindingV2(options: {
     actor: options.actor,
     reason: options.reason,
     evidence: options.evidence ?? [],
-    sourceRevision: current.projection.run.stateRevision,
+    sourceRevision: sourceRevision(current.compiled),
     occurredAt: now,
     ...(options.expiry ? { expiry: options.expiry } : {}),
     ...(options.followUp ? { followUp: options.followUp } : {}),
@@ -186,7 +192,7 @@ export async function planDebugExperimentV2(options: {
   const now = options.now ?? new Date().toISOString();
   const updated = planDebugExperiment({
     session: debugSession(current, options.sessionId), hypothesisId: options.hypothesisId, action: options.action,
-    targetedEvidence: options.evidence, sourceRevision: current.projection.run.stateRevision, now,
+    targetedEvidence: options.evidence, sourceRevision: sourceRevision(current.compiled), now,
     ...(options.humanRationale ? { humanRationale: options.humanRationale } : {}),
   });
   const experiment = updated.experiments.at(-1)!;
@@ -215,6 +221,23 @@ export async function observeDebugExperimentV2(options: {
   return sessions.find((item) => item.sessionId === options.sessionId)!;
 }
 
+export async function recordDebugConclusionV2(options: {
+  change: string; projectRoot?: string; sessionId: string; kind: 'conclusion' | 'root_cause';
+  statement: string; experimentIds: string[]; evidence?: PortableReferenceV2[]; now?: string;
+}) {
+  const current = await currentV2(options);
+  const now = options.now ?? new Date().toISOString();
+  const updated = recordDebugConclusion({ session: debugSession(current, options.sessionId), kind: options.kind,
+    statement: options.statement, experimentIds: options.experimentIds, evidence: options.evidence,
+    sourceRevision: sourceRevision(current.compiled), now });
+  const conclusion = updated.conclusions.at(-1)!;
+  const sessions = await appendDebugEvent({ current, now,
+    eventId: `debug-conclusion:${options.sessionId}:${conclusion.conclusionId}`,
+    payload: { type: 'debug.conclusion_recorded', sessionId: options.sessionId, conclusion },
+  });
+  return sessions.find((item) => item.sessionId === options.sessionId)!;
+}
+
 export async function resolveDebugSessionV2(options: {
   change: string; projectRoot?: string; sessionId: string; regressionEvidence: PortableReferenceV2[];
   exemption?: { reason: string; acceptedBy: string }; now?: string;
@@ -227,7 +250,8 @@ export async function resolveDebugSessionV2(options: {
   });
   const sessions = await appendDebugEvent({ current, now,
     eventId: `debug-resolved:${options.sessionId}:${now}`,
-    payload: { type: 'debug.session_updated', sessionId: options.sessionId, status: updated.status, nextAction: updated.nextAction },
+    payload: { type: 'debug.session_updated', sessionId: options.sessionId, status: updated.status,
+      nextAction: updated.nextAction, regressionEvidence: updated.regressionEvidence },
   });
   return sessions.find((item) => item.sessionId === options.sessionId)!;
 }
@@ -241,7 +265,7 @@ export async function presentUatV2(options: { change: string; projectRoot?: stri
     findings: current.projection.assurance.findings,
     taskIdsByScenario: Object.fromEntries(current.projection.run.tasks.flatMap((task) =>
       task.scenarioRefs.map((scenarioId) => [scenarioId, [task.taskId]]))),
-    sourceRevision: current.projection.run.stateRevision,
+    sourceRevision: sourceRevision(current.compiled),
   });
   if (!existing.length) {
     for (const scenario of scenarios) await appendGuardrailsEventV2({
