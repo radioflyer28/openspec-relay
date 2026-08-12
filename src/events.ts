@@ -312,7 +312,7 @@ export function replayGuardrailsEvents(options: {
     else if (payload.type === 'deviation.recorded') deviations.push(payload.deviation);
     else if (payload.type === 'repair.recorded') repairs.push(payload.repair);
     else if (payload.type === 'human.decision') {
-      const label = payload.reason ?? `${payload.gateId}: human ${payload.decision}`;
+      const label = `${payload.gateId}: ${payload.reason ?? `human ${payload.decision}`}`;
       if (payload.decision === 'requested') unresolvedHumanActions.push(label);
       if (payload.decision === 'accepted' || payload.decision === 'rejected') {
         const index = unresolvedHumanActions.findIndex((item) => item.includes(payload.gateId));
@@ -739,7 +739,7 @@ export function replayGuardrailsEventsV2(options: {
     else if (payload.type === 'repair.recorded') repairs.push(payload.repair);
     else if (payload.type === 'deviation.recorded') deviations.push(payload.deviation);
     else if (payload.type === 'human.decision') {
-      const label = payload.reason ?? `${payload.gateId}: human ${payload.decision}`;
+      const label = `${payload.gateId}: ${payload.reason ?? `human ${payload.decision}`}`;
       if (payload.decision === 'requested') humanActions.push(label);
       else {
         const index = humanActions.findIndex((item) => item.includes(payload.gateId));
