@@ -14,4 +14,21 @@ describe('assurance capability test map', () => {
     expect(content).toMatch(/not available[\s\S]*not[\s\S]*(?:reconstructed|fabricated)/i);
     expect(content.match(/`human_needed`/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
   });
+
+  it('binds high-risk map claims to semantic regression assertions', async () => {
+    const read = (filename: string) => fs.readFile(path.join(process.cwd(), 'test', filename), 'utf8');
+    const [events, state, lifecycle, release, installed] = await Promise.all([
+      read('events-v2.test.ts'), read('state.test.ts'), read('v2-operations.test.ts'),
+      read('release-assurance.test.ts'), read('actual-candidate-install.test.ts'),
+    ]);
+    expect(events).toMatch(/exceeds the lease interval|preserves every successful event/i);
+    expect(state).toMatch(/ancestor.*(?:swap|replacement)|junction/i);
+    expect(lifecycle).toMatch(/production retest queue/);
+    expect(lifecycle).toMatch(/exact cited repository evidence/);
+    expect(lifecycle).toMatch(/debug\.verification_recorded/);
+    expect(release).toMatch(/unrelated host secrets|hostile-build/);
+    expect(release).toMatch(/stateContracts|state contract/);
+    expect(installed).toMatch(/all five workflows through host discovery/);
+    expect(installed).toContain("['run', 'check', 'run-status', 'debug', 'uat']");
+  });
 });
