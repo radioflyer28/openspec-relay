@@ -6,6 +6,14 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const roots: string[] = [];
+const nonInteractiveEnvironment = {
+  ...process.env,
+  CI: 'true',
+  NO_COLOR: '1',
+  OPENSPEC_NO_UPDATE_CHECK: '1',
+  OPENSPEC_TELEMETRY: '0',
+  DO_NOT_TRACK: '1',
+};
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
@@ -43,8 +51,9 @@ describe('actual packed companion candidate', () => {
       },
     }));
     execFileSync('npm', [
-      'install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false',
-    ], { cwd: projectRoot, encoding: 'utf8' });
+      'install', '--offline', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
+      '--package-lock=false',
+    ], { cwd: projectRoot, encoding: 'utf8', timeout: 30_000, env: nonInteractiveEnvironment });
     const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-guardrails');
     const installedManifest = JSON.parse(await fs.readFile(path.join(installedCompanion, 'package.json'), 'utf8')) as {
       name: string;
@@ -60,18 +69,18 @@ describe('actual packed companion candidate', () => {
 
     const coreCli = path.join(projectRoot, 'node_modules', '@fission-ai', 'openspec', 'bin', 'openspec.js');
     execFileSync(process.execPath, [coreCli, 'init', '--tools', 'codex', '--force', '--no-animation'], {
-      cwd: projectRoot, encoding: 'utf8',
+      cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     const linked = execFileSync(process.execPath, [coreCli, 'extension', 'link', installedCompanion], {
-      cwd: projectRoot, encoding: 'utf8',
+      cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(linked).toContain('workflows=5');
     const listed = execFileSync(process.execPath, [coreCli, 'extension', 'list'], {
-      cwd: projectRoot, encoding: 'utf8',
+      cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(listed).toMatch(/guardrails@0\.1\.0.*compatibility=compatible.*workflows=5/);
     const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'guardrails'], {
-      cwd: projectRoot, encoding: 'utf8',
+      cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(doctor).toMatch(/manifest=valid; compatibility=compatible/);
 
