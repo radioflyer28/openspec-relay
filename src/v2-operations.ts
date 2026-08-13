@@ -326,15 +326,39 @@ export async function resolveDebugSessionV2(options: {
   const current = await currentV2(options);
   const now = options.now ?? new Date().toISOString();
   const session = debugSession(current, options.sessionId);
-  if (!session.findingId) throw new Error('Debug resolution requires a linked finding or equivalent independently verified check.');
-  const finding = current.projection.assurance.findings.find((item) => item.findingId === session.findingId);
-  if (!finding || finding.state !== 'independently_verified') {
+  const finding = session.findingId
+    ? current.projection.assurance.findings.find((item) => item.findingId === session.findingId)
+    : undefined;
+  const checkId = session.logicalFailureId.startsWith('check:')
+    ? session.logicalFailureId.slice('check:'.length)
+    : undefined;
+  const currentSourceDigests = sources(current.compiled);
+  const equivalentCheckEvent = !finding && checkId
+    ? [...current.store.events].reverse().find((event) => event.payload.type === 'evidence.recorded' &&
+      event.payload.evidence.checkId === checkId && event.payload.evidence.result === 'pass' &&
+      event.payload.evidence.origin === options.verifier.kind && event.actor.kind === options.verifier.kind &&
+      event.actor.id === options.verifier.id && Date.parse(event.occurredAt) >= Date.parse(session.startedAt) &&
+      Date.parse(event.payload.evidence.observedAt) >= Date.parse(session.startedAt) &&
+      Boolean(event.payload.evidence.sourceDigests) && Object.entries(currentSourceDigests).every(
+        ([artifactPath, sourceDigest]) => event.payload.type === 'evidence.recorded' &&
+          event.payload.evidence.sourceDigests?.[artifactPath] === sourceDigest,
+      ))
+    : undefined;
+  const equivalentCheck = equivalentCheckEvent?.payload.type === 'evidence.recorded'
+    ? equivalentCheckEvent.payload.evidence
+    : undefined;
+  if (finding && finding.state !== 'independently_verified') {
     throw new Error('Debug resolution requires the linked finding to be independently verified first.');
   }
-  const repairingActors = new Set(finding.transitions.filter((item) => item.actor.kind === 'executor')
-    .map((item) => item.actor.id).filter(Boolean));
-  if (repairingActors.has(options.verifier.id)) {
-    throw new Error('Debug resolution verifier must be distinct from the executor who repaired the finding.');
+  if (!finding && !equivalentCheck) {
+    throw new Error('Debug resolution requires a current independently verified linked finding or equivalent check.');
+  }
+  if (finding) {
+    const repairingActors = new Set(finding.transitions.filter((item) => item.actor.kind === 'executor')
+      .map((item) => item.actor.id).filter(Boolean));
+    if (repairingActors.has(options.verifier.id)) {
+      throw new Error('Debug resolution verifier must be distinct from the executor who repaired the finding.');
+    }
   }
   let regressionEvidence = await bindRepositoryEvidenceDigests({
     projectRoot: current.resolved.projectRoot,
@@ -353,22 +377,37 @@ export async function resolveDebugSessionV2(options: {
   if (!options.exemption && regressionEvidence.some((item) => !item.available || !item.digest)) {
     throw new Error('Debug resolution requires current digest-bound regression evidence.');
   }
-  const revision = await sourceRevision(current, regressionEvidence);
-  const findingRevision = await sourceRevision(current, [
-    ...finding.evidence,
-    ...finding.transitions.flatMap((transition) => transition.evidence),
-  ]);
-  if (finding.transitions.at(-1)?.sourceRevision !== findingRevision) {
-    throw new Error('Debug resolution requires a current independently verified linked finding.');
+  const equivalentCheckReference = equivalentCheck ? {
+    referenceId: `evidence:${equivalentCheck.evidenceId}`,
+    kind: 'generated' as const,
+    externalId: equivalentCheck.evidenceId,
+    digest: equivalentCheck.outputDigest,
+    available: true,
+  } : undefined;
+  const verificationEvidence = equivalentCheckReference
+    ? [equivalentCheckReference, ...regressionEvidence]
+    : regressionEvidence;
+  const revision = await sourceRevision(current, verificationEvidence);
+  if (finding) {
+    const findingRevision = await sourceRevision(current, [
+      ...finding.evidence,
+      ...finding.transitions.flatMap((transition) => transition.evidence),
+    ]);
+    if (finding.transitions.at(-1)?.sourceRevision !== findingRevision) {
+      throw new Error('Debug resolution requires a current independently verified linked finding.');
+    }
   }
+  const verifiedSubject = finding
+    ? { findingId: finding.findingId }
+    : { checkId: equivalentCheck!.checkId };
   const verification = {
     verificationId: `debug-verification:${digestJson({
-      sessionId: session.sessionId, findingId: finding.findingId, verifier: options.verifier, revision,
-      evidence: regressionEvidence.map((item) => [item.referenceId, item.digest]),
+      sessionId: session.sessionId, ...verifiedSubject, verifier: options.verifier, revision,
+      evidence: verificationEvidence.map((item) => [item.referenceId, item.digest]),
     }).slice(0, 24)}`,
-    findingId: finding.findingId,
+    ...verifiedSubject,
     verifier: options.verifier,
-    evidence: regressionEvidence,
+    evidence: verificationEvidence,
     ...(!options.exemption ? {
       failBeforeEvidence: regressionEvidence[0],
       passAfterEvidence: regressionEvidence[1],

@@ -40,7 +40,10 @@ describe('companion CLI', () => {
     const check = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'check', 'demo', '--project', root, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(check.assurance.status).toBe('fail');
+    expect(check.assurance).toMatchObject({
+      status: 'error',
+      repositoryContext: { status: 'unavailable' },
+    });
     const status = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'run-status', 'demo', '--project', root, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
