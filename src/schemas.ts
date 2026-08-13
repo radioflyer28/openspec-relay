@@ -513,7 +513,8 @@ export const DebugConclusionV2Schema = z.object({
 
 export const DebugVerificationV2Schema = z.object({
   verificationId: z.string().min(1),
-  findingId: z.string().min(1),
+  findingId: z.string().min(1).optional(),
+  checkId: z.string().min(1).optional(),
   verifier: z.object({
     kind: z.enum(['verifier', 'human']),
     id: z.string().min(1),
@@ -525,6 +526,10 @@ export const DebugVerificationV2Schema = z.object({
   sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
   verifiedAt: z.string().datetime(),
 }).strict().superRefine((value, context) => {
+  if (Boolean(value.findingId) === Boolean(value.checkId)) context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'Debug verification requires exactly one independently verified finding or equivalent check.',
+  });
   const regressionPair = Boolean(value.failBeforeEvidence && value.passAfterEvidence);
   if (!regressionPair && !value.exemption) context.addIssue({
     code: z.ZodIssueCode.custom,

@@ -25,7 +25,7 @@ function openspec(root: string, args: string[]) {
 }
 
 describe('cross-repository archive gate flow', () => {
-  it('links, diagnoses, generates workflows, runs guarded, accepts, and archives', async () => {
+  it('links, diagnoses, generates workflows, rejects projection-only acceptance, and archives with override', async () => {
     const { root } = await createOpenSpecProject();
     const initialized = openspec(root, ['init', '--tools', 'codex', '--force', '--no-animation']);
     expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
@@ -63,13 +63,12 @@ describe('cross-repository archive gate flow', () => {
       status: [expect.objectContaining({ code: 'archive_gate_blocked' })],
     });
 
-    const acceptance = await acceptGuardrailsGate({
+    await expect(acceptGuardrailsGate({
       change: 'demo',
       projectRoot: root,
       gateId: 'guardrails.assurance',
       actor: 'integration-test',
-    });
-    expect(acceptance).toMatchObject({ accepted: true, eventType: 'human.decision' });
+    })).rejects.toThrow(/no current human-needed result/i);
     const stillBlocked = openspec(root, [
       'archive', 'demo', '--yes', '--no-validate', '--skip-specs', '--json',
     ]);
@@ -86,7 +85,10 @@ describe('cross-repository archive gate flow', () => {
     const gateRecord = JSON.parse(await fs.readFile(
       path.join(archiveRoot, archivedName, '.openspec-gates.json'), 'utf8',
     ));
-    expect(gateRecord.gates[0].acceptance.actor).toBe('integration-test');
+    expect(gateRecord.gates[0].acceptance).toBeUndefined();
+    expect(gateRecord.gates[0].overrides[0]).toMatchObject({
+      reason: 'Cross-repository fixture intentionally leaves deterministic checks pending.',
+    });
   }, 60_000);
 
   it('records an audited override before final archive', async () => {
