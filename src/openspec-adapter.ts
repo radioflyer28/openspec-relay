@@ -14,7 +14,20 @@ export type OpenSpecJsonExecutorV1 = (
 async function executeOpenSpecJson(args: string[], cwd: string): Promise<unknown> {
   const executable = process.env.OPENSPEC_BIN || 'openspec';
   return new Promise((resolve, reject) => {
-    execFile(executable, args, { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
+    execFile(executable, args, {
+      cwd,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        CI: 'true',
+        NO_COLOR: '1',
+        OPENSPEC_NO_UPDATE_CHECK: '1',
+        OPENSPEC_TELEMETRY: '0',
+        DO_NOT_TRACK: '1',
+      },
+    },
       (error, stdout, stderr) => {
         if (error) {
           reject(new Error(
