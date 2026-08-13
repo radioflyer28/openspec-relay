@@ -20,6 +20,7 @@ import {
 } from '../src/v2-operations.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 import { readAssuranceStateV2 } from '../src/state.js';
+import { runLocalReleaseCommand, type ConstrainedReleaseRunnerV2 } from '../src/release-assurance.js';
 
 afterEach(cleanupTemporaryRoots);
 
@@ -46,6 +47,25 @@ const scenarioId = `${requirementId}/scenario:works`;
 const portableEvidence = [{
   referenceId: 'test:tier0-e2e', kind: 'generated' as const, externalId: 'tier0-e2e', available: true,
 }];
+const regressionEvidence = [
+  { referenceId: 'test:tier0-e2e:red', kind: 'generated' as const, externalId: 'tier0-e2e-red',
+    digest: digest('tier0-e2e-red'), available: true },
+  { referenceId: 'test:tier0-e2e:green', kind: 'generated' as const, externalId: 'tier0-e2e-green',
+    digest: digest('tier0-e2e-green'), available: true },
+];
+const trustedTestRunner: ConstrainedReleaseRunnerV2 = {
+  capabilities: {
+    filesystemIsolation: 'enforced', networkIsolation: 'enforced',
+    sourceWorkspaceHidden: true, opaqueOutput: true,
+  },
+  async run(request) {
+    const result = await runLocalReleaseCommand(request);
+    return {
+      exitCode: result.exitCode,
+      outputDigest: digest(`${result.stdout}\0${result.stderr}`),
+    };
+  },
+};
 
 async function recordFinding(options: {
   changeDir: string;
@@ -132,8 +152,10 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
 
     const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: configuration.taskOverrides });
     const sourceDigests = Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
-    const evidence = (evidenceId: string, checkId: string, reference: string, observedAt: string) => recordLegacyPayloadV2({
+    const evidence = (evidenceId: string, checkId: string, reference: string, observedAt: string,
+      actor = { kind: 'verifier' as const, id: 'e2e-verifier' }) => recordLegacyPayloadV2({
       change: 'demo', projectRoot: root, eventId: `e2e:evidence:${evidenceId}`, occurredAt: observedAt,
+      actor,
       payload: {
         type: 'evidence.recorded',
         evidence: {
@@ -185,9 +207,12 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       experimentIds: [experiment.experiments[0].experimentId], evidence: portableEvidence,
       now: '2026-08-11T20:44:05.500Z',
     });
+    await evidence('targeted-debug-resolution', 'targeted-tests', 'reports/targeted-debug.txt',
+      '2026-08-11T20:44:05.750Z', { kind: 'verifier', id: 'e2e-debug-verifier' });
     await resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,
-      regressionEvidence: portableEvidence, now: '2026-08-11T20:44:06.000Z',
+      regressionEvidence, verifier: { kind: 'verifier', id: 'e2e-debug-verifier' },
+      now: '2026-08-11T20:44:06.000Z',
     });
     await transitionFindingV2({
       change: 'demo', projectRoot: root, findingId: defect.findingId, to: 'repaired',
@@ -222,8 +247,18 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
 
     const ready = await checkGuardrailsRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'], now: '2026-08-11T20:46:00.000Z',
+      adapters: { releaseRunner: trustedTestRunner },
     });
-    expect(ready).toMatchObject({ run: { status: 'complete' }, assurance: { status: 'pass' } });
+    expect(ready, JSON.stringify({
+      run: ready.run.status,
+      assurance: ready.assurance.status,
+      debugSessions: ready.assurance.debugSessions,
+      findings: ready.assurance.findings,
+      checks: ready.assurance.checks,
+      releaseCandidates: ready.assurance.releaseCandidates,
+      unresolvedHumanActions: ready.assurance.unresolvedHumanActions,
+      nextActions: ready.assurance.nextActions,
+    }, null, 2)).toMatchObject({ run: { status: 'complete' }, assurance: { status: 'pass' } });
     expect(ready.assurance.releaseCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ surface: 'node_package', status: 'pass' }),
     ]));

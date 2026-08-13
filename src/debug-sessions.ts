@@ -236,9 +236,12 @@ export function resolveDebugSession(options: {
   if (!options.exemption && !session.conclusions.some((item) => item.kind === 'root_cause')) {
     throw new Error('Resolved behavior defects require an evidence-backed root-cause conclusion.');
   }
-  if (!session.findingId || !options.verification || options.verification.findingId !== session.findingId) {
-    throw new Error('Debug resolution requires independent verification of the linked finding.');
-  }
+  const verifiedSubjectMatches = session.findingId
+    ? options.verification.findingId === session.findingId
+    : Boolean(options.verification.checkId && session.logicalFailureId === `check:${options.verification.checkId}`);
+  if (!verifiedSubjectMatches) throw new Error(
+    'Debug resolution requires independent verification of the linked finding or equivalent check.',
+  );
   if (!options.verification.verifier.id || !['verifier', 'human'].includes(options.verification.verifier.kind)) {
     throw new Error('Debug resolution requires a distinct authorized verifier actor.');
   }
