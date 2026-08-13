@@ -529,7 +529,8 @@ export async function verifyNodePackageRelease(options: {
     installDirectory = await createCleanInstallProject({ packageName: metadata.packageName, artifactPath });
     const installed = await runLocalReleaseCommand({
       command: 'npm',
-      args: ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', artifactPath],
+      args: ['install', '--offline', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
+        '--package-lock=false', artifactPath],
       cwd: installDirectory,
       timeoutMs: 120_000, allowedRoot: installDirectory, isolated: true,
     });
@@ -591,14 +592,16 @@ export async function verifyNodePackageRelease(options: {
             'No project- or driver-declared state contract was supplied for rollback verification.', artifactEvidence));
           return { status: 'human_needed', artifactDigest, checks };
         }
-        const previous = await runLocalReleaseCommand({ ...commandBase, args: ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', options.previousArtifactPath] });
+        const previous = await runLocalReleaseCommand({ ...commandBase, args: ['install', '--offline', '--legacy-peer-deps',
+          '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', options.previousArtifactPath] });
         const preparedState = previous.exitCode === 0 ? await prepareDeclaredReleaseState({
           contracts: options.stateContracts, packageRoot: options.packageRoot, installDirectory,
         }) : [];
         const baselineState = previous.exitCode === 0 && await verifyDeclaredReleaseState({
           prepared: preparedState, packageName: metadata.packageName, installDirectory, runner: options.releaseRunner,
         });
-        const upgrade = await runLocalReleaseCommand({ ...commandBase, args: ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', artifactPath] });
+        const upgrade = await runLocalReleaseCommand({ ...commandBase, args: ['install', '--offline', '--legacy-peer-deps',
+          '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', artifactPath] });
         let upgradeSmoke = false;
         try {
           await smokePublicEntries(packageDirectory(metadata.packageName, installDirectory), metadata.exports, installDirectory,
@@ -609,7 +612,8 @@ export async function verifyNodePackageRelease(options: {
         } catch { upgradeSmoke = false; }
         const irreversible = options.stateContracts.some((contract) => contract.rollback === 'irreversible');
         const rollback = irreversible ? undefined : await runLocalReleaseCommand({ ...commandBase,
-          args: ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', options.previousArtifactPath] });
+          args: ['install', '--offline', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
+            '--package-lock=false', options.previousArtifactPath] });
         let rollbackSmoke = false;
         try {
           if (!rollback) throw new Error('Rollback is declared irreversible.');
