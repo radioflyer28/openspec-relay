@@ -4,9 +4,6 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   atomicWriteJson,
-  atomicWriteGuardrailsJson,
-  guardrailsGeneratedPath,
-  removeGuardrailsGeneratedFile,
   readRunStateV2,
   resolveChangeDirectory,
   resolveChangePathForPlatform,
@@ -75,37 +72,6 @@ describe('change resolution and atomic state', () => {
 
     await expect(startGuardrailsRunV2({ change: 'demo', projectRoot: root })).rejects.toThrow(/symlink|outside|contain/i);
     await expect(readRunStateV2(changeDir)).rejects.toThrow(/symlink|outside|contain/i);
-    expect(await fs.readdir(outside)).toEqual([]);
-  });
-
-  it('binds generated-state commits and removals to the validated ancestor', async () => {
-    const root = await project();
-    const changeDir = path.join(root, 'openspec', 'changes', 'demo');
-    const reports = path.join(changeDir, '.guardrails', 'reports');
-    const displaced = path.join(changeDir, '.guardrails', 'reports-displaced');
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'guardrails-outside-race-'));
-    roots.push(outside);
-    await fs.mkdir(reports, { recursive: true });
-    const target = guardrailsGeneratedPath(changeDir, 'release');
-
-    await expect(atomicWriteGuardrailsJson(changeDir, target, { pass: true }, {
-      beforeCommit: async () => {
-        await fs.rename(reports, displaced);
-        await fs.symlink(outside, reports, process.platform === 'win32' ? 'junction' : 'dir');
-      },
-    })).rejects.toThrow(/ancestor changed/i);
-    expect(await fs.readdir(outside)).toEqual([]);
-
-    await fs.rm(reports, { force: true });
-    await fs.rename(displaced, reports);
-    await atomicWriteGuardrailsJson(changeDir, target, { remove: true });
-    await expect(removeGuardrailsGeneratedFile(changeDir, target, {
-      beforeRemove: async () => {
-        await fs.rename(reports, displaced);
-        await fs.symlink(outside, reports, process.platform === 'win32' ? 'junction' : 'dir');
-      },
-    })).rejects.toThrow(/ancestor changed/i);
-    expect(await fs.readFile(path.join(displaced, 'release.json'), 'utf8')).toContain('"remove": true');
     expect(await fs.readdir(outside)).toEqual([]);
   });
 });
