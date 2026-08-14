@@ -3,7 +3,7 @@ import type { ExecutionGraphV1 } from './graph.js';
 import {
   type ExecutionTier,
   type FindingLifecycleRecordV2,
-  type GuardrailsEventPayloadV1,
+  type GsdEventPayloadV1,
   type PortableReferenceV2,
 } from './schemas.js';
 
@@ -23,10 +23,10 @@ export interface RoleResultV1 {
   evidenceRefs: string[];
   evidence?: PortableReferenceV2[];
   findings?: ReportedFindingV2[];
-  events?: GuardrailsEventPayloadV1[];
+  events?: GsdEventPayloadV1[];
 }
 
-/** A reviewer/verifier report deliberately omits findingId. Guardrails derives
+/** A reviewer/verifier report deliberately omits findingId. OpenSpec GSD derives
  * stable identities from provider, rule, category, and scope. */
 export interface ReportedFindingV2 {
   providerId: string;
@@ -113,7 +113,7 @@ export interface ExecutionOutcomeV1 {
     status: RoleResultV1['status'];
     summary: string;
     evidenceRefs: string[];
-    events?: GuardrailsEventPayloadV1[];
+    events?: GsdEventPayloadV1[];
   }>;
   review?: RoleResultV1;
   reviewReceipt?: DispatchedRoleResultV2;
