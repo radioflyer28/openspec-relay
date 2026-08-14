@@ -114,11 +114,14 @@ program.command('run-status')
   .option('--json')
   .action(async (change, options) => {
     const status = await getRunStatusV2({ change, projectRoot: options.project });
-    print(options.json ? status :
-      `${status.changeName}: ${status.status}; mode=${status.mode}; tier=${status.tier}; ` +
-      `tasks=${status.tasks.complete}/${status.tasks.total}; assurance=${status.assuranceStatus}; ` +
-      `readiness=${status.readiness.status}; findings=${Object.values(status.findings).reduce((sum, count) => sum + count, 0)}; ` +
-      `human-actions=${status.unresolvedHumanActions.length}.`,
+    const human = status.integrity.status === 'error'
+      ? `${status.changeName}: error; Guardrails state integrity error: ${status.integrity.summary} ` +
+        `${status.nextActions[0] ?? 'Regenerate projections before relying on status.'}`
+      : `${status.changeName}: ${status.status}; mode=${status.mode}; tier=${status.tier}; ` +
+        `tasks=${status.tasks.complete}/${status.tasks.total}; assurance=${status.assuranceStatus}; ` +
+        `readiness=${status.readiness.status}; findings=${Object.values(status.findings).reduce((sum, count) => sum + count, 0)}; ` +
+        `human-actions=${status.unresolvedHumanActions.length}.`;
+    print(options.json ? status : human,
     Boolean(options.json));
   });
 
