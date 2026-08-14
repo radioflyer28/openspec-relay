@@ -4,7 +4,6 @@ import {
   appendGuardrailsEventV2,
   createGuardrailsEventV2,
   readEventStoreV2,
-  replayGuardrailsEventsV2,
   writeReplayedProjectionsV2,
 } from './events.js';
 import { loadCanonicalGuardrailsState } from './canonical-state.js';

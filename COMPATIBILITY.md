@@ -3,27 +3,26 @@
 Guardrails v2 keeps OpenSpec proposal, delta specs, design, and tasks as the
 only human-maintained source of requirements, design decisions, and execution
 scope. Its canonical generated record is
-`openspec/changes/<change>/.guardrails/events.json`; v2 `run.json`,
-`assurance.json`, and `reports/` are reproducible projections.
+`openspec/changes/<change>/.guardrails/events.json`; v2 `run.json` and
+`assurance.json` are reproducible projections.
 
 The companion supports API-bearing OpenSpec versions in the range declared by
 `openspec-extension.json`. `openspec extension doctor guardrails` must confirm
 both the semver range and the `openspec.dev/extensions/v1` capability before a
 required archive gate can be considered available.
 
-On the first v2 mutation of valid v1 generated state, Guardrails writes a
-migration preview and recovery copy before replacing `events.json` or its
-projections. Migration preserves v1 provenance and never infers independent
-verification, UAT acceptance, or accepted risk. Corrupt or ambiguous v1 state
-fails closed; read-only inspection remains possible with a compatible v1
-companion revision.
+Version 2 generated state is an unpublished private-development format. The
+current runtime does not maintain version 1 readers, downgrade bundles, or
+restoration APIs. Encountering pre-release version 1 records fails closed with
+regeneration guidance; any human acceptance or accepted risk must then be
+recorded again explicitly. Git history and retained local package revisions are
+the implementation rollback mechanism, not generated-state downgrade.
 
-Before reinstalling a v1 companion for an active migrated change, use the v2
-package's `restoreV1FromMigrationBackup(changeDir)` export. It validates that
-the saved event store, run projection, and assurance projection belong to the
-same v1 run, restores those original records atomically per file, and leaves
-the recovery copy intact for audit or retry. It intentionally does not attempt
-to translate later v2-only lifecycle, debug, UAT, or release events into v1.
+Guardrails assumes a cooperative repository owner and ordinary same-user
+processes. Schema validation, replay, content digests, projection comparison,
+path containment, and atomic replacement protect assurance consistency and
+accidental corruption; they are not a tamper-proof ledger or a sandbox. Strong
+identity and isolation remain host capabilities.
 
 This increment deliberately excludes deferred Little Coder mechanisms, future
 specialist-checker categories, phases, milestones, roadmaps, workstreams, and

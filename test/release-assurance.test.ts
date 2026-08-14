@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as release from '../src/release-assurance.js';
-import { ConfiguredReleaseDriverV2Schema } from '../src/schemas.js';
+import { ConfiguredReleaseCommandV2Schema } from '../src/schemas.js';
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
@@ -111,7 +111,7 @@ describe('conditional release assurance', () => {
       ]) });
   });
 
-  it('inspects package metadata, hashes artifacts, and prepares temporary plugin and configured-driver workspaces', async () => {
+  it('inspects package metadata, hashes artifacts, and prepares temporary plugin and configured-command workspaces', async () => {
     const root = await packageProject();
     const api = release as Record<string, unknown>;
     const metadata = await (api.inspectNodePackageMetadata as (root: string) => Promise<{ exports: string[]; bins: string[] }>)(root);
@@ -129,7 +129,7 @@ describe('conditional release assurance', () => {
       .toEqual(expect.objectContaining({ expectedArtifacts: ['artifact.zip'] }));
     expect(() => configured({ command: 'node', args: ['--version'], expectedArtifacts: ['../outside'] }))
       .toThrow(/temporary workspace/i);
-    expect(() => ConfiguredReleaseDriverV2Schema.parse({
+    expect(() => ConfiguredReleaseCommandV2Schema.parse({
       id: 'unsafe-artifact-path', command: 'node', expectedArtifacts: ['/outside'],
     })).toThrow(/temporary release workspace/i);
   });
@@ -152,9 +152,9 @@ describe('conditional release assurance', () => {
   it('runs configured distribution commands in a disposable workspace and does not leave output in the repository', async () => {
     const root = await packageProject();
     const api = release as Record<string, unknown>;
-    const result = await (api.runConfiguredReleaseDriver as (input: Record<string, unknown>) => Promise<{ status: string }>)({
+    const result = await (api.runConfiguredReleaseCommand as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       projectRoot: root,
-      driver: {
+      configuredCommand: {
         id: 'artifact', command: process.execPath,
         args: ['-e', "require('node:fs').writeFileSync('artifact.txt', process.cwd())"],
         expectedArtifacts: ['artifact.txt'], timeoutMs: 30_000,
@@ -165,7 +165,7 @@ describe('conditional release assurance', () => {
     await expect(fs.access(path.join(root, 'artifact.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('fails closed for unavailable tools and offline registries without leaving a configured-driver workspace', async () => {
+  it('fails closed for unavailable tools and offline registries without leaving a configured-command workspace', async () => {
     const root = await packageProject();
     const api = release as Record<string, unknown>;
     const command = api.runLocalReleaseCommand as (input: Record<string, unknown>) => Promise<unknown>;
@@ -173,9 +173,9 @@ describe('conditional release assurance', () => {
       .rejects.toThrow(/failed to start/i);
 
     const before = await temporaryEntries('openspec-guardrails-configured-release-');
-    const result = await (api.runConfiguredReleaseDriver as (input: Record<string, unknown>) => Promise<{ status: string }>)({
+    const result = await (api.runConfiguredReleaseCommand as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       projectRoot: root,
-      driver: {
+      configuredCommand: {
         id: 'offline-registry', command: 'npm',
         args: ['--offline', 'view', 'guardrails-package-not-in-local-cache-4e6d1'],
         expectedArtifacts: [], timeoutMs: 15_000,

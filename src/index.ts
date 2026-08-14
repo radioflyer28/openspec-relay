@@ -1,29 +1,64 @@
-export * from './version.js';
-export * from './schemas.js';
-export * from './state.js';
-export * from './gate.js';
-export * from './graph.js';
-export * from './artifacts.js';
-export * from './openspec-adapter.js';
-export * from './reconciliation.js';
-export * from './modes.js';
-export * from './tiers.js';
-export * from './git-policy.js';
-export * from './tdd.js';
-export * from './checkers.js';
-export * from './verification.js';
-export * from './repairs.js';
-export * from './config.js';
-export * from './assurance-v2.js';
-export * from './status.js';
-export * from './execution-adapters.js';
-export * from './events.js';
-export * from './canonical-state.js';
-export * from './repository-context.js';
-export * from './readiness.js';
-export * from './findings.js';
-export * from './debug-sessions.js';
-export * from './uat.js';
-export * from './release-assurance.js';
-export * from './runner-v2.js';
-export * from './v2-operations.js';
+/**
+ * Supported programmatic surface for host integrations.
+ *
+ * Canonical event and projection writers are intentionally not exported. Role
+ * adapters return structured results; only these orchestrated operations may
+ * commit them to Guardrails state.
+ */
+export { GUARDRAILS_VERSION } from './version.js';
+export { guardrailsAssuranceGate } from './gate.js';
+export {
+  DEFAULT_HOST_CAPABILITIES,
+  checkGuardrailsRunV2,
+  startGuardrailsRunV2,
+  type StartRunResultV2,
+} from './runner-v2.js';
+export { getRunStatusV2, type RunStatusV2 } from './status.js';
+export {
+  acceptGuardrailsGateV2,
+  observeDebugExperimentV2,
+  planDebugExperimentV2,
+  presentUatV2,
+  recordDebugConclusionV2,
+  recordDebugHypothesisV2,
+  recordDebugNextActionV2,
+  recordDebugQuestionV2,
+  recordDebugReferenceChangeV2,
+  recordUatV2,
+  recordWorkflowResultV2,
+  resolveDebugSessionV2,
+  startOrResumeDebugV2,
+  transitionFindingV2,
+  type FindingWorkflowActionV2,
+  type WorkflowStageV2,
+} from './v2-operations.js';
+export {
+  executeWithTier,
+  type ExecutionOutcomeV1,
+  type ExecutionRole,
+  type RoleDispatcherV1,
+  type RoleRequestV1,
+  type RoleResultV1,
+  type WorktreeAdapterV1,
+} from './execution-adapters.js';
+export {
+  negotiateExecutionTier,
+  type TierAdaptersV1,
+  type TierDecisionV1,
+} from './tiers.js';
+export { loadGuardrailsConfigV2 } from './config.js';
+export {
+  ExecutionTierSchema,
+  GuardrailsConfigV2Schema,
+  PortableReferenceV2Schema,
+  RunModeSchema,
+  TddPolicySchema,
+  type ExecutionTier,
+  type GuardrailsAssuranceV2,
+  type GuardrailsConfigV2,
+  type GuardrailsRunV2,
+  type PortableReferenceV2,
+  type RunMode,
+  type TddPolicy,
+} from './schemas.js';
+export type { HostReleaseRunnerV2, ReleaseCommandV2 } from './release-assurance.js';

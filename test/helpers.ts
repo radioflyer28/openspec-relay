@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { EvidenceV1 } from '../src/index.js';
+import type { EvidenceV1 } from '../src/schemas.js';
 
 export const temporaryRoots: string[] = [];
 

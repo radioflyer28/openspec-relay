@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { routeSpecialistCheckers } from '../src/index.js';
+import { routeSpecialistCheckers } from '../src/checkers.js';
 
 describe('specialist checker routing', () => {
   it.each([

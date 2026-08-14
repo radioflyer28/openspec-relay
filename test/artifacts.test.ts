@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { compileOpenSpecChange } from '../src/index.js';
 import {
   assertStableTaskBinding,
+  compileOpenSpecChange,
   resolveContainedArtifactPath,
 } from '../src/artifacts.js';
 import { compileCurrentOpenSpecChange } from '../src/openspec-adapter.js';
