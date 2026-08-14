@@ -193,4 +193,59 @@ describe('dispatch-bound assurance provenance', () => {
     expect((await readEventStoreV2(changeDir)).events.map((event) => event.payload.type))
       .toContain('debug.verification_stale');
   });
+
+  it('rejects a post-repair RED event even when caller timestamps backdate it', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await fs.mkdir(path.join(root, 'src'), { recursive: true });
+    await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 1;\n');
+    const started = await startGuardrailsRunV2({
+      change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'], config: { repairLimit: 1 },
+    });
+    const sourceDigests = Object.fromEntries(started.run.artifacts.map((item) => [item.path, item.sourceDigest]));
+    await recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'backdated:repair:exhausted', stage: 'executor',
+      payload: { type: 'repair.recorded', repair: {
+        repairId: 'backdated:repair:exhausted', checkId: 'targeted-tests', attempt: 1,
+        startedAt: '2026-08-14T13:00:00.000Z', result: 'fail', changedReferences: ['src/index.ts'],
+      } },
+    });
+    const session = (await readAssuranceStateV2(changeDir)).debugSessions[0];
+    await recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'backdated:repair:complete', stage: 'executor',
+      payload: { type: 'repair.recorded', repair: {
+        repairId: 'backdated:repair:complete', checkId: 'targeted-tests', attempt: 2,
+        startedAt: '2026-08-14T13:01:00.000Z', completedAt: '2026-08-14T13:02:00.000Z',
+        result: 'pass', changedReferences: ['src/index.ts'],
+      } },
+    });
+    await recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'backdated:red',
+      occurredAt: '1999-01-01T00:00:00.000Z', stage: 'executor', payload: { type: 'evidence.recorded', evidence: {
+        evidenceId: 'backdated-red', taskId: '1.1', phase: 'red', checkId: 'targeted-tests',
+        observedAt: '1999-01-01T00:00:00.000Z', sourceState: 'claimed-before-repair', sourceDigests,
+        exitCode: 1, result: 'fail', outputDigest: digest('backdated-red'), relevantFailure: true,
+        preExistingFailure: false, origin: 'executor',
+      } },
+    });
+    await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 2;\n');
+    await checkGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    const verifier = await dispatchRoleV2({
+      request: { role: 'verifier', readOnly: true, isolated: true },
+      dispatcher: { dispatch: async () => ({
+        status: 'pass', summary: 'The repaired check passes.', evidenceRefs: ['backdated-green'],
+        evidence: repositoryEvidence,
+        events: [{ type: 'evidence.recorded', evidence: {
+          evidenceId: 'backdated-green', taskId: '1.1', phase: 'green', checkId: 'targeted-tests',
+          observedAt: '1999-01-01T00:00:01.000Z', sourceState: 'claimed-after-repair', sourceDigests,
+          exitCode: 0, result: 'pass', outputDigest: digest('backdated-green'),
+          preExistingFailure: false, origin: 'verifier',
+        } }],
+      }) },
+    });
+    await recordDispatchedRoleResultV2({ change: 'demo', projectRoot: root, receipt: verifier });
+    await expect(resolveDebugSessionV2({
+      change: 'demo', projectRoot: root, sessionId: session.sessionId,
+      redEvidenceId: 'backdated-red', greenEvidenceId: 'backdated-green', verificationResult: verifier,
+    })).rejects.toThrow(/canonical event order must show red before the repair boundary/i);
+  });
 });
