@@ -331,6 +331,9 @@ export async function compileRepositoryContext(options: {
     staleReferenceIds: [],
   });
   if (!options.adapter) return context;
+  if (options.tier !== 'tier1' && options.tier !== 'tier2') {
+    throw new Error('Repository-analysis adapters require a negotiated Tier 1 or Tier 2 dispatch.');
+  }
   const analyzed = RepositoryContextV2Schema.parse(await options.adapter.analyze({
     contract: createRepositoryAnalysisContract({ tier: options.tier ?? 'tier0' }),
     deterministicContext: context,
@@ -338,7 +341,18 @@ export async function compileRepositoryContext(options: {
   if (analyzed.changeName !== context.changeName || analyzed.inputRevision !== context.inputRevision) {
     throw new Error('Repository-analysis adapter returned a result for different controlling inputs.');
   }
-  return analyzed;
+  const mergedClaims = new Map(analyzed.claims.map((item) => [item.claimId, item]));
+  for (const item of context.claims) mergedClaims.set(item.claimId, item);
+  const statusRank: Record<RepositoryContextV2['status'], number> = { current: 0, stale: 1, unavailable: 2 };
+  const status = statusRank[context.status] > statusRank[analyzed.status] ? context.status : analyzed.status;
+  return RepositoryContextV2Schema.parse({
+    ...analyzed,
+    contextId: context.contextId,
+    compiledAt: context.compiledAt,
+    status,
+    claims: [...mergedClaims.values()].sort((left, right) => left.claimId.localeCompare(right.claimId)),
+    staleReferenceIds: [...new Set([...context.staleReferenceIds, ...analyzed.staleReferenceIds])].sort(),
+  });
 }
 
 export async function bindRepositoryEvidenceDigests(options: {

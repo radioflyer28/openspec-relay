@@ -120,6 +120,9 @@ async function planningInputs(options: {
   changedFiles?: string[];
   now: string;
 }) {
+  const planningAdapters = options.tier !== 'tier0' && options.adapters?.dispatcher === true
+    ? options.adapters
+    : undefined;
   const discovery = options.changedFiles === undefined
     ? await discoverRepositoryChangedFiles(options.projectRoot, options.config.features.repositoryContext.comparisonBase)
     : { files: options.changedFiles, source: 'git' as const };
@@ -129,14 +132,14 @@ async function planningInputs(options: {
     compiled: options.compiled, changedFiles, boundaries: options.config.features.repositoryContext.boundaries,
     comparisonBase: options.config.features.repositoryContext.comparisonBase,
     impactUnknown: discovery.unresolved,
-    tier: options.tier, adapter: options.adapters?.repositoryAnalyzer, now: options.now,
+    tier: options.tier, adapter: planningAdapters?.repositoryAnalyzer, now: options.now,
   });
   const readinessOptions = {
     changeName: options.changeName, compiled: options.compiled, repositoryContext: context,
     tier: options.tier, now: options.now,
   };
-  const readiness = options.adapters?.readinessEvaluator
-    ? await evaluatePlanReadinessWithAdapter({ ...readinessOptions, adapter: options.adapters.readinessEvaluator })
+  const readiness = planningAdapters?.readinessEvaluator
+    ? await evaluatePlanReadinessWithAdapter({ ...readinessOptions, adapter: planningAdapters.readinessEvaluator })
     : evaluatePlanReadiness(readinessOptions);
   const humanNeeded = options.config.features.uat.required
     ? Object.fromEntries(options.compiled.scenarioIds.map((scenarioId) =>

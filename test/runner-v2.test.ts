@@ -185,6 +185,51 @@ describe('OpenSpec GSD v2 run pipeline', () => {
     expect({ repositoryCalls, readinessCalls }).toEqual({ repositoryCalls: 1, readinessCalls: 1 });
   });
 
+  it('does not dispatch planning adapters at Tier 0 or let them self-certify missing mappings', async () => {
+    const { root } = await createOpenSpecProject();
+    let repositoryCalls = 0;
+    let readinessCalls = 0;
+    const result = await runner.startGsdRunV2({
+      change: 'demo', projectRoot: root, changedFiles: [],
+      adapters: {
+        repositoryAnalyzer: { analyze: async ({ deterministicContext }) => {
+          repositoryCalls += 1;
+          return { ...deterministicContext, status: 'current', claims: [] };
+        } },
+        readinessEvaluator: { evaluate: async ({ deterministicResult }) => {
+          readinessCalls += 1;
+          return { ...deterministicResult, status: 'pass', issues: [], evaluator: 'caller-claims-independent' };
+        } },
+      },
+    });
+    expect({ repositoryCalls, readinessCalls }).toEqual({ repositoryCalls: 0, readinessCalls: 0 });
+    expect(result).toMatchObject({
+      blockedBeforeExecution: true,
+      run: { status: 'blocked', tier: 'tier0' },
+      assurance: { readiness: { status: 'fail' } },
+    });
+  });
+
+  it('blocks production execution for an explicit unsupported artifact assumption', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await fs.appendFile(`${changeDir}/design.md`, [
+      '', '## Assumptions', '',
+      '- The remote production service will remain stable, but no validation is planned.', '',
+    ].join('\n'));
+    const result = await runner.startGsdRunV2({
+      change: 'demo', projectRoot: root, changedFiles: [],
+      config: { taskOverrides: { '1.1': readinessTask, '1.2': readinessTask } },
+    });
+    expect(result).toMatchObject({
+      blockedBeforeExecution: true,
+      run: { status: 'blocked' },
+      assurance: { readiness: { status: 'fail' } },
+    });
+    expect(result.assurance.readiness?.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'risky_assumption' }),
+    ]));
+  });
+
   it('keeps v2 readiness, finding authorization, evidence requirements, and assurance outcomes stable across Tier 1 and Tier 2 adapters', async () => {
     const outcomes: Array<{ tier: string; assurance: string; finding: string; isolated: boolean; usedWorktrees: boolean }> = [];
     for (const tier of ['tier1', 'tier2'] as const) {
