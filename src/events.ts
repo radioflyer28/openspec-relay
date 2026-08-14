@@ -1,4 +1,3 @@
-import { promises as fs } from 'node:fs';
 import type { CompiledOpenSpecChangeV1 } from './artifacts.js';
 import { evaluateFindingObligations } from './findings.js';
 import { materializeCompiledTasks } from './reconciliation.js';
@@ -35,7 +34,6 @@ import {
 } from './schemas.js';
 import {
   assuranceStatePath,
-  assertGuardrailsGeneratedPath,
   atomicWriteGuardrailsJson,
   digestJson,
   guardrailsGeneratedPath,
@@ -47,120 +45,6 @@ import {
 
 export function eventStorePath(changeDir: string): string {
   return guardrailsGeneratedPath(changeDir, 'events');
-}
-
-const EVENT_LOCK_TIMEOUT_MS = 10_000;
-const EVENT_LOCK_LEASE_MS = 30_000;
-
-export interface EventStoreLockOptions {
-  timeoutMs?: number;
-  leaseMs?: number;
-  heartbeatMs?: number;
-}
-
-interface EventStoreLease {
-  assertOwned(): Promise<void>;
-}
-
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-}
-
-async function withEventStoreLock<T>(
-  changeDir: string,
-  operation: (lease: EventStoreLease) => Promise<T>,
-  options: EventStoreLockOptions = {},
-): Promise<T> {
-  const lockPath = guardrailsGeneratedPath(changeDir, 'eventsLock');
-  await assertGuardrailsGeneratedPath({ changeDir, filename: lockPath, createParents: true, allowMissingFile: true });
-  const token = `${process.pid}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
-  const started = Date.now();
-  const timeoutMs = options.timeoutMs ?? EVENT_LOCK_TIMEOUT_MS;
-  const leaseMs = options.leaseMs ?? EVENT_LOCK_LEASE_MS;
-  const heartbeatMs = options.heartbeatMs ?? Math.max(10, Math.floor(leaseMs / 3));
-  while (true) {
-    try {
-      const handle = await fs.open(lockPath, 'wx');
-      await handle.writeFile(`${JSON.stringify({ token, pid: process.pid, acquiredAt: new Date().toISOString() })}\n`);
-      await handle.close();
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      let stale = false;
-      try {
-        await assertGuardrailsGeneratedPath({ changeDir, filename: lockPath });
-        const owner = JSON.parse(await readGuardrailsText(changeDir, lockPath)) as {
-          pid?: number; acquiredAt?: string;
-        };
-        const age = owner.acquiredAt ? Date.now() - Date.parse(owner.acquiredAt) : leaseMs + 1;
-        stale = typeof owner.pid === 'number'
-          ? !processIsAlive(owner.pid) && age > Math.min(1_000, leaseMs)
-          : age > leaseMs;
-      } catch {
-        const stat = await fs.lstat(lockPath).catch(() => undefined);
-        stale = Boolean(stat && Date.now() - stat.mtimeMs > leaseMs);
-      }
-      if (stale) {
-        const quarantine = `${lockPath}.stale.${process.pid}.${Date.now()}`;
-        try {
-          await fs.rename(lockPath, quarantine);
-          await assertGuardrailsGeneratedPath({ changeDir, filename: quarantine });
-          await fs.rm(quarantine, { force: true });
-        } catch (staleError) {
-          if (!['ENOENT', 'EEXIST'].includes((staleError as NodeJS.ErrnoException).code ?? '')) throw staleError;
-        }
-        continue;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        throw new Error(`Timed out waiting for the canonical Guardrails event-store lock '${lockPath}'.`);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10 + Math.floor(Math.random() * 20)));
-    }
-  }
-  const assertOwned = async (): Promise<void> => {
-    const owner = JSON.parse(await readGuardrailsText(changeDir, lockPath)) as { token?: string };
-    if (owner.token !== token) {
-      throw new Error('Canonical Guardrails event-store lock ownership changed during commit.');
-    }
-  };
-  let heartbeatError: Error | undefined;
-  const heartbeat = setInterval(() => {
-    void (async () => {
-      try {
-        await assertOwned();
-        const now = new Date();
-        await fs.utimes(lockPath, now, now);
-      } catch (error) {
-        heartbeatError = error as Error;
-      }
-    })();
-  }, heartbeatMs);
-  heartbeat.unref();
-  try {
-    await assertOwned();
-    const result = await operation({ assertOwned });
-    if (heartbeatError) throw heartbeatError;
-    await assertOwned();
-    return result;
-  } finally {
-    clearInterval(heartbeat);
-    try {
-      const owner = JSON.parse(await readGuardrailsText(changeDir, lockPath)) as { token?: string };
-      if (owner.token === token) {
-        const quarantine = `${lockPath}.release.${process.pid}.${Date.now()}`;
-        await fs.rename(lockPath, quarantine);
-        await assertGuardrailsGeneratedPath({ changeDir, filename: quarantine });
-        await fs.rm(quarantine, { force: true });
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-  }
 }
 
 function artifactDigests(run: GuardrailsRunV1): Record<string, string> {
@@ -208,41 +92,28 @@ export async function appendGuardrailsEvent(options: {
   event: GuardrailsEventEnvelopeV1;
   beforeCommit?: () => Promise<void>;
   failBeforeCommit?: boolean;
-  lock?: EventStoreLockOptions;
 }): Promise<{ store: GuardrailsEventStoreV1; appended: boolean }> {
   const event = GuardrailsEventEnvelopeV1Schema.parse(options.event);
   if (event.payloadDigest !== digestJson(event.payload)) {
     throw new Error(`Event '${event.eventId}' payload digest does not match its payload.`);
   }
-  return withEventStoreLock(options.changeDir, async (lease) => {
-    const store = await readEventStore(options.changeDir);
-    const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
-    if (existing) {
-      if (digestJson(existing) !== digestJson(event)) {
-        throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
-      }
-      return { store, appended: false };
+  const store = await readEventStore(options.changeDir);
+  const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
+  if (existing) {
+    if (digestJson(existing) !== digestJson(event)) {
+      throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
     }
-    if (event.runId !== store.runId || event.changeName !== store.changeName) {
-      throw new Error(`Event '${event.eventId}' targets a different run or change.`);
-    }
-    const next = validateStore({
-      ...store,
-      events: [...store.events, event].sort((left, right) =>
-        left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
-    });
-    await lease.assertOwned();
-    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next, {
-      ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
-      ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
-    });
-    await lease.assertOwned();
-    const committed = await readEventStore(options.changeDir);
-    if (!committed.events.some((candidate) => candidate.eventId === event.eventId && digestJson(candidate) === digestJson(event))) {
-      throw new Error(`Canonical event '${event.eventId}' was not present after commit.`);
-    }
-    return { store: committed, appended: true };
-  }, options.lock);
+    return { store, appended: false };
+  }
+  if (event.runId !== store.runId || event.changeName !== store.changeName) {
+    throw new Error(`Event '${event.eventId}' targets a different run or change.`);
+  }
+  const next = validateStore({ ...store, events: [...store.events, event] });
+  await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next, {
+    ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
+    ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
+  });
+  return { store: next, appended: true };
 }
 
 function migratedEvent(
@@ -510,41 +381,28 @@ export async function appendGuardrailsEventV2(options: {
   event: GuardrailsEventEnvelopeV2;
   beforeCommit?: () => Promise<void>;
   failBeforeCommit?: boolean;
-  lock?: EventStoreLockOptions;
 }): Promise<{ store: GuardrailsEventStoreV2; appended: boolean }> {
   const event = GuardrailsEventEnvelopeV2Schema.parse(options.event);
   if (event.payloadDigest !== digestJson(event.payload)) {
     throw new Error(`Event '${event.eventId}' payload digest does not match its payload.`);
   }
-  return withEventStoreLock(options.changeDir, async (lease) => {
-    const store = await readEventStoreV2(options.changeDir);
-    if (event.runId !== store.runId || event.changeName !== store.changeName) {
-      throw new Error(`Event '${event.eventId}' targets a different run or change.`);
+  const store = await readEventStoreV2(options.changeDir);
+  if (event.runId !== store.runId || event.changeName !== store.changeName) {
+    throw new Error(`Event '${event.eventId}' targets a different run or change.`);
+  }
+  const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
+  if (existing) {
+    if (digestJson(existing) !== digestJson(event)) {
+      throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
     }
-    const existing = store.events.find((candidate) => candidate.eventId === event.eventId);
-    if (existing) {
-      if (digestJson(existing) !== digestJson(event)) {
-        throw new Error(`Event ID '${event.eventId}' already exists with conflicting content.`);
-      }
-      return { store, appended: false };
-    }
-    const next = eventStoreV2({
-      ...store,
-      events: [...store.events, event].sort((left, right) =>
-        left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)),
-    });
-    await lease.assertOwned();
-    await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next, {
-      ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
-      ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
-    });
-    await lease.assertOwned();
-    const committed = await readEventStoreV2(options.changeDir);
-    if (!committed.events.some((candidate) => candidate.eventId === event.eventId && digestJson(candidate) === digestJson(event))) {
-      throw new Error(`Canonical event '${event.eventId}' was not present after commit.`);
-    }
-    return { store: committed, appended: true };
-  }, options.lock);
+    return { store, appended: false };
+  }
+  const next = eventStoreV2({ ...store, events: [...store.events, event] });
+  await atomicWriteGuardrailsJson(options.changeDir, eventStorePath(options.changeDir), next, {
+    ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
+    ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
+  });
+  return { store: next, appended: true };
 }
 
 async function rawEventStore(changeDir: string): Promise<unknown | undefined> {

@@ -1,7 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as events from '../src/events.js';
 import { startGuardrailsRunV2 } from '../src/runner-v2.js';
@@ -11,7 +9,6 @@ import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 afterEach(cleanupTemporaryRoots);
 
 const fixture = (name: string) => new URL(`./fixtures/v1/${name}`, import.meta.url);
-const execFileAsync = promisify(execFile);
 
 async function seedV1State() {
   const project = await createOpenSpecProject('baseline');
@@ -60,7 +57,7 @@ describe('Guardrails v1-to-v2 event migration', () => {
     expect(before).not.toBe('{not-json');
   });
 
-  it('orders v2 events deterministically, rejects conflicting duplicates, and preserves atomic files', async () => {
+  it('preserves orchestrator acceptance order, rejects conflicting duplicates, and preserves atomic files', async () => {
     const { changeDir } = await seedV1State();
     const api = events as Record<string, unknown>;
     const store = await (api.migrateV1ToV2EventStore as (directory: string) => Promise<{
@@ -86,7 +83,7 @@ describe('Guardrails v1-to-v2 event migration', () => {
 
     expect((await append({ changeDir, event: event('event-b', '2026-08-09T12:01:00.000Z') })).appended).toBe(true);
     const ordered = await append({ changeDir, event: event('event-a', '2026-08-09T12:00:00.000Z') });
-    expect(ordered.store.events.map((item) => item.eventId)).toEqual(['event-a', 'event-b']);
+    expect(ordered.store.events.slice(-2).map((item) => item.eventId)).toEqual(['event-b', 'event-a']);
     expect((await append({ changeDir, event: event('event-a', '2026-08-09T12:00:00.000Z') })).appended).toBe(false);
     await expect(append({ changeDir, event: event('event-a', '2026-08-09T12:02:00.000Z') }))
       .rejects.toThrow(/conflicting content/i);
@@ -100,73 +97,6 @@ describe('Guardrails v1-to-v2 event migration', () => {
       failBeforeCommit: true,
     })).rejects.toThrow('interrupted');
     expect(await fs.readFile(filename, 'utf8')).toBe(before);
-  });
-
-  it('preserves every successful event appended by concurrent processes', async () => {
-    const { changeDir } = await seedV1State();
-    const api = events as Record<string, unknown>;
-    const store = await (api.migrateV1ToV2EventStore as (directory: string) => Promise<{
-      runId: string; changeName: string; events: Array<{ eventId: string }>;
-    }>)(changeDir);
-    const baseline = store.events.length;
-    const moduleUrl = new URL('../dist/index.js', import.meta.url).href;
-    const sourceDigest = '0'.repeat(64);
-    const script = [
-      `import { appendGuardrailsEventV2, createGuardrailsEventV2 } from ${JSON.stringify(moduleUrl)};`,
-      'const [changeDir, runId, changeName, eventId, sourceDigest] = process.argv.slice(1);',
-      'const event = createGuardrailsEventV2({ eventId, runId, changeName, occurredAt: new Date().toISOString(),',
-      "sourceDigests: { 'tasks.md': sourceDigest }, actor: { kind: 'host' }, provenance: { origin: 'contention-test' },",
-      "payload: { type: 'v1.migrated', sourceVersion: 1, sourceKind: 'human_action', sourceId: eventId, sourceDigest, record: {} } });",
-      'const result = await appendGuardrailsEventV2({ changeDir, event });',
-      'process.stdout.write(JSON.stringify({ eventId, appended: result.appended }));',
-    ].join('\n');
-    const eventIds = Array.from({ length: 12 }, (_, index) => `parallel:${index}`);
-    const results = await Promise.all(eventIds.map((eventId) => execFileAsync(process.execPath, [
-      '--input-type=module', '-e', script, changeDir, store.runId, store.changeName, eventId, sourceDigest,
-    ])));
-    expect(results.map(({ stdout }) => JSON.parse(stdout) as { appended: boolean })
-      .every((result) => result.appended)).toBe(true);
-    const finalStore = await (api.readEventStoreV2 as (directory: string) => Promise<{
-      events: Array<{ eventId: string }>;
-    }>)(changeDir);
-    const present = finalStore.events.filter((event) => eventIds.includes(event.eventId));
-    expect(finalStore.events).toHaveLength(baseline + eventIds.length);
-    expect(present.map((event) => event.eventId).sort()).toEqual(eventIds.sort());
-  }, 30_000);
-
-  it('does not steal a lease from a live writer that exceeds the lease interval', async () => {
-    const { changeDir } = await seedV1State();
-    const store = await events.migrateV1ToV2EventStore(changeDir);
-    const sourceDigest = '0'.repeat(64);
-    const event = (eventId: string) => events.createGuardrailsEventV2({
-      eventId,
-      runId: store.runId,
-      changeName: store.changeName,
-      occurredAt: new Date().toISOString(),
-      sourceDigests: { 'tasks.md': sourceDigest },
-      actor: { kind: 'host' },
-      provenance: { origin: 'lease-expiry-test' },
-      payload: {
-        type: 'v1.migrated', sourceVersion: 1, sourceKind: 'human_action', sourceId: eventId,
-        sourceDigest, record: {},
-      },
-    });
-    const lock = { leaseMs: 40, heartbeatMs: 10, timeoutMs: 2_000 };
-    const first = events.appendGuardrailsEventV2({
-      changeDir,
-      event: event('lease:first'),
-      lock,
-      beforeCommit: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 150));
-      },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 70));
-    const second = events.appendGuardrailsEventV2({ changeDir, event: event('lease:second'), lock });
-    const results = await Promise.all([first, second]);
-    expect(results.every((result) => result.appended)).toBe(true);
-    const committed = await events.readEventStoreV2(changeDir);
-    expect(committed.events.filter((item) => item.eventId.startsWith('lease:')).map((item) => item.eventId).sort())
-      .toEqual(['lease:first', 'lease:second']);
   });
 
   it('migrates an active v1 run before v2 commands mutate it and retains the v1 recovery record', async () => {
