@@ -304,6 +304,18 @@ export function replayGuardrailsEventsV2(options: {
         verification: payload.verification,
         regressionEvidence: payload.verification.evidence,
         updatedAt: event.occurredAt });
+    } else if (payload.type === 'debug.verification_stale') {
+      const session = debugSessions.get(payload.sessionId);
+      if (session?.verification?.verificationId === payload.verificationId) {
+        const withoutVerification = { ...session };
+        delete withoutVerification.verification;
+        debugSessions.set(payload.sessionId, {
+          ...withoutVerification,
+          status: 'active',
+          nextAction: 'Repository inputs changed after verification. Re-run the regression check and obtain fresh verification.',
+          updatedAt: event.occurredAt,
+        });
+      }
     } else if (payload.type === 'debug.session_resolved') {
       const session = debugSessions.get(payload.sessionId);
       if (session?.verification?.verificationId === payload.verificationId) debugSessions.set(payload.sessionId, {

@@ -29,8 +29,13 @@ describe('portable execution adapters', () => {
     expect(requests.filter((item) => item.role === 'executor').map((item) => item.taskId)).toEqual(['1', '2']);
     expect(requests.filter((item) => item.role !== 'executor').every((item) => item.readOnly)).toBe(true);
     requests.length = 0;
-    await executeWithTier({ tier: 'tier1', graph, dispatcher });
+    const outcome = await executeWithTier({ tier: 'tier1', graph, dispatcher });
     expect(requests.every((item) => item.isolated)).toBe(true);
+    expect(outcome).toMatchObject({
+      reviewReceipt: { request: { role: 'reviewer', readOnly: true } },
+      verificationReceipt: { request: { role: 'verifier', readOnly: true } },
+    });
+    expect(Object.isFrozen(outcome.verificationReceipt!.result.evidenceRefs)).toBe(true);
   });
 
   it('isolates Tier 2 waves, serializes merges, and reports deterministically', async () => {

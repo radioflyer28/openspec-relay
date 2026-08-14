@@ -4,10 +4,10 @@ import * as runner from '../src/runner-v2.js';
 import * as status from '../src/status.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { evaluateAssuranceV2 } from '../src/assurance-v2.js';
-import { executeWithTier } from '../src/execution-adapters.js';
+import { dispatchRoleV2, executeWithTier } from '../src/execution-adapters.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { discoverFinding } from '../src/findings.js';
-import { transitionFindingV2 } from '../src/v2-operations.js';
+import { transitionFindingV2, verifyFindingFromDispatchedResultV2 } from '../src/v2-operations.js';
 import { presentUatV2 } from '../src/v2-operations.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
@@ -240,10 +240,17 @@ describe('Guardrails v2 run pipeline', () => {
       await expect(transitionFindingV2({
         change: tier, projectRoot: root, findingId: finding.findingId, action: 'verify',
         actorId: 'executor-1', reason: 'Executor self-report must not close the finding.', evidence,
-      })).rejects.toThrow(/distinct from the repair executor/i);
-      const verified = await transitionFindingV2({
-        change: tier, projectRoot: root, findingId: finding.findingId, action: 'verify',
-        actorId: 'verifier-1', reason: 'Independent verification confirmed the repair.', evidence,
+      } as never)).rejects.toThrow(/technical verification requires a dispatched verifier result/i);
+      const verifier = await dispatchRoleV2({
+        request: { role: 'verifier', readOnly: true, isolated: true },
+        dispatcher: { dispatch: async () => ({
+          status: 'pass', summary: 'Independent verification confirmed the repair.',
+          evidenceRefs: evidence.map((item) => item.referenceId), evidence,
+        }) },
+      });
+      const verified = await verifyFindingFromDispatchedResultV2({
+        change: tier, projectRoot: root, findingId: finding.findingId, receipt: verifier,
+        reason: 'Independent verification confirmed the repair.',
       });
 
       const requests: Array<{ isolated: boolean; workspace?: string }> = [];

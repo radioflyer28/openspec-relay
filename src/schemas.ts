@@ -609,6 +609,12 @@ export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('debug.question_recorded'), sessionId: z.string().min(1), question: z.string().min(1) }).strict(),
   z.object({ type: z.literal('debug.next_action_recorded'), sessionId: z.string().min(1), nextAction: z.string().min(1) }).strict(),
   z.object({ type: z.literal('debug.verification_recorded'), sessionId: z.string().min(1), verification: DebugVerificationV2Schema }).strict(),
+  z.object({
+    type: z.literal('debug.verification_stale'),
+    sessionId: z.string().min(1),
+    verificationId: z.string().min(1),
+    sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
   z.object({ type: z.literal('debug.session_resolved'), sessionId: z.string().min(1), verificationId: z.string().min(1), nextAction: z.string().min(1) }).strict(),
   z.object({ type: z.literal('debug.session_updated'), sessionId: z.string().min(1), status: z.enum(['active', 'resolved', 'human_needed']), nextAction: z.string().min(1).optional(), regressionEvidence: z.array(PortableReferenceV2Schema).optional() }).strict(),
   z.object({ type: z.literal('uat.scenario_recorded'), scenario: UatScenarioV2Schema }).strict(),
