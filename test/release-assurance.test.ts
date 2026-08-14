@@ -242,6 +242,55 @@ describe('conditional release assurance', () => {
     ]) });
   });
 
+  it('preserves unresolved impact evidence when artifact verification succeeds', async () => {
+    const root = await packageProject();
+    const [detected] = await release.detectReleaseApplicability({
+      projectRoot: root,
+      changedFiles: [],
+      impactUnknown: 'No repository comparison base is available.',
+      config: { enabled: 'auto' },
+    });
+    expect(detected).toMatchObject({ status: 'human_needed', checks: [
+      expect.objectContaining({ checkId: 'release-impact', status: 'human_needed' }),
+    ] });
+    const [executed] = await release.executeReleaseCandidates({
+      packageRoot: root,
+      mode: 'quick',
+      config: { configuredCommands: [] },
+      candidates: [detected],
+      releaseRunner: trustedTestRunner,
+    });
+    expect(executed).toMatchObject({
+      status: 'human_needed',
+      checks: expect.arrayContaining([
+        expect.objectContaining({ checkId: 'release-impact', status: 'human_needed' }),
+        expect.objectContaining({ checkId: 'pack', status: 'pass' }),
+      ]),
+    });
+  });
+
+  it.each([
+    ['^1.8.0', '1.9.2', 'pass'],
+    ['^1.8.0', '2.0.0', 'fail'],
+    ['~1.8.0', '1.8.9', 'pass'],
+    ['~1.8.0', '1.9.0', 'fail'],
+    ['>=1.8.0 <2.0.0', '1.8.0', 'pass'],
+    ['>=1.8.0 <2.0.0', '2.0.0', 'fail'],
+    ['^1.8.0', '1.9.0-beta.1', 'fail'],
+    ['not-a-range', '1.9.0', 'fail'],
+  ])('evaluates compatibility range %s against %s', (range, tested, expected) => {
+    expect(release.evaluateReleasePolicy({
+      packageManifest: { version: '1.0.0' },
+      publicChange: false,
+      changesetPresent: false,
+      installDocumented: true,
+      testedDependencyVersions: { dependency: tested },
+      compatibilityRanges: { dependency: range },
+    }).checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ checkId: 'compatibility-range:dependency', status: expected }),
+    ]));
+  });
+
   it('isolates build output, disables package lifecycle scripts, and removes temporary package workspaces after a partial failure', async () => {
     const root = await packageProject();
     const sentinel = path.join(root, 'package-script-ran');
