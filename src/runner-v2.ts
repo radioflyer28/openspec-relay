@@ -392,14 +392,11 @@ export async function checkGuardrailsRunV2(options: {
     impactUnknown: planning.impactUnknown,
     config: config.features.releaseAssurance,
   });
-  const previousArtifactPath = config.features.releaseAssurance.previousArtifactPath
-    ? `${resolved.projectRoot}/${config.features.releaseAssurance.previousArtifactPath}` : undefined;
   const releaseCandidates = await executeReleaseCandidates({
     packageRoot: resolved.projectRoot,
     candidates: detectedReleaseCandidates,
     mode: store.seed.mode,
     config: store.seed.config.features.releaseAssurance,
-    previousArtifactPath,
     releaseRunner: options.adapters?.releaseRunner,
   });
   await refreshPlanningEvents({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, store, compiled, current,

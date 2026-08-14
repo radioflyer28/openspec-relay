@@ -2,7 +2,7 @@ import type { HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
 import type { ExecutionTier, GuardrailsConfigV1 } from './schemas.js';
 import type { RepositoryAnalysisAdapterV2 } from './repository-context.js';
 import type { ReadinessEvaluatorV2 } from './readiness.js';
-import type { ConstrainedReleaseRunnerV2 } from './release-assurance.js';
+import type { HostReleaseRunnerV2 } from './release-assurance.js';
 
 export interface TierDecisionV1 {
   tier: ExecutionTier;
@@ -16,7 +16,7 @@ export interface TierAdaptersV1 {
   worktrees: boolean;
   repositoryAnalyzer: RepositoryAnalysisAdapterV2;
   readinessEvaluator: ReadinessEvaluatorV2;
-  releaseRunner: ConstrainedReleaseRunnerV2;
+  releaseRunner: HostReleaseRunnerV2;
 }
 
 export function negotiateExecutionTier(
