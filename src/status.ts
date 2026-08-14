@@ -1,70 +1,6 @@
-import type { GuardrailsAssuranceV1, GuardrailsAssuranceV2, GuardrailsRunV1, GuardrailsRunV2 } from './schemas.js';
-import {
-  digestJson,
-  readAssuranceState,
-  readAssuranceStateV2,
-  readRunState,
-  readRunStateV2,
-  resolveChangeDirectory,
-} from './state.js';
-import { reconcileCurrentOpenSpec, type SourceReconciliationV1 } from './reconciliation.js';
-
-export interface RunStatusV1 {
-  changeName: string;
-  mode: GuardrailsRunV1['mode'];
-  tier: GuardrailsRunV1['tier'];
-  status: GuardrailsRunV1['status'];
-  tasks: { total: number; complete: number; blocked: number };
-  checks: GuardrailsAssuranceV1['checks'];
-  evidenceCount: number;
-  deviations: GuardrailsRunV1['deviations'];
-  repairs: GuardrailsAssuranceV1['repairs'];
-  gates: string[];
-  assuranceStatus: GuardrailsAssuranceV1['status'];
-  unresolvedHumanActions: string[];
-  staleEvidenceCount: number;
-  reconciliation: SourceReconciliationV1;
-  assuranceDigestMatches: boolean;
-}
-
-export async function getRunStatus(options: {
-  change: string;
-  projectRoot?: string;
-}): Promise<RunStatusV1> {
-  const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const persistedRun = await readRunState(resolved.changeDir);
-  const persistedAssurance = await readAssuranceState(resolved.changeDir);
-  const assuranceDigestMatches = persistedRun.assuranceDigest === digestJson(persistedAssurance);
-  const reconciled = await reconcileCurrentOpenSpec({
-    projectRoot: resolved.projectRoot,
-    changeDir: resolved.changeDir,
-    changeName: resolved.changeName,
-    run: persistedRun,
-    assurance: persistedAssurance,
-  });
-  const { run, assurance, reconciliation } = reconciled;
-  return {
-    changeName: run.changeName,
-    mode: run.mode,
-    tier: run.tier,
-    status: run.status,
-    tasks: {
-      total: run.tasks.length,
-      complete: run.tasks.filter((task) => task.status === 'complete').length,
-      blocked: run.tasks.filter((task) => task.status === 'blocked').length,
-    },
-    checks: assurance.checks,
-    evidenceCount: assurance.evidence.length,
-    deviations: run.deviations,
-    repairs: assurance.repairs,
-    gates: run.gateIds,
-    assuranceStatus: assurance.status,
-    unresolvedHumanActions: assurance.unresolvedHumanActions,
-    staleEvidenceCount: assurance.staleEvidenceIds.length,
-    reconciliation,
-    assuranceDigestMatches,
-  };
-}
+import { loadCanonicalGuardrailsRecords } from './canonical-state.js';
+import type { GuardrailsAssuranceV2, GuardrailsRunV2 } from './schemas.js';
+import { resolveChangeDirectory } from './state.js';
 
 export interface RunStatusV2 {
   changeName: string;
@@ -91,8 +27,8 @@ export async function getRunStatusV2(options: {
   projectRoot?: string;
 }): Promise<RunStatusV2> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const run = await readRunStateV2(resolved.changeDir);
-  const assurance = await readAssuranceStateV2(resolved.changeDir);
+  const canonical = await loadCanonicalGuardrailsRecords(resolved.changeDir);
+  const { run, assurance } = canonical.projection;
   const findings: Record<string, number> = {};
   for (const finding of assurance.findings) findings[finding.state] = (findings[finding.state] ?? 0) + 1;
   const pendingUat = assurance.uatScenarios.filter((scenario) =>
@@ -142,6 +78,6 @@ export async function getRunStatusV2(options: {
     unresolvedHumanActions: assurance.unresolvedHumanActions,
     nextActions: [...new Set(nextActions)],
     staleEvidenceCount: assurance.staleEvidenceIds.length,
-    assuranceDigestMatches: run.assuranceDigest === digestJson(assurance),
+    assuranceDigestMatches: canonical.projectionsMatch,
   };
 }

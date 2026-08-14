@@ -2,13 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildExecutionGraph,
   executeWithTier,
-  persistExecutionOutcome,
-  readEventStore,
-  startGuardrailsRun,
-  type ExecutionOutcomeV1,
+  readEventStoreV2,
+  startGuardrailsRunV2,
   type RoleDispatcherV1,
   type TaskNodeV1,
 } from '../src/index.js';
+import * as publicApi from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -69,37 +68,18 @@ describe('portable execution adapters', () => {
     expect(result.review).toBeUndefined();
   });
 
-  it('routes higher-tier outcomes through validated Tier 0 events and replay', async () => {
+  it('returns higher-tier outcomes to the orchestrator without writing canonical state', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    const started = await startGuardrailsRun({ change: 'demo', projectRoot: root });
-    const requirementId = started.run.artifacts.flatMap((artifact) => artifact.ids)
-      .find((id) => id.includes('#requirement:') && !id.includes('/scenario:'))!;
-    const outcome: ExecutionOutcomeV1 = {
-      tier: 'tier1',
-      tasks: [
-        { taskId: '1.1', status: 'pass', summary: 'done', evidenceRefs: [] },
-        { taskId: '1.2', status: 'pass', summary: 'done', evidenceRefs: [] },
-      ],
-      review: {
-        status: 'pass', summary: 'reviewed', evidenceRefs: [],
-        events: [{ type: 'finding.recorded', finding: {
-          findingId: 'tier-review', requirementId, status: 'pass', summary: 'Reviewed.',
-          evidenceIds: [], origin: 'reviewer',
-        } }],
-      },
-      stoppedAfterFailure: false,
-    };
-    const first = await persistExecutionOutcome({
-      change: 'demo', projectRoot: root, outcome, eventPrefix: 'tier1-run',
-      occurredAt: '2026-08-04T12:00:00.000Z',
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    const before = await readEventStoreV2(changeDir);
+    const outcome = await executeWithTier({
+      tier: 'tier1', graph: buildExecutionGraph([node('1.1'), node('1.2', ['1.1'])]),
+      dispatcher: { dispatch: async (request) => ({
+        status: 'pass', summary: request.role, evidenceRefs: [],
+      }) },
     });
-    expect(first).toHaveLength(3);
-    const retry = await persistExecutionOutcome({
-      change: 'demo', projectRoot: root, outcome, eventPrefix: 'tier1-run',
-      occurredAt: '2026-08-04T12:00:00.000Z',
-    });
-    expect(retry.every((item) => item.appended === false)).toBe(true);
-    expect((await readEventStore(changeDir)).events.map((event) => event.payload.type))
-      .toEqual(expect.arrayContaining(['task.transition', 'finding.recorded']));
+    expect(outcome.tasks).toHaveLength(2);
+    expect(await readEventStoreV2(changeDir)).toEqual(before);
+    expect(publicApi).not.toHaveProperty('persistExecutionOutcome');
   }, 20_000);
 });

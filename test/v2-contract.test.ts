@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import * as events from '../src/events.js';
 import * as schemas from '../src/schemas.js';
 
 describe('Guardrails v2 contract (RED)', () => {
@@ -44,8 +43,11 @@ describe('Guardrails v2 contract (RED)', () => {
     })).toMatchObject({ type: 'human.disposition_recorded', actor: 'maintainer' });
   });
 
-  it('provides an explicit v1-to-v2 migration instead of treating v1 projections as v2 state', () => {
-    expect(events).toHaveProperty('previewV1ToV2Migration');
-    expect(events).toHaveProperty('migrateV1ToV2EventStore');
+  it('keeps one unpublished event-state family without a migration event protocol', () => {
+    const payloadSchema = schemas.GuardrailsEventPayloadV2Schema;
+    expect(payloadSchema.safeParse({
+      type: 'v1.migrated', sourceVersion: 1, sourceKind: 'event', sourceId: 'old',
+      sourceDigest: '0'.repeat(64), record: {},
+    }).success).toBe(false);
   });
 });

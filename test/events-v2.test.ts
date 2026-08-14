@@ -1,97 +1,44 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import * as events from '../src/events.js';
+import {
+  appendGuardrailsEventV2,
+  createGuardrailsEventV2,
+  readCanonicalEventStore,
+} from '../src/events.js';
 import { startGuardrailsRunV2 } from '../src/runner-v2.js';
-import * as state from '../src/state.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
 
-const fixture = (name: string) => new URL(`./fixtures/v1/${name}`, import.meta.url);
-
-async function seedV1State() {
-  const project = await createOpenSpecProject('baseline');
-  const directory = path.join(project.changeDir, '.guardrails');
-  await fs.mkdir(directory, { recursive: true });
-  await Promise.all(['events.json', 'run.json', 'assurance.json'].map(async (name) =>
-    fs.copyFile(fixture(name), path.join(directory, name))));
-  return project;
-}
-
-describe('Guardrails v1-to-v2 event migration', () => {
-  it('previews, migrates, replays, and repeats v1 state without fabricating acceptance', async () => {
-    const { changeDir } = await seedV1State();
-    const api = events as Record<string, unknown>;
-    const preview = await (api.previewV1ToV2Migration as (directory: string) => Promise<{
-      status: string; needsMigration: boolean; diagnostics: string[];
-    }>)(changeDir);
-    expect(preview).toMatchObject({ status: 'ready', needsMigration: true, diagnostics: [] });
-
-    const migrate = api.migrateV1ToV2EventStore as (directory: string) => Promise<{ version: number }>;
-    const first = await migrate(changeDir);
-    const second = await migrate(changeDir);
-    expect(first).toEqual(second);
-    expect(first.version).toBe(2);
-
-    const readRun = state as Record<string, unknown>;
-    const run = await (readRun.readRunStateV2 as (directory: string) => Promise<{ version: number }>)(changeDir);
-    const assurance = await (readRun.readAssuranceStateV2 as (directory: string) => Promise<{
-      version: number; uatScenarios: unknown[];
-    }>)(changeDir);
-    expect(run.version).toBe(2);
-    expect(assurance).toMatchObject({ version: 2, uatScenarios: [] });
-    await expect(fs.access((state as Record<string, (directory: string, key: string) => string>)
-      .guardrailsGeneratedPath(changeDir, 'v1MigrationBackup'))).resolves.toBeUndefined();
-  });
-
-  it('fails closed before changing valid v1 files when a projection is corrupt', async () => {
-    const { changeDir } = await seedV1State();
-    const run = (state as Record<string, (directory: string) => string>).runStatePath(changeDir);
-    const before = await fs.readFile(run, 'utf8');
-    await fs.writeFile(run, '{not-json');
-    const migrate = (events as Record<string, unknown>).migrateV1ToV2EventStore as
-      (directory: string) => Promise<unknown>;
-    await expect(migrate(changeDir)).rejects.toThrow();
-    expect(await fs.readFile(run, 'utf8')).toBe('{not-json');
-    expect(before).not.toBe('{not-json');
-  });
-
+describe('canonical Guardrails event history', () => {
   it('preserves orchestrator acceptance order, rejects conflicting duplicates, and preserves atomic files', async () => {
-    const { changeDir } = await seedV1State();
-    const api = events as Record<string, unknown>;
-    const store = await (api.migrateV1ToV2EventStore as (directory: string) => Promise<{
-      runId: string; changeName: string;
-    }>)(changeDir);
-    const create = api.createGuardrailsEventV2 as (input: Record<string, unknown>) => unknown;
-    const append = api.appendGuardrailsEventV2 as (input: Record<string, unknown>) => Promise<{
-      store: { events: Array<{ eventId: string }> }; appended: boolean;
-    }>;
-    const event = (eventId: string, occurredAt: string) => create({
+    const { root, changeDir } = await createOpenSpecProject('baseline');
+    await startGuardrailsRunV2({ change: 'baseline', projectRoot: root });
+    const store = await readCanonicalEventStore(changeDir);
+    const event = (eventId: string, occurredAt: string) => createGuardrailsEventV2({
       eventId,
       runId: store.runId,
       changeName: store.changeName,
       occurredAt,
-      sourceDigests: { 'tasks.md': '0000000000000000000000000000000000000000000000000000000000000000' },
+      sourceDigests: {},
       actor: { kind: 'host' },
-      provenance: { origin: 'events-v2-test' },
-      payload: {
-        type: 'v1.migrated', sourceVersion: 1, sourceKind: 'human_action', sourceId: eventId,
-        sourceDigest: '0000000000000000000000000000000000000000000000000000000000000000', record: {},
-      },
+      provenance: { origin: 'events-test' },
+      payload: { type: 'human.decision', gateId: 'guardrails.assurance', decision: 'requested', reason: eventId },
     });
 
-    expect((await append({ changeDir, event: event('event-b', '2026-08-09T12:01:00.000Z') })).appended).toBe(true);
-    const ordered = await append({ changeDir, event: event('event-a', '2026-08-09T12:00:00.000Z') });
+    expect((await appendGuardrailsEventV2({ changeDir, event: event('event-b', '2026-08-09T12:01:00.000Z') })).appended)
+      .toBe(true);
+    const ordered = await appendGuardrailsEventV2({ changeDir, event: event('event-a', '2026-08-09T12:00:00.000Z') });
     expect(ordered.store.events.slice(-2).map((item) => item.eventId)).toEqual(['event-b', 'event-a']);
-    expect((await append({ changeDir, event: event('event-a', '2026-08-09T12:00:00.000Z') })).appended).toBe(false);
-    await expect(append({ changeDir, event: event('event-a', '2026-08-09T12:02:00.000Z') }))
+    expect((await appendGuardrailsEventV2({ changeDir, event: event('event-a', '2026-08-09T12:00:00.000Z') })).appended)
+      .toBe(false);
+    await expect(appendGuardrailsEventV2({ changeDir, event: event('event-a', '2026-08-09T12:02:00.000Z') }))
       .rejects.toThrow(/conflicting content/i);
 
-    const filename = (state as Record<string, (directory: string) => string>).runStatePath(changeDir)
-      .replace('run.json', 'events.json');
+    const filename = path.join(changeDir, '.guardrails', 'events.json');
     const before = await fs.readFile(filename, 'utf8');
-    await expect(append({
+    await expect(appendGuardrailsEventV2({
       changeDir,
       event: event('event-c', '2026-08-09T12:03:00.000Z'),
       failBeforeCommit: true,
@@ -99,33 +46,12 @@ describe('Guardrails v1-to-v2 event migration', () => {
     expect(await fs.readFile(filename, 'utf8')).toBe(before);
   });
 
-  it('migrates an active v1 run before v2 commands mutate it and retains the v1 recovery record', async () => {
-    const { root, changeDir } = await seedV1State();
-    const resumed = await startGuardrailsRunV2({ change: 'baseline', projectRoot: root });
-    expect(resumed.run).toMatchObject({ version: 2, runId: 'v1-fixture-run', changeName: 'baseline' });
-    const backup = JSON.parse(await fs.readFile((state as Record<string, (directory: string, key: string) => string>)
-      .guardrailsGeneratedPath(changeDir, 'v1MigrationBackup'), 'utf8'));
-    expect(backup).toMatchObject({ version: 1, run: { version: 1 }, assurance: { version: 1 } });
-  });
+  it('fails with regeneration guidance for unsupported pre-release generated state', async () => {
+    const { root, changeDir } = await createOpenSpecProject('baseline');
+    await fs.mkdir(path.join(changeDir, '.guardrails'), { recursive: true });
+    await fs.writeFile(path.join(changeDir, '.guardrails', 'run.json'), '{"version":1}\n');
 
-  it('exports a validated v1 compatibility bundle without replacing canonical v2 history', async () => {
-    const { changeDir } = await seedV1State();
-    const api = events as Record<string, unknown>;
-    await (api.migrateV1ToV2EventStore as (directory: string) => Promise<unknown>)(changeDir);
-
-    const exported = await (api.exportV1CompatibilityBundle as (directory: string) => Promise<{
-      exported: boolean; runId: string; filename: string;
-    }>)(changeDir);
-    expect(exported).toMatchObject({ exported: true, runId: 'v1-fixture-run' });
-    expect(JSON.parse(await fs.readFile(exported.filename, 'utf8'))).toMatchObject({
-      version: 1, events: { version: 1 }, run: { version: 1 }, assurance: { version: 1 },
-      exportedFromCanonicalV2: expect.stringMatching(/^[a-f0-9]{64}$/),
-    });
-    expect(await (api.readEventStoreV2 as (directory: string) => Promise<{ version: number }>)(changeDir))
-      .toMatchObject({ version: 2 });
-    expect(await (state as Record<string, (directory: string) => Promise<{ version: number }>>)
-      .readRunStateV2(changeDir)).toMatchObject({ version: 2 });
-    expect(await (state as Record<string, (directory: string) => Promise<{ version: number }>>)
-      .readAssuranceStateV2(changeDir)).toMatchObject({ version: 2 });
+    await expect(startGuardrailsRunV2({ change: 'baseline', projectRoot: root }))
+      .rejects.toThrow(/remove.*\.guardrails.*start a new run.*regenerate/i);
   });
 });

@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { GateContextV1 } from '@fission-ai/openspec/extensions';
 import {
   guardrailsAssuranceGate,
-  readRunState,
-  startGuardrailsRun,
+  readRunStateV2,
+  startGuardrailsRunV2,
 } from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
@@ -23,18 +23,21 @@ describe('failure injection', () => {
       },
     };
     expect(await guardrailsAssuranceGate.evaluate(context)).toMatchObject({ status: 'error' });
-    await startGuardrailsRun({ change: 'demo', projectRoot: root });
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
     await fs.writeFile(path.join(changeDir, '.guardrails', 'assurance.json'), '{not-json');
     expect(await guardrailsAssuranceGate.evaluate(context)).toMatchObject({
       status: 'error', summary: expect.stringContaining('invalid'),
     });
   });
 
-  it('rejects corrupt run state instead of silently resuming it', async () => {
+  it('repairs a corrupt generated run projection from canonical history on resume', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRun({ change: 'demo', projectRoot: root });
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
     await fs.writeFile(path.join(changeDir, '.guardrails', 'run.json'), '{not-json');
-    await expect(readRunState(changeDir)).rejects.toThrow();
-    await expect(startGuardrailsRun({ change: 'demo', projectRoot: root })).rejects.toThrow();
+    await expect(readRunStateV2(changeDir)).rejects.toThrow();
+    await expect(startGuardrailsRunV2({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+      run: { version: 2, changeName: 'demo' },
+    });
+    await expect(readRunStateV2(changeDir)).resolves.toMatchObject({ version: 2, changeName: 'demo' });
   });
 });
