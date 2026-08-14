@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { describe, expect, it, afterEach } from 'vitest';
 import { discoverFinding, transitionFinding } from '../src/findings.js';
+import { dispatchRoleV2 } from '../src/execution-adapters.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { startGuardrailsRunV2 } from '../src/runner-v2.js';
@@ -10,11 +11,14 @@ import { readAssuranceStateV2 } from '../src/state.js';
 import {
   presentUatV2,
   recordWorkflowResultV2,
+  recordDispatchedRoleResultV2,
   recordUatV2,
   resolveDebugSessionV2,
   transitionFindingV2,
+  verifyFindingFromDispatchedResultV2,
 } from '../src/v2-operations.js';
 import { checkGuardrailsRunV2 } from '../src/runner-v2.js';
+import type { GuardrailsEventPayloadV1 } from '../src/schemas.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -23,6 +27,27 @@ const now = '2026-08-09T15:00:00.000Z';
 
 function digests(artifacts: Array<{ path: string; sourceDigest: string }>) {
   return Object.fromEntries(artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
+}
+
+async function dispatchedVerifier(evidence: Array<{
+  referenceId: string; kind: 'artifact' | 'repository' | 'generated' | 'external';
+  path?: string; externalId?: string; digest?: string; available: boolean;
+}>, events: GuardrailsEventPayloadV1[] = []) {
+  return dispatchRoleV2({
+    request: { role: 'verifier', readOnly: true, isolated: true },
+    dispatcher: { dispatch: async () => ({
+      status: 'pass', summary: 'Independent verification passed.',
+      evidenceRefs: evidence.map((item) => item.referenceId), evidence,
+      events,
+    }) },
+  });
+}
+
+async function verifyFinding(root: string, findingId: string, evidence: Parameters<typeof dispatchedVerifier>[0], reason = 'Verified.') {
+  const receipt = await dispatchedVerifier(evidence);
+  return verifyFindingFromDispatchedResultV2({
+    change: 'demo', projectRoot: root, findingId, receipt, reason,
+  });
 }
 
 async function addHumanFinding(root: string, changeDir: string) {
@@ -89,15 +114,12 @@ describe('v2 debug and UAT operations', () => {
     await expect(transitionFindingV2({
       change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
       actorId: 'executor-1', reason: 'Self verification is not independent.', evidence, now: '2026-08-09T15:02:00.000Z',
-    })).rejects.toThrow(/distinct from the repair executor/i);
+    } as never)).rejects.toThrow(/technical verification requires a dispatched verifier result/i);
 
-    const verified = await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
-      actorId: 'verifier-1', reason: 'Verified the original concern against current evidence.', evidence,
-      now: '2026-08-09T15:03:00.000Z',
-    });
+    const verified = await verifyFinding(root, finding.findingId, evidence,
+      'Verified the original concern against current evidence.');
     expect(verified).toMatchObject({ state: 'independently_verified', transitions: expect.arrayContaining([
-      expect.objectContaining({ to: 'independently_verified', actor: { kind: 'verifier', id: 'verifier-1' } }),
+      expect.objectContaining({ to: 'independently_verified', actor: { kind: 'verifier', id: expect.any(String) } }),
     ]) });
     expect((await readAssuranceStateV2(changeDir)).findings).toEqual([
       expect.objectContaining({ findingId: finding.findingId, state: 'independently_verified' }),
@@ -113,8 +135,7 @@ describe('v2 debug and UAT operations', () => {
     const repairEvidence = [{ referenceId: 'test:repair', kind: 'generated' as const, externalId: 'repair', available: true }];
     await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
       actorId: 'executor', reason: 'Repaired.', evidence: repairEvidence });
-    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
-      actorId: 'verifier', reason: 'Verified.', evidence: repairEvidence });
+    await verifyFinding(root, finding.findingId, repairEvidence);
     const presented = await presentUatV2({ change: 'demo', projectRoot: root });
     await recordUatV2({ change: 'demo', projectRoot: root, scenarioId: presented.next!.scenarioId,
       status: 'passed', actor: 'maintainer', notes: 'Observed.' });
@@ -149,11 +170,7 @@ describe('v2 debug and UAT operations', () => {
       change: 'demo', projectRoot: root, findingId: failed.findingId, action: 'repair',
       actorId: 'executor', reason: 'Repaired the failed behavior.', evidence: repairEvidence,
     });
-    await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: failed.findingId, action: 'verify',
-      actorId: 'verifier', reason: 'Verified the repair against current evidence.',
-      evidence: repairEvidence,
-    });
+    await verifyFinding(root, failed.findingId, repairEvidence, 'Verified the repair against current evidence.');
     const retest = await presentUatV2({ change: 'demo', projectRoot: root });
     expect(retest.next).toMatchObject({ scenarioId, status: 'awaiting_retest' });
     expect(retest.next).not.toHaveProperty('disposition');
@@ -187,10 +204,7 @@ describe('v2 debug and UAT operations', () => {
       change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
       actorId: 'executor', reason: 'Repaired.', evidence: repositoryEvidence,
     });
-    const verified = await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
-      actorId: 'verifier', reason: 'Verified.', evidence: repositoryEvidence,
-    });
+    const verified = await verifyFinding(root, finding.findingId, repositoryEvidence);
     expect(verified.transitions.at(-1)?.evidence).toEqual([
       expect.objectContaining({ referenceId: 'repository:src/index.ts', digest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
     ]);
@@ -251,7 +265,9 @@ describe('v2 debug and UAT operations', () => {
 
   it('exposes CLI debug and scenario-by-scenario UAT recording through the contributed Tier 0 commands', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    await fs.mkdir(`${root}/src`, { recursive: true });
+    await fs.writeFile(`${root}/src/index.ts`, 'export const value = 1;\n');
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     const finding = await addHumanFinding(root, changeDir);
     const initialPresentation = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'uat', 'demo', '--project', root, '--json',
@@ -307,21 +323,9 @@ describe('v2 debug and UAT operations', () => {
       '--next-action', 'Verify the repaired public contract.', '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(actioned.session.nextAction).toBe('Verify the repaired public contract.');
-    await expect(resolveDebugSessionV2({
-      change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
-      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verifierId: 'verifier-1',
-    })).rejects.toThrow(/linked finding.*independently verified/i);
     const lifecycleEvidence = [
-      { referenceId: 'test:debug:red', kind: 'generated' as const, externalId: 'debug-red',
-        digest: createHash('sha256').update('debug-red').digest('hex'), available: true },
-      { referenceId: 'test:debug:green', kind: 'generated' as const, externalId: 'debug-green',
-        digest: createHash('sha256').update('debug-green').digest('hex'), available: true },
+      { referenceId: 'repository:src/index.ts', kind: 'repository' as const, path: 'src/index.ts', available: true },
     ];
-    await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
-      actorId: 'executor-1', reason: 'Repaired the root cause.', evidence: lifecycleEvidence,
-      now: '2026-08-09T15:02:00.000Z',
-    });
     const canonicalCompiled = await compileOpenSpecChange({ changeDir });
     const canonicalDigests = digests(canonicalCompiled.artifacts);
     await recordWorkflowResultV2({
@@ -334,37 +338,40 @@ describe('v2 debug and UAT operations', () => {
         relevantFailure: true, preExistingFailure: false, origin: 'executor', reference: 'test:debug:red',
       } },
     });
-    await recordWorkflowResultV2({
-      change: 'demo', projectRoot: root, eventId: 'debug-evidence:green', occurredAt: '2026-08-09T15:03:00.000Z',
-      stage: 'verifier', actorId: 'verifier-1',
-      payload: { type: 'evidence.recorded', evidence: {
+    await fs.writeFile(`${root}/src/index.ts`, 'export const value = 2;\n');
+    await checkGuardrailsRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    await transitionFindingV2({
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
+      actorId: 'executor-1', reason: 'Repaired the root cause.', evidence: lifecycleEvidence,
+      now: '2026-08-09T15:02:00.000Z',
+    });
+    const verifier = await dispatchedVerifier(lifecycleEvidence, [{
+      type: 'evidence.recorded', evidence: {
         evidenceId: 'debug-green', taskId: '1.1', phase: 'green', checkId: 'targeted-tests',
         observedAt: '2026-08-09T15:03:00.000Z', sourceState: 'after-fix', sourceDigests: canonicalDigests,
         exitCode: 0, result: 'pass', outputDigest: createHash('sha256').update('debug-green').digest('hex'),
         preExistingFailure: false, origin: 'verifier', reference: 'test:debug:green',
-      } },
-    });
-    await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
-      actorId: 'verifier-1', reason: 'Verified current regression evidence.',
-      evidence: lifecycleEvidence, now: '2026-08-09T15:04:00.000Z',
+      },
+    }]);
+    await recordDispatchedRoleResultV2({ change: 'demo', projectRoot: root, receipt: verifier });
+    await verifyFindingFromDispatchedResultV2({
+      change: 'demo', projectRoot: root, findingId: finding.findingId, receipt: verifier,
+      reason: 'Verified current regression evidence.', now: '2026-08-09T15:04:00.000Z',
     });
     await expect(resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
-      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verifierId: 'executor-1',
-    })).rejects.toThrow(/distinct from the executor/i);
-    await expect(resolveDebugSessionV2({
-      change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
-      redEvidenceId: 'test:debug:red', greenEvidenceId: 'test:debug:green', verifierId: 'verifier-1',
+      redEvidenceId: 'test:debug:red', greenEvidenceId: 'test:debug:green', verificationResult: verifier,
     })).rejects.toThrow(/existing canonical evidence records/i);
-    const resolved = JSON.parse(execFileSync(process.execPath, [
-      'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
-      '--resolve', '--verified-by', 'verifier-1', '--red-evidence-id', 'debug-red',
-      '--green-evidence-id', 'debug-green', '--json',
-    ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(resolved.session).toMatchObject({ status: 'resolved', verification: {
-      verifier: { kind: 'verifier', id: 'verifier-1' }, findingId: finding.findingId,
+    const resolved = await resolveDebugSessionV2({
+      change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
+      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verificationResult: verifier,
+    });
+    expect(resolved).toMatchObject({ status: 'resolved', verification: {
+      verifier: { kind: 'verifier', id: verifier.dispatchId }, findingId: finding.findingId,
     } });
+    expect(execFileSync(process.execPath, ['dist/cli.js', 'debug', '--help'], {
+      cwd: process.cwd(), encoding: 'utf8',
+    })).not.toContain('--verified-by');
     const eventTypes = (await readEventStoreV2(changeDir)).events.map((event) => event.payload.type);
     expect(eventTypes).toEqual(expect.arrayContaining([
       'debug.reference_changed', 'debug.question_recorded', 'debug.next_action_recorded',

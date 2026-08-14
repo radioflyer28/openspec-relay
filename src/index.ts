@@ -24,21 +24,26 @@ export {
   recordDebugNextActionV2,
   recordDebugQuestionV2,
   recordDebugReferenceChangeV2,
+  recordDispatchedRoleResultV2,
   recordUatV2,
   recordWorkflowResultV2,
   resolveDebugSessionV2,
   startOrResumeDebugV2,
   transitionFindingV2,
+  verifyFindingFromDispatchedResultV2,
   type FindingWorkflowActionV2,
   type WorkflowStageV2,
 } from './v2-operations.js';
 export {
+  dispatchRoleV2,
   executeWithTier,
+  type DispatchedRoleResultV2,
   type ExecutionOutcomeV1,
   type ExecutionRole,
   type RoleDispatcherV1,
   type RoleRequestV1,
   type RoleResultV1,
+  type ReportedFindingV2,
   type WorktreeAdapterV1,
 } from './execution-adapters.js';
 export {
