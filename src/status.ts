@@ -20,6 +20,7 @@ export interface RunStatusV2 {
   nextActions: string[];
   staleEvidenceCount: number;
   assuranceDigestMatches: boolean;
+  integrity: { status: 'pass' | 'error'; summary: string };
 }
 
 export async function getRunStatusV2(options: {
@@ -29,6 +30,7 @@ export async function getRunStatusV2(options: {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
   const canonical = await loadCanonicalGuardrailsRecords(resolved.changeDir);
   const { run, assurance } = canonical.projection;
+  const integrityError = !canonical.projectionsMatch;
   const findings: Record<string, number> = {};
   for (const finding of assurance.findings) findings[finding.state] = (findings[finding.state] ?? 0) + 1;
   const pendingUat = assurance.uatScenarios.filter((scenario) =>
@@ -36,6 +38,8 @@ export async function getRunStatusV2(options: {
   const unresolvedRelease = assurance.releaseCandidates.filter((candidate) =>
     ['pending', 'fail', 'human_needed', 'error'].includes(candidate.status));
   const nextActions = [
+    ...(integrityError
+      ? ['Regenerate projections from canonical Guardrails history with openspec-guardrails check.'] : []),
     ...(assurance.repositoryContext?.status === 'stale' ? ['Refresh stale repository context.'] : []),
     ...(assurance.readiness && assurance.readiness.status !== 'pass'
       ? assurance.readiness.issues.filter((issue) => issue.blocking).flatMap((issue) => issue.remediation) : []),
@@ -50,14 +54,14 @@ export async function getRunStatusV2(options: {
     changeName: run.changeName,
     mode: run.mode,
     tier: run.tier,
-    status: run.status,
+    status: integrityError ? 'error' : run.status,
     tasks: {
       total: run.tasks.length,
       complete: run.tasks.filter((task) => task.status === 'complete').length,
       blocked: run.tasks.filter((task) => task.status === 'blocked').length,
     },
     checks: assurance.checks,
-    assuranceStatus: assurance.status,
+    assuranceStatus: integrityError ? 'error' : assurance.status,
     repositoryContext: { status: assurance.repositoryContext?.status ?? 'missing' },
     readiness: { status: assurance.readiness?.status ?? 'missing', issueCount: assurance.readiness?.issues.length ?? 0 },
     findings,
@@ -79,5 +83,8 @@ export async function getRunStatusV2(options: {
     nextActions: [...new Set(nextActions)],
     staleEvidenceCount: assurance.staleEvidenceIds.length,
     assuranceDigestMatches: canonical.projectionsMatch,
+    integrity: integrityError
+      ? { status: 'error', summary: 'Generated projections do not match canonical Guardrails history.' }
+      : { status: 'pass', summary: 'Generated projections match canonical Guardrails history.' },
   };
 }
