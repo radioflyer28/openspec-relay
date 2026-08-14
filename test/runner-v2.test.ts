@@ -230,20 +230,20 @@ describe('Guardrails v2 run pipeline', () => {
       });
       await writeReplayedProjectionsV2({ changeDir, store: await readEventStoreV2(changeDir), compiled });
       await expect(transitionFindingV2({
-        change: tier, projectRoot: root, findingId: finding.findingId, to: 'repaired',
-        actor: { kind: 'executor', id: 'executor-1' }, reason: 'Missing evidence must fail.', evidence: [],
+        change: tier, projectRoot: root, findingId: finding.findingId, action: 'repair',
+        actorId: 'executor-1', reason: 'Missing evidence must fail.', evidence: [],
       })).rejects.toThrow(/require linked implementation/i);
       await transitionFindingV2({
-        change: tier, projectRoot: root, findingId: finding.findingId, to: 'repaired',
-        actor: { kind: 'executor', id: 'executor-1' }, reason: 'Repair evidence is recorded.', evidence,
+        change: tier, projectRoot: root, findingId: finding.findingId, action: 'repair',
+        actorId: 'executor-1', reason: 'Repair evidence is recorded.', evidence,
       });
       await expect(transitionFindingV2({
-        change: tier, projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-        actor: { kind: 'executor', id: 'executor-1' }, reason: 'Executor self-report must not close the finding.', evidence,
-      })).rejects.toThrow(/read-only verifier/i);
+        change: tier, projectRoot: root, findingId: finding.findingId, action: 'verify',
+        actorId: 'executor-1', reason: 'Executor self-report must not close the finding.', evidence,
+      })).rejects.toThrow(/distinct from the repair executor/i);
       const verified = await transitionFindingV2({
-        change: tier, projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-        actor: { kind: 'verifier', id: 'verifier-1' }, reason: 'Independent verification confirmed the repair.', evidence,
+        change: tier, projectRoot: root, findingId: finding.findingId, action: 'verify',
+        actorId: 'verifier-1', reason: 'Independent verification confirmed the repair.', evidence,
       });
 
       const requests: Array<{ isolated: boolean; workspace?: string }> = [];
