@@ -24,7 +24,7 @@ describe('OpenSpec source-of-truth boundary', () => {
       digest(await fs.readFile(path.join(changeDir, filename), 'utf8')),
     ])));
     expect(after).toEqual(before);
-    const generated = await fs.readFile(path.join(changeDir, '.guardrails', 'reports', 'readiness.json'), 'utf8');
+    const generated = await fs.readFile(path.join(changeDir, '.guardrails', 'assurance.json'), 'utf8');
     expect(generated).toContain('spec:demo#requirement:demonstrate-behavior');
     expect(generated).not.toContain('The system SHALL demonstrate behavior.');
     expect(generated).not.toContain('Implement behavior');

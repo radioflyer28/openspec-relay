@@ -21,8 +21,8 @@ describe('assurance capability test map', () => {
       read('events-v2.test.ts'), read('state.test.ts'), read('v2-operations.test.ts'),
       read('release-assurance.test.ts'), read('actual-candidate-install.test.ts'),
     ]);
-    expect(events).toMatch(/exceeds the lease interval|preserves every successful event/i);
-    expect(state).toMatch(/ancestor.*(?:swap|replacement)|junction/i);
+    expect(events).toMatch(/preserves orchestrator acceptance order/i);
+    expect(state).toMatch(/symlink|junction/i);
     expect(lifecycle).toMatch(/production retest queue/);
     expect(lifecycle).toMatch(/exact cited repository evidence/);
     expect(lifecycle).toMatch(/debug\.verification_recorded/);

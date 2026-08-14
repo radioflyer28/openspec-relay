@@ -5,14 +5,11 @@ import {
   assuranceStatePath,
   digestJson,
   guardrailsAssuranceGate,
-  readAssuranceState,
-  readRunState,
+  readAssuranceStateV2,
   readRunStateV2,
   runStatePath,
-  seedAssuranceState,
   checkGuardrailsRunV2,
   startGuardrailsRunV2,
-  startGuardrailsRun,
 } from '../src/index.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
@@ -70,20 +67,26 @@ describe('Guardrails archive gate', () => {
 
   it('fails closed for incomplete assurance and returns human-needed state', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRun({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
-    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
-      .toMatchObject({ status: 'fail', gateId: 'guardrails.assurance' });
-    await seedAssuranceState({ change: 'demo', projectRoot: root, update: (assurance) => ({
-      ...assurance, status: 'human_needed', unresolvedHumanActions: ['Approve visual behavior.'],
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const initial = await guardrailsAssuranceGate.evaluate(context(root, changeDir));
+    expect(initial).toMatchObject({ status: 'error', gateId: 'guardrails.assurance' });
+    const store = await readEventStoreV2(changeDir);
+    await appendGuardrailsEventV2({ changeDir, event: createGuardrailsEventV2({
+      eventId: 'human:visual', runId: store.runId, changeName: store.changeName,
+      occurredAt: '2026-08-04T13:00:00.000Z', sourceDigests: {}, actor: { kind: 'human', id: 'maintainer' },
+      provenance: { origin: 'gate-test' },
+      payload: { type: 'human.decision', gateId: 'visual-uat', decision: 'requested', reason: 'Approve visual behavior.' },
     }) });
+    const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: store.seed.config.taskOverrides });
+    await writeReplayedProjectionsV2({ changeDir, store: await readEventStoreV2(changeDir), compiled });
     expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir)))
-      .toMatchObject({ status: 'error', summary: expect.stringMatching(/canonical|projection/i) });
+      .toMatchObject({ status: 'human_needed', summary: expect.stringMatching(/visual/i) });
   });
 
   it('blocks mismatched run and assurance digests', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRun({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
-    const assurance = await readAssuranceState(changeDir);
+    await startGuardrailsRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const assurance = await readAssuranceStateV2(changeDir);
     await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify({
       ...assurance, updatedAt: '2026-08-04T13:00:00.000Z',
     }, null, 2)}\n`);
@@ -105,30 +108,6 @@ describe('Guardrails archive gate', () => {
       unresolvedHumanActions: [],
     };
     const forgedRun = { ...run, status: 'complete', assuranceDigest: digestJson(forgedAssurance) };
-    await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify(forgedAssurance, null, 2)}\n`);
-    await fs.writeFile(runStatePath(changeDir), `${JSON.stringify(forgedRun, null, 2)}\n`);
-
-    expect(await guardrailsAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
-      status: 'error', summary: expect.stringMatching(/canonical|replay|projection/i),
-    });
-  });
-
-  it('rejects forged v1 projections when canonical v1 events remain incomplete', async () => {
-    const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRun({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
-    const run = await readRunState(changeDir);
-    const assurance = await readAssuranceState(changeDir);
-    const forgedAssurance = {
-      ...assurance,
-      status: 'pass' as const,
-      checks: assurance.checks.map((check) => ({
-        ...check,
-        status: check.status === 'skipped' ? 'skipped' as const : 'pass' as const,
-        summary: 'Forged passing v1 projection.',
-      })),
-      unresolvedHumanActions: [],
-    };
-    const forgedRun = { ...run, status: 'complete' as const, assuranceDigest: digestJson(forgedAssurance) };
     await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify(forgedAssurance, null, 2)}\n`);
     await fs.writeFile(runStatePath(changeDir), `${JSON.stringify(forgedRun, null, 2)}\n`);
 

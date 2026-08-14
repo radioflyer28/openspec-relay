@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
+import { z } from 'zod';
 import { GUARDRAILS_VERSION } from './version.js';
 import {
   ExecutionTierSchema,
   GuardrailsConfigV2Schema,
   PortableReferenceV2Schema,
   RunModeSchema,
+  DeviationV1Schema,
+  EvidenceV1Schema,
+  RepairAttemptV1Schema,
+  VerificationFindingV1Schema,
   type FindingStateV2,
   type FindingTransitionV2,
 } from './schemas.js';
@@ -28,12 +33,24 @@ import {
   startOrResumeDebugV2,
   transitionFindingV2,
 } from './v2-operations.js';
-import {
-  DeviationRecordingRequestV1Schema,
-  EvidenceRecordingRequestV1Schema,
-  FindingRecordingRequestV1Schema,
-  RepairRecordingRequestV1Schema,
-} from './recording.js';
+const RecordingMetadataSchema = z.object({
+  eventId: z.string().min(1),
+  occurredAt: z.string().datetime().optional(),
+  actor: z.object({
+    kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host']),
+    id: z.string().min(1).optional(),
+  }).strict().optional(),
+  provenance: z.object({
+    origin: z.string().min(1),
+    adapter: z.string().min(1).optional(),
+    command: z.string().min(1).optional(),
+  }).strict().optional(),
+}).strict();
+
+const EvidenceRecordingRequestV1Schema = RecordingMetadataSchema.extend({ evidence: EvidenceV1Schema }).strict();
+const FindingRecordingRequestV1Schema = RecordingMetadataSchema.extend({ finding: VerificationFindingV1Schema }).strict();
+const DeviationRecordingRequestV1Schema = RecordingMetadataSchema.extend({ deviation: DeviationV1Schema }).strict();
+const RepairRecordingRequestV1Schema = RecordingMetadataSchema.extend({ repair: RepairAttemptV1Schema }).strict();
 
 function print(value: unknown, json: boolean): void {
   if (json) console.log(JSON.stringify(value, null, 2));

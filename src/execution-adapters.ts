@@ -1,6 +1,5 @@
 import type { ExecutionGraphV1 } from './graph.js';
-import { GuardrailsEventPayloadV1Schema, type ExecutionTier, type GuardrailsEventPayloadV1 } from './schemas.js';
-import { recordGuardrailsPayload, type RecordingResultV1 } from './recording.js';
+import { type ExecutionTier, type GuardrailsEventPayloadV1 } from './schemas.js';
 
 export type ExecutionRole = 'executor' | 'reviewer' | 'verifier';
 
@@ -41,43 +40,6 @@ export interface ExecutionOutcomeV1 {
   review?: RoleResultV1;
   verification?: RoleResultV1;
   stoppedAfterFailure: boolean;
-}
-
-export async function persistExecutionOutcome(options: {
-  change: string;
-  projectRoot?: string;
-  outcome: ExecutionOutcomeV1;
-  eventPrefix: string;
-  occurredAt: string;
-}): Promise<RecordingResultV1[]> {
-  const results: RecordingResultV1[] = [];
-  const record = async (eventId: string, payload: GuardrailsEventPayloadV1) => {
-    results.push(await recordGuardrailsPayload({
-      change: options.change,
-      projectRoot: options.projectRoot,
-      eventId,
-      occurredAt: options.occurredAt,
-      provenance: { origin: `tier-adapter:${options.outcome.tier}` },
-      payload: GuardrailsEventPayloadV1Schema.parse(payload),
-    }));
-  };
-  for (const task of options.outcome.tasks) {
-    await record(`${options.eventPrefix}:task:${task.taskId}:transition`, {
-      type: 'task.transition',
-      taskId: task.taskId,
-      status: task.status === 'pass' ? 'complete' : 'blocked',
-      ...(task.status === 'pass' ? {} : { reason: task.summary }),
-    });
-    for (const [index, payload] of (task.events ?? []).entries()) {
-      await record(`${options.eventPrefix}:task:${task.taskId}:event:${index + 1}`, payload);
-    }
-  }
-  for (const [role, value] of [['review', options.outcome.review], ['verification', options.outcome.verification]] as const) {
-    for (const [index, payload] of (value?.events ?? []).entries()) {
-      await record(`${options.eventPrefix}:${role}:event:${index + 1}`, payload);
-    }
-  }
-  return results;
 }
 
 export async function executeWithTier(options: {
