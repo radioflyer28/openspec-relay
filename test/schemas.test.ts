@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GuardrailsAssuranceV1Schema,
-  GuardrailsConfigV1Schema,
-  GuardrailsRunV1Schema,
+  GsdAssuranceV1Schema,
+  GsdConfigV1Schema,
+  GsdRunV1Schema,
 } from '../src/schemas.js';
 
-describe('versioned Guardrails records', () => {
+describe('versioned OpenSpec GSD records', () => {
   it('applies safe project defaults', () => {
-    expect(GuardrailsConfigV1Schema.parse({})).toEqual({
+    expect(GsdConfigV1Schema.parse({})).toEqual({
       version: 1,
       mode: 'guarded',
       tdd: 'auto',
@@ -22,7 +22,7 @@ describe('versioned Guardrails records', () => {
   });
 
   it('rejects unversioned or structurally incomplete records', () => {
-    expect(() => GuardrailsRunV1Schema.parse({ version: 2 })).toThrow();
-    expect(() => GuardrailsAssuranceV1Schema.parse({ version: 1 })).toThrow();
+    expect(() => GsdRunV1Schema.parse({ version: 2 })).toThrow();
+    expect(() => GsdAssuranceV1Schema.parse({ version: 1 })).toThrow();
   });
 });

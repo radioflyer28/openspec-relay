@@ -1,6 +1,6 @@
 # Governance
 
-`openspec-guardrails` is an independently maintained companion to OpenSpec. It
+`openspec-gsd` is an independently maintained companion to OpenSpec. It
 is not an official Fission-AI/OpenSpec distribution, and its releases do not
 change the authority of OpenSpec proposal, design, specification, or task
 artifacts.
@@ -14,10 +14,10 @@ the repository's MIT license.
 
 ## Release authority
 
-Only the maintainer may publish the `openspec-guardrails` package or create a
+Only the maintainer may publish the `openspec-gsd` package or create a
 GitHub release. A release must come from protected `main`, pass the repository's
 required checks, and declare the supported OpenSpec API/version range. OpenSpec
-core and Guardrails are released independently; compatibility is established by
+core and OpenSpec GSD are released independently; compatibility is established by
 the public extension API and conformance tests, not by matching version numbers.
 
 Compromised, withdrawn, or incompatible releases may be deprecated by the

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 describe('v2 scope exclusions', () => {
   it('documents and protects the absence of deferred runtime and GSD administration mechanisms', async () => {
     const contract = await fs.readFile(path.join(process.cwd(), 'COMPATIBILITY.md'), 'utf8');
-    for (const excluded of ['Little Coder', 'phases', 'milestones', 'roadmaps', 'workstreams', 'persistent GSD project state']) {
+    for (const excluded of ['Little Coder', 'phases', 'milestones', 'roadmaps', 'workstreams', 'persistent GSD project state', 'complete GSD runtime']) {
       expect(contract).toContain(excluded);
     }
     const source = await Promise.all(['src', 'workflows'].map(async (directory) => {

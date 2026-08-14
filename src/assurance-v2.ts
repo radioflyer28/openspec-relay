@@ -1,14 +1,14 @@
-import { AssuranceCheckV2Schema, type GuardrailsAssuranceV2, type GuardrailsRunV2 } from './schemas.js';
+import { AssuranceCheckV2Schema, type GsdAssuranceV2, type GsdRunV2 } from './schemas.js';
 import { evaluateFindingObligations } from './findings.js';
 import { validateTddEvidence } from './tdd.js';
 import { mapScenarioCoverage } from './verification.js';
 
-function independentEvidence(input: GuardrailsAssuranceV2, checkId: string): string[] {
+function independentEvidence(input: GsdAssuranceV2, checkId: string): string[] {
   return input.evidence.filter((item) => item.checkId === checkId && item.result === 'pass' &&
     item.origin !== 'executor' && !input.staleEvidenceIds.includes(item.evidenceId)).map((item) => item.evidenceId);
 }
 
-function overall(checks: GuardrailsAssuranceV2['checks'], assurance: GuardrailsAssuranceV2): GuardrailsAssuranceV2['status'] {
+function overall(checks: GsdAssuranceV2['checks'], assurance: GsdAssuranceV2): GsdAssuranceV2['status'] {
   if (checks.some((item) => item.status === 'error')) return 'error';
   if (checks.some((item) => item.status === 'fail')) return 'fail';
   if (checks.some((item) => item.status === 'human_needed')) return 'human_needed';
@@ -25,10 +25,10 @@ function overall(checks: GuardrailsAssuranceV2['checks'], assurance: GuardrailsA
 
 /** Evaluate deterministic evidence and preserve the lifecycle, UAT, readiness,
  * and release obligations that are already projected from the event history. */
-export function evaluateAssuranceV2(run: GuardrailsRunV2, input: GuardrailsAssuranceV2): {
-  checks: GuardrailsAssuranceV2['checks'];
-  scenarioCoverage: GuardrailsAssuranceV2['scenarioCoverage'];
-  status: GuardrailsAssuranceV2['status'];
+export function evaluateAssuranceV2(run: GsdRunV2, input: GsdAssuranceV2): {
+  checks: GsdAssuranceV2['checks'];
+  scenarioCoverage: GsdAssuranceV2['scenarioCoverage'];
+  status: GsdAssuranceV2['status'];
   unresolvedHumanActions: string[];
 } {
   const scenarios = run.artifacts.flatMap((artifact) => artifact.ids).filter((id) => id.includes('/scenario:'));

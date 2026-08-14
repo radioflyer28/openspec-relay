@@ -21,8 +21,8 @@ afterEach(async () => {
 
 describe('actual packed companion candidate', () => {
   it('installs with the core seam and exposes all five workflows through host discovery', async () => {
-    const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'guardrails actual candidate '));
-    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'guardrails installed host '));
+    const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd actual candidate '));
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd installed host '));
     roots.push(artifactRoot, projectRoot);
     const packageRoot = process.cwd();
     const coreRoot = path.resolve(packageRoot, '..', 'OpenSpec');
@@ -44,17 +44,17 @@ describe('actual packed companion candidate', () => {
 
     await fs.writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
       private: true,
-      name: 'guardrails-installed-host',
+      name: 'gsd-installed-host',
       dependencies: {
         '@fission-ai/openspec': `file:${coreRoot}`,
-        'openspec-guardrails': `file:${candidate}`,
+        'openspec-gsd': `file:${candidate}`,
       },
     }));
     execFileSync('npm', [
       'install', '--offline', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
       '--package-lock=false',
     ], { cwd: projectRoot, encoding: 'utf8', timeout: 30_000, env: nonInteractiveEnvironment });
-    const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-guardrails');
+    const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-gsd');
     const installedManifest = JSON.parse(await fs.readFile(path.join(installedCompanion, 'package.json'), 'utf8')) as {
       name: string;
       version: string;
@@ -62,9 +62,9 @@ describe('actual packed companion candidate', () => {
       files: string[];
     };
     expect(installedManifest).toMatchObject({
-      name: 'openspec-guardrails',
+      name: 'openspec-gsd',
       version: '0.1.0',
-      peerDependencies: { '@fission-ai/openspec': '>=1.8.0-guardrails.1 <2.0.0' },
+      peerDependencies: { '@fission-ai/openspec': '>=1.8.0-gsd.1 <2.0.0' },
     });
 
     const coreCli = path.join(projectRoot, 'node_modules', '@fission-ai', 'openspec', 'bin', 'openspec.js');
@@ -78,8 +78,8 @@ describe('actual packed companion candidate', () => {
     const listed = execFileSync(process.execPath, [coreCli, 'extension', 'list'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
-    expect(listed).toMatch(/guardrails@0\.1\.0.*compatibility=compatible.*workflows=5/);
-    const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'guardrails'], {
+    expect(listed).toMatch(/gsd@0\.1\.0.*compatibility=compatible.*workflows=5/);
+    const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'gsd'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(doctor).toMatch(/manifest=valid; compatibility=compatible/);
@@ -88,8 +88,8 @@ describe('actual packed companion candidate', () => {
       const skill = await fs.readFile(path.join(
         projectRoot, '.agents', 'skills', `openspec-${workflow}`, 'SKILL.md',
       ), 'utf8');
-      expect(skill).toContain(`openspec-extension:guardrails@0.1.0/${workflow}/codex/skill`);
-      expect(skill).toContain('openspec-guardrails');
+      expect(skill).toContain(`openspec-extension:gsd@0.1.0/${workflow}/codex/skill`);
+      expect(skill).toContain('openspec-gsd');
     }
     const help = execFileSync(process.execPath, [
       path.join(installedCompanion, 'dist', 'cli.js'), '--help',

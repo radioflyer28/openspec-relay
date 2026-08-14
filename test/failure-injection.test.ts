@@ -5,8 +5,8 @@ import type { GateContextV1 } from '@fission-ai/openspec/extensions';
 import {
   readRunStateV2,
 } from '../src/state.js';
-import { guardrailsAssuranceGate } from '../src/gate.js';
-import { startGuardrailsRunV2 } from '../src/runner-v2.js';
+import { gsdAssuranceGate } from '../src/gate.js';
+import { startGsdRunV2 } from '../src/runner-v2.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -22,20 +22,20 @@ describe('failure injection', () => {
         structuredResults: true, humanInteraction: false,
       },
     };
-    expect(await guardrailsAssuranceGate.evaluate(context)).toMatchObject({ status: 'error' });
-    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
-    await fs.writeFile(path.join(changeDir, '.guardrails', 'assurance.json'), '{not-json');
-    expect(await guardrailsAssuranceGate.evaluate(context)).toMatchObject({
+    expect(await gsdAssuranceGate.evaluate(context)).toMatchObject({ status: 'error' });
+    await startGsdRunV2({ change: 'demo', projectRoot: root });
+    await fs.writeFile(path.join(changeDir, '.openspec-gsd', 'assurance.json'), '{not-json');
+    expect(await gsdAssuranceGate.evaluate(context)).toMatchObject({
       status: 'error', summary: expect.stringContaining('invalid'),
     });
   });
 
   it('repairs a corrupt generated run projection from canonical history on resume', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
-    await fs.writeFile(path.join(changeDir, '.guardrails', 'run.json'), '{not-json');
+    await startGsdRunV2({ change: 'demo', projectRoot: root });
+    await fs.writeFile(path.join(changeDir, '.openspec-gsd', 'run.json'), '{not-json');
     await expect(readRunStateV2(changeDir)).rejects.toThrow();
-    await expect(startGuardrailsRunV2({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+    await expect(startGsdRunV2({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
       run: { version: 2, changeName: 'demo' },
     });
     await expect(readRunStateV2(changeDir)).resolves.toMatchObject({ version: 2, changeName: 'demo' });

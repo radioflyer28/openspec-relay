@@ -10,7 +10,7 @@ describe('OpenSpec extension conformance', () => {
       coreVersion,
     });
     expect(result).toMatchObject({ valid: true, diagnostics: [] });
-    expect(result.manifest?.id).toBe('guardrails');
+    expect(result.manifest?.id).toBe('gsd');
   });
 
   it('runs through the public API from the local-link OpenSpec build', async () => {

@@ -1,9 +1,9 @@
 {
   "apiVersion": "openspec.dev/extensions/v1",
-  "id": "guardrails",
+  "id": "gsd",
   "version": "0.1.0",
   "requires": {
-    "openspec": ">=1.8.0-guardrails.1 <2.0.0",
+    "openspec": ">=1.8.0-gsd.1 <2.0.0",
     "hostCapabilities": {
       "required": ["structuredResults"],
       "optional": ["agentDispatch", "parallelism", "worktrees", "git", "humanInteraction"]
@@ -13,25 +13,25 @@
     "workflows": [
       {
         "id": "run",
-        "name": "Guardrails Run",
+        "name": "OpenSpec GSD Run",
         "description": "Execute an OpenSpec change with risk-aware assurance.",
         "entry": "workflows/run.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["guardrails.assurance"],
+        "gateDependencies": ["gsd.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "check",
-        "name": "Guardrails Check",
+        "name": "OpenSpec GSD Check",
         "description": "Evaluate assurance for an OpenSpec change without expanding its scope.",
         "entry": "workflows/check.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["guardrails.assurance"],
+        "gateDependencies": ["gsd.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "run-status",
-        "name": "Guardrails Run Status",
+        "name": "OpenSpec GSD Run Status",
         "description": "Report execution, assurance, repair, gate, and human-action state.",
         "entry": "workflows/run-status.md",
         "artifactRequirements": ["tasks"],
@@ -40,28 +40,28 @@
       },
       {
         "id": "debug",
-        "name": "Guardrails Debug",
+        "name": "OpenSpec GSD Debug",
         "description": "Start or resume a scientific debugging session for an unresolved finding.",
         "entry": "workflows/debug.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["guardrails.assurance"],
+        "gateDependencies": ["gsd.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "uat",
-        "name": "Guardrails UAT",
-        "description": "Guide scenario-by-scenario human acceptance for a Guardrails run.",
+        "name": "OpenSpec GSD UAT",
+        "description": "Guide scenario-by-scenario human acceptance for an OpenSpec GSD run.",
         "entry": "workflows/uat.md",
         "artifactRequirements": ["tasks"],
-        "gateDependencies": ["guardrails.assurance"],
+        "gateDependencies": ["gsd.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       }
     ],
     "gates": [
       {
-        "id": "guardrails.assurance",
+        "id": "gsd.assurance",
         "module": "dist/gate.js",
-        "export": "guardrailsAssuranceGate",
+        "export": "gsdAssuranceGate",
         "timeoutMs": 30000,
         "requiredHostCapabilities": ["structuredResults"]
       }

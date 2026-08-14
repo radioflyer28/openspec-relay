@@ -4,10 +4,10 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { compileOpenSpecChange } from '../src/artifacts.js';
-import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { discoverFinding, transitionFinding } from '../src/findings.js';
 import { dispatchRoleV2, type DispatchedRoleResultV2 } from '../src/execution-adapters.js';
-import { checkGuardrailsRunV2, startGuardrailsRunV2 } from '../src/runner-v2.js';
+import { checkGsdRunV2, startGsdRunV2 } from '../src/runner-v2.js';
 import {
   observeDebugExperimentV2,
   planDebugExperimentV2,
@@ -67,9 +67,9 @@ async function recordFinding(options: {
 }) {
   const store = await readEventStoreV2(options.changeDir);
   const compiled = await compileOpenSpecChange({ changeDir: options.changeDir, taskMetadata: store.seed.config.taskOverrides });
-  await appendGuardrailsEventV2({
+  await appendGsdEventV2({
     changeDir: options.changeDir,
-    event: createGuardrailsEventV2({
+    event: createGsdEventV2({
       eventId: `e2e:${options.finding.findingId}`,
       runId: store.runId,
       changeName: store.changeName,
@@ -87,7 +87,7 @@ async function recordFinding(options: {
   });
 }
 
-describe('Tier 0 Guardrails end-to-end assurance', () => {
+describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
   it('remediates readiness, converges review and debugging, records UAT and release evidence, then archives', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.writeFile(path.join(changeDir, 'tasks.md'), [
@@ -97,10 +97,10 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       '',
     ].join('\n'));
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
-      name: 'guardrails-tier0-e2e', version: '1.0.0', type: 'module', exports: './index.js',
+      name: 'gsd-tier0-e2e', version: '1.0.0', type: 'module', exports: './index.js',
     }));
     await fs.writeFile(path.join(root, 'index.js'), 'export const works = false;\n');
-    await fs.writeFile(path.join(root, 'README.md'), '# Tier 0\n\nInstall with `npm install guardrails-tier0-e2e`.\n');
+    await fs.writeFile(path.join(root, 'README.md'), '# Tier 0\n\nInstall with `npm install gsd-tier0-e2e`.\n');
 
     const configuration = {
       mode: 'quick' as const,
@@ -112,7 +112,7 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       },
       features: { readiness: { rollout: 'required' as const } },
     };
-    const unready = await startGuardrailsRunV2({
+    const unready = await startGsdRunV2({
       change: 'demo', projectRoot: root, config: configuration, changedFiles: ['package.json', 'index.js'],
       now: '2026-08-11T20:40:00.000Z',
     });
@@ -125,7 +125,7 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       '- [ ] 1.2 Update documentation',
       '',
     ].join('\n'));
-    const remediated = await checkGuardrailsRunV2({
+    const remediated = await checkGsdRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'], now: '2026-08-11T20:41:00.000Z',
     });
     expect(remediated.assurance.readiness).toMatchObject({ status: 'pass' });
@@ -227,7 +227,7 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       now: '2026-08-11T20:44:05.500Z',
     });
     await fs.writeFile(path.join(root, 'index.js'), 'export const works = true;\n');
-    await checkGuardrailsRunV2({
+    await checkGsdRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'],
       now: '2026-08-11T20:44:05.600Z',
     });
@@ -284,7 +284,7 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       notes: 'Observed the expected behavior.', evidence: portableEvidence, now: '2026-08-11T20:45:03.000Z',
     });
 
-    const ready = await checkGuardrailsRunV2({
+    const ready = await checkGsdRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'], now: '2026-08-11T20:46:00.000Z',
       adapters: { releaseRunner: trustedTestRunner },
     });
