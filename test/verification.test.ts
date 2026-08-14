@@ -3,7 +3,7 @@ import {
   createReadOnlyVerificationContract,
   mapScenarioCoverage,
   validateIndependentVerification,
-} from '../src/index.js';
+} from '../src/verification.js';
 import { evidence } from './helpers.js';
 
 const requirementId = 'spec:demo#requirement:behavior';

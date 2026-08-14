@@ -13,6 +13,26 @@ async function typescriptFiles(root: string): Promise<string[]> {
 }
 
 describe('published package boundary', () => {
+  it('exports orchestrated operations without exposing canonical state writers', async () => {
+    const api = await import('../src/index.js');
+    expect(api).toEqual(expect.objectContaining({
+      startGuardrailsRunV2: expect.any(Function),
+      checkGuardrailsRunV2: expect.any(Function),
+      getRunStatusV2: expect.any(Function),
+      recordWorkflowResultV2: expect.any(Function),
+      guardrailsAssuranceGate: expect.any(Object),
+    }));
+    for (const internal of [
+      'appendGuardrailsEventV2',
+      'createGuardrailsEventV2',
+      'writeReplayedProjectionsV2',
+      'atomicWriteJson',
+      'atomicWriteText',
+      'readEventStoreV2',
+      'persistExecutionOutcome',
+    ]) expect(api).not.toHaveProperty(internal);
+  });
+
   it('imports OpenSpec only through the versioned public extension API', async () => {
     const files = await typescriptFiles(path.resolve('src'));
     const imports: Array<{ file: string; specifier: string }> = [];

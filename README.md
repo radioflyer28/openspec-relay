@@ -97,7 +97,7 @@ precedence:
     "readiness": { "rollout": "report_only", "independentRequired": true },
     "debug": { "enabled": true, "automaticTransition": true },
     "uat": { "enabled": true, "required": false },
-    "releaseAssurance": { "enabled": "auto", "surfaces": [], "drivers": [], "configuredCommands": [], "requiredPlatforms": [] }
+    "releaseAssurance": { "enabled": "auto", "surfaces": [], "configuredCommands": [], "requiredPlatforms": [] }
   },
   "taskOverrides": {
     "2.1": {
@@ -111,11 +111,25 @@ precedence:
 
 Generated state is stored under
 `openspec/changes/<change>/.guardrails/events.json`; `run.json`,
-`assurance.json`, and `reports/` are replaceable v2 projections. The core-owned
+and `assurance.json` are replaceable v2 projections. Only the Guardrails
+orchestrator writes these files; role adapters return structured results through
+the supported operations instead of appending events directly. The core-owned
 `.openspec-gates.json` records the durable `guardrails.assurance` archive
 obligation. Acceptance is digest-bound; stale evidence requires renewed human
 acceptance. Missing, disabled, corrupt, timed-out, or mismatched providers fail
 closed through OpenSpec's archive gate protocol.
+
+The package root intentionally exposes only host-facing run, check, status,
+workflow-result, UAT, debugging, tier-adapter, configuration, and gate APIs.
+Canonical event append, replay, projection-write, and filesystem-state helpers
+are internal implementation details.
+
+Release assurance is for private artifact outcomes: pack or build, inspect,
+install in a disposable project, and exercise declared public surfaces. It uses
+argument-vector execution, a minimal environment, bounded redacted output, and
+disabled package lifecycle scripts. These are operational safeguards, not a
+filesystem, network, process, or identity sandbox. When a required isolation or
+platform capability is unavailable, Guardrails records `human_needed`.
 
 ## Upgrade and release order
 

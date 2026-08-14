@@ -62,8 +62,8 @@ must remain a fail-closed archive condition.
    exercise a guarded run, satisfy a human gate, exercise an audited override,
    and archive.
 6. Record private release notes with the supported core range, API feature
-   marker, migration notes, and rollback pair. Do not publish to a package
-   registry as part of this workflow.
+   marker, generated-state regeneration notes, and compatible rollback pair.
+   Do not publish to a package registry as part of this workflow.
 
 ## Rollback
 
@@ -78,10 +78,11 @@ acceptance, or use the explicit `--override-gate` plus `--reason` audit path.
 Preserve `.guardrails/` and `.openspec-gates.json` when restoring an active
 change so evidence and decisions remain reviewable.
 
-For a change whose generated state has already migrated to v2, run the v2
-companion's `restoreV1FromMigrationBackup(changeDir)` before reinstalling the
-previous companion. This restores only the validated v1 recovery records; it
-does not collapse later v2-only assurance history into an older schema.
+Do not downgrade generated state. If a private development revision changed the
+unpublished schema incompatibly, retain the OpenSpec artifacts, remove only the
+known generated Guardrails records after reviewing them, regenerate with the
+selected companion revision, and reconfirm every human acceptance or accepted
+risk. Never present regenerated evidence as preserving an older decision.
 
 ## Transition to official OpenSpec
 

@@ -7,8 +7,8 @@ import {
   readRunStateV2,
   resolveChangeDirectory,
   resolveChangePathForPlatform,
-  startGuardrailsRunV2,
-} from '../src/index.js';
+} from '../src/state.js';
+import { startGuardrailsRunV2 } from '../src/runner-v2.js';
 
 const roots: string[] = [];
 

@@ -278,7 +278,7 @@ program.command('uat')
   });
 
 const record = program.command('record')
-  .description('Record validated Tier 0 execution and assurance events');
+  .description('Submit validated workflow results to the Guardrails orchestrator');
 
 record.command('task')
   .argument('<change>')

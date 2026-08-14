@@ -3,7 +3,7 @@ import {
   GuardrailsAssuranceV1Schema,
   GuardrailsConfigV1Schema,
   GuardrailsRunV1Schema,
-} from '../src/index.js';
+} from '../src/schemas.js';
 
 describe('versioned Guardrails records', () => {
   it('applies safe project defaults', () => {

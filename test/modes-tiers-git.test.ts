@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertGitOperationAllowed,
-  GuardrailsConfigV1Schema,
-  negotiateExecutionTier,
   plannedGitOperations,
-  selectAssurancePipeline,
-} from '../src/index.js';
+} from '../src/git-policy.js';
+import { selectAssurancePipeline } from '../src/modes.js';
+import { GuardrailsConfigV1Schema } from '../src/schemas.js';
+import { negotiateExecutionTier } from '../src/tiers.js';
 
 const capabilities = {
   agentDispatch: true,

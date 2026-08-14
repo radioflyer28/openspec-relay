@@ -7,6 +7,6 @@ Invoke `openspec-guardrails run-status <change> --json` and summarize the mode,
 `.guardrails` files as evidence records; the OpenSpec proposal, specs, design,
 and tasks remain authoritative.
 
-Use `reconciliation` and `staleEvidenceCount` from the command output when
-reporting drift. Continue work with the returned next actionable task and use
+Use `assuranceDigestMatches` and `staleEvidenceCount` from the command output
+when reporting drift. Continue work with the returned next actions and use
 only the supported `record` and `accept` operations for state changes.

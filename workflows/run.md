@@ -8,14 +8,16 @@ Run an OpenSpec change through Guardrails.
    required readiness is not passing, do not begin implementation; update the
    controlling OpenSpec artifacts and rerun `openspec-guardrails check <change>`.
    Follow `nextAction.taskId` in dependency order only after readiness permits
-   execution. Before implementation, use `record evidence` for required RED
-   evidence, then record the task as `in_progress` with `record task`.
+   execution. Before implementation, use `record evidence --stage executor` for
+   required RED evidence, then record the task as `in_progress` with `record task`.
 4. Record GREEN, REFACTOR, checker, finding, deviation, and repair observations
-   only through `openspec-guardrails record ... --input <json-file|->`. Record a
-   completed task with `record task <change> <task-id> --status complete
+   only through `openspec-guardrails record ... --input <json-file|->`; evidence
+   and findings require the orchestrated `--stage automation|executor|reviewer|verifier`.
+   Record a completed task with `record task <change> <task-id> --status complete
    --event-id <id>`; this operation updates the authoritative checkbox in
    `tasks.md` and returns the next dependency-satisfied task. Do not edit
    `.guardrails` JSON or create replacement planning documents.
+   Never edit `.guardrails` files directly.
 5. Invoke `openspec-guardrails check <change>` after execution and report every
    blocking, warning, or human-needed result with its evidence references.
 

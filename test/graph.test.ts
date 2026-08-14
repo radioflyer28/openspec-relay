@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildExecutionGraph, portableWriteSet, writeSetsOverlap, type TaskNodeV1 } from '../src/index.js';
+import { buildExecutionGraph, portableWriteSet, writeSetsOverlap } from '../src/graph.js';
+import type { TaskNodeV1 } from '../src/schemas.js';
 
 const task = (taskId: string, options: Partial<TaskNodeV1> = {}): TaskNodeV1 => ({
   taskId,
