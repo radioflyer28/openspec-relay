@@ -93,6 +93,7 @@ describe('conditional release assurance', () => {
     expect(plan.commands.flatMap((item) => item.args)).not.toContain('publish');
     const assertSafe = api.assertReleaseCommandSafe as (command: string, args: string[]) => void;
     expect(() => assertSafe('npm', ['publish'])).toThrow(/publish/i);
+    expect(() => assertSafe('C:\\tools\\release.exe', [])).toThrow(/publication/i);
   });
 
   it('selects mode-specific checks and reports missing release policy', async () => {
@@ -125,9 +126,9 @@ describe('conditional release assurance', () => {
     );
     expect(extension.commands).toHaveLength(3);
     const configured = api.createConfiguredCommandPlan as (input: Record<string, unknown>) => { expectedArtifacts: string[] };
-    expect(configured({ command: 'node', args: ['--version'], expectedArtifacts: ['artifact.zip'] }))
+    expect(configured({ command: 'npm', args: ['--version'], expectedArtifacts: ['artifact.zip'] }))
       .toEqual(expect.objectContaining({ expectedArtifacts: ['artifact.zip'] }));
-    expect(() => configured({ command: 'node', args: ['--version'], expectedArtifacts: ['../outside'] }))
+    expect(() => configured({ command: 'npm', args: ['--version'], expectedArtifacts: ['../outside'] }))
       .toThrow(/temporary workspace/i);
     expect(() => ConfiguredReleaseCommandV2Schema.parse({
       id: 'unsafe-artifact-path', command: 'node', expectedArtifacts: ['/outside'],
@@ -155,14 +156,33 @@ describe('conditional release assurance', () => {
     const result = await (api.runConfiguredReleaseCommand as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       projectRoot: root,
       configuredCommand: {
-        id: 'artifact', command: process.execPath,
-        args: ['-e', "require('node:fs').writeFileSync('artifact.txt', process.cwd())"],
-        expectedArtifacts: ['artifact.txt'], timeoutMs: 30_000,
+        id: 'artifact', command: 'npm', args: ['--version'],
+        expectedArtifacts: [], timeoutMs: 30_000,
       },
       releaseRunner: trustedTestRunner,
     });
     expect(result.status).toBe('pass');
-    await expect(fs.access(path.join(root, 'artifact.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readdir(root)).not.toContain('artifact.txt');
+  });
+
+  it('rejects shell-wrapped publication before dispatching a configured command', async () => {
+    const root = await packageProject();
+    let dispatched = false;
+    const captureOnlyRunner: release.HostReleaseRunnerV2 = {
+      async run() {
+        dispatched = true;
+        return { exitCode: 0, outputDigest: '0'.repeat(64) };
+      },
+    };
+    await expect(release.runConfiguredReleaseCommand({
+      projectRoot: root,
+      configuredCommand: {
+        id: 'wrapped-publication', command: 'sh', args: ['-c', 'npm publish'],
+        expectedArtifacts: [], timeoutMs: 30_000,
+      },
+      releaseRunner: captureOnlyRunner,
+    })).rejects.toThrow(/publication|interpreter|shell/i);
+    expect(dispatched).toBe(false);
   });
 
   it('fails closed for unavailable tools and offline registries without leaving a configured-command workspace', async () => {
