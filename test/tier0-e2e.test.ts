@@ -6,17 +6,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { discoverFinding, transitionFinding } from '../src/findings.js';
+import { dispatchRoleV2, type DispatchedRoleResultV2 } from '../src/execution-adapters.js';
 import { checkGuardrailsRunV2, startGuardrailsRunV2 } from '../src/runner-v2.js';
 import {
   observeDebugExperimentV2,
   planDebugExperimentV2,
   presentUatV2,
   recordDebugHypothesisV2,
+  recordDispatchedRoleResultV2,
   recordWorkflowResultV2,
   recordUatV2,
   resolveDebugSessionV2,
   recordDebugConclusionV2,
   transitionFindingV2,
+  verifyFindingFromDispatchedResultV2,
 } from '../src/v2-operations.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 import { readAssuranceStateV2 } from '../src/state.js';
@@ -96,7 +99,7 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
       name: 'guardrails-tier0-e2e', version: '1.0.0', type: 'module', exports: './index.js',
     }));
-    await fs.writeFile(path.join(root, 'index.js'), 'export const works = true;\n');
+    await fs.writeFile(path.join(root, 'index.js'), 'export const works = false;\n');
     await fs.writeFile(path.join(root, 'README.md'), '# Tier 0\n\nInstall with `npm install guardrails-tier0-e2e`.\n');
 
     const configuration = {
@@ -145,13 +148,11 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
 
     const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: configuration.taskOverrides });
     const sourceDigests = Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
-    const evidence = (evidenceId: string, checkId: string, reference: string, observedAt: string,
+    const evidence = async (evidenceId: string, checkId: string, reference: string, observedAt: string,
       actor: { kind: 'executor' | 'verifier'; id: string } = { kind: 'verifier', id: 'e2e-verifier' },
       details: Partial<{ phase: 'red' | 'green' | 'verify'; sourceState: string; exitCode: number;
-        result: 'pass' | 'fail'; relevantFailure: boolean }> = {}) => recordWorkflowResultV2({
-      change: 'demo', projectRoot: root, eventId: `e2e:evidence:${evidenceId}`, occurredAt: observedAt,
-      stage: actor.kind, actorId: actor.id,
-      payload: {
+        result: 'pass' | 'fail'; relevantFailure: boolean }> = {}): Promise<DispatchedRoleResultV2 | undefined> => {
+      const payload = {
         type: 'evidence.recorded',
         evidence: {
           evidenceId, taskId: '1.1', phase: details.phase ?? 'verify', checkId, observedAt,
@@ -161,8 +162,24 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
           preExistingFailure: false,
           origin: actor.kind, reference,
         },
-      },
-    });
+      } as const;
+      if (actor.kind === 'executor') {
+        await recordWorkflowResultV2({
+          change: 'demo', projectRoot: root, eventId: `e2e:evidence:${evidenceId}`, occurredAt: observedAt,
+          stage: 'executor', actorId: actor.id, payload,
+        });
+        return undefined;
+      }
+      const receipt = await dispatchRoleV2({
+        request: { role: 'verifier', readOnly: true, isolated: true },
+        dispatcher: { dispatch: async () => ({
+          status: 'pass', summary: `${checkId} passed.`, evidenceRefs: [reference],
+          evidence: portableEvidence, events: [payload],
+        }) },
+      });
+      await recordDispatchedRoleResultV2({ change: 'demo', projectRoot: root, receipt, now: observedAt });
+      return receipt;
+    };
     await evidence('repository', 'repository-checks', 'reports/repository.txt', '2026-08-11T20:43:00.000Z');
     await evidence('targeted', 'targeted-tests', 'reports/targeted.txt', '2026-08-11T20:43:01.000Z');
     await evidence('scenario', 'scenario-coverage', scenarioId, '2026-08-11T20:43:02.000Z');
@@ -209,12 +226,25 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       experimentIds: [experiment.experiments[0].experimentId], evidence: portableEvidence,
       now: '2026-08-11T20:44:05.500Z',
     });
-    await evidence('debug-green', 'targeted-tests', 'reports/debug-green.txt',
+    await fs.writeFile(path.join(root, 'index.js'), 'export const works = true;\n');
+    await checkGuardrailsRunV2({
+      change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'],
+      now: '2026-08-11T20:44:05.600Z',
+    });
+    await recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'e2e:repair:complete', occurredAt: '2026-08-11T20:44:05.700Z',
+      stage: 'executor', payload: { type: 'repair.recorded', repair: {
+        repairId: 'e2e-repair-complete', checkId: 'targeted-tests', attempt: 2,
+        startedAt: '2026-08-11T20:44:05.600Z', completedAt: '2026-08-11T20:44:05.700Z',
+        changedReferences: ['index.js'], result: 'pass',
+      } },
+    });
+    const debugVerifier = (await evidence('debug-green', 'targeted-tests', 'reports/debug-green.txt',
       '2026-08-11T20:44:05.750Z', { kind: 'verifier', id: 'e2e-debug-verifier' },
-      { phase: 'green', sourceState: 'after-fix', exitCode: 0, result: 'pass' });
+      { phase: 'green', sourceState: 'after-fix', exitCode: 0, result: 'pass' }))!;
     await resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,
-      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verifierId: 'e2e-debug-verifier',
+      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verificationResult: debugVerifier,
       now: '2026-08-11T20:44:06.000Z',
     });
     await transitionFindingV2({
@@ -222,10 +252,16 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       actorId: 'e2e-executor', reason: 'Applied the investigated correction.',
       evidence: portableEvidence, now: '2026-08-11T20:44:07.000Z',
     });
-    await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: defect.findingId, action: 'verify',
-      actorId: 'e2e-verifier', reason: 'Rechecked the original review concern.',
-      evidence: portableEvidence, now: '2026-08-11T20:44:08.000Z',
+    const findingVerifier = await dispatchRoleV2({
+      request: { role: 'verifier', readOnly: true, isolated: true },
+      dispatcher: { dispatch: async () => ({
+        status: 'pass', summary: 'Rechecked the original review concern.',
+        evidenceRefs: portableEvidence.map((item) => item.referenceId), evidence: portableEvidence,
+      }) },
+    });
+    await verifyFindingFromDispatchedResultV2({
+      change: 'demo', projectRoot: root, findingId: defect.findingId, receipt: findingVerifier,
+      reason: 'Rechecked the original review concern.', now: '2026-08-11T20:44:08.000Z',
     });
 
     const humanFinding = transitionFinding({

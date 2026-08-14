@@ -11,7 +11,6 @@ import {
   DeviationV1Schema,
   EvidenceV1Schema,
   RepairAttemptV1Schema,
-  VerificationFindingV1Schema,
 } from './schemas.js';
 import { checkGuardrailsRunV2, startGuardrailsRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
@@ -37,7 +36,6 @@ const RecordingMetadataSchema = z.object({
 }).strict();
 
 const EvidenceRecordingRequestV1Schema = RecordingMetadataSchema.extend({ evidence: EvidenceV1Schema }).strict();
-const FindingRecordingRequestV1Schema = RecordingMetadataSchema.extend({ finding: VerificationFindingV1Schema }).strict();
 const DeviationRecordingRequestV1Schema = RecordingMetadataSchema.extend({ deviation: DeviationV1Schema }).strict();
 const RepairRecordingRequestV1Schema = RecordingMetadataSchema.extend({ repair: RepairAttemptV1Schema }).strict();
 
@@ -142,9 +140,6 @@ program.command('debug')
   .option('--next-action <text>')
   .option('--evidence <json-file|->')
   .option('--resolve')
-  .option('--verified-by <id>', 'Attribution for the orchestrator-dispatched verifier stage')
-  .option('--red-evidence-id <id>', 'Canonical fail-first evidence ID')
-  .option('--green-evidence-id <id>', 'Canonical passing evidence ID')
   .option('--exemption-reason <text>')
   .option('--accepted-by <human>')
   .option('--project <path>')
@@ -224,17 +219,12 @@ program.command('debug')
       return;
     }
     if (options.resolve) {
-      if (!options.session || (options.exemptionReason
-        ? !options.acceptedBy
-        : !options.verifiedBy || !options.redEvidenceId || !options.greenEvidenceId)) {
-        throw new Error('Debug resolution requires --session plus --verified-by, --red-evidence-id, and --green-evidence-id; an exemption instead requires --exemption-reason and --accepted-by.');
+      if (!options.session || !options.exemptionReason || !options.acceptedBy) {
+        throw new Error('CLI debug resolution is limited to an explicit human exemption and requires --session, --exemption-reason, and --accepted-by; technical closure must come from an orchestrator-dispatched verifier.');
       }
       const session = await resolveDebugSessionV2({
         change, projectRoot: options.project, sessionId: options.session,
-        ...(options.verifiedBy ? { verifierId: options.verifiedBy } : {}),
-        ...(options.redEvidenceId ? { redEvidenceId: options.redEvidenceId } : {}),
-        ...(options.greenEvidenceId ? { greenEvidenceId: options.greenEvidenceId } : {}),
-        ...(options.exemptionReason ? { exemption: { reason: options.exemptionReason, acceptedBy: options.acceptedBy } } : {}),
+        exemption: { reason: options.exemptionReason, acceptedBy: options.acceptedBy },
       });
       print(options.json ? { session } : `Resolved debug session ${session.sessionId}.`, Boolean(options.json));
       return;
@@ -308,7 +298,7 @@ record.command('task')
 record.command('finding-transition')
   .argument('<change>')
   .argument('<finding-id>')
-  .requiredOption('--to <state>', 'repaired, independently_verified, accepted_risk, human_needed, or stale')
+  .requiredOption('--to <state>', 'repaired, accepted_risk, human_needed, or stale')
   .requiredOption('--actor <id>')
   .requiredOption('--reason <text>')
   .option('--evidence <json-file|->')
@@ -317,10 +307,10 @@ record.command('finding-transition')
   .option('--project <path>')
   .option('--json')
   .action(async (change, findingId, options) => {
-    const states = ['repaired', 'independently_verified', 'accepted_risk', 'human_needed', 'stale'];
+    const states = ['repaired', 'accepted_risk', 'human_needed', 'stale'];
     if (!states.includes(options.to)) throw new Error(`Invalid finding state '${options.to}'.`);
     const actionByState = {
-      repaired: 'repair', independently_verified: 'verify', accepted_risk: 'accept-risk',
+      repaired: 'repair', accepted_risk: 'accept-risk',
       human_needed: 'request-human', stale: 'mark-stale',
     } as const;
     const action = actionByState[options.to as keyof typeof actionByState];
@@ -343,14 +333,13 @@ record.command('finding-transition')
 
 for (const contribution of [
   { name: 'evidence', schema: EvidenceRecordingRequestV1Schema, field: 'evidence', type: 'evidence.recorded' },
-  { name: 'finding', schema: FindingRecordingRequestV1Schema, field: 'finding', type: 'finding.recorded' },
   { name: 'deviation', schema: DeviationRecordingRequestV1Schema, field: 'deviation', type: 'deviation.recorded' },
   { name: 'repair', schema: RepairRecordingRequestV1Schema, field: 'repair', type: 'repair.recorded' },
 ] as const) {
   record.command(contribution.name)
     .argument('<change>')
     .requiredOption('--input <json-file|->')
-    .option('--stage <stage>', 'automation, executor, reviewer, or verifier')
+    .option('--stage <stage>', 'automation or executor')
     .option('--actor <id>', 'Optional stage actor attribution')
     .option('--project <path>')
     .action(async (change, options) => {
@@ -359,7 +348,7 @@ for (const contribution of [
       const stage = contribution.name === 'deviation' || contribution.name === 'repair'
         ? 'executor'
         : options.stage;
-      if (!['automation', 'executor', 'reviewer', 'verifier'].includes(stage)) {
+      if (!['automation', 'executor'].includes(stage)) {
         throw new Error(`Recording ${contribution.name} requires an orchestrated --stage.`);
       }
       print(await recordWorkflowResultV2({

@@ -10,9 +10,14 @@ Run an OpenSpec change through Guardrails.
    Follow `nextAction.taskId` in dependency order only after readiness permits
    execution. Before implementation, use `record evidence --stage executor` for
    required RED evidence, then record the task as `in_progress` with `record task`.
-4. Record GREEN, REFACTOR, checker, finding, deviation, and repair observations
-   only through `openspec-guardrails record ... --input <json-file|->`; evidence
-   and findings require the orchestrated `--stage automation|executor|reviewer|verifier`.
+4. Record executor GREEN/REFACTOR evidence, deviations, and repairs through
+   `openspec-guardrails record ... --input <json-file|->`; the CLI accepts only
+   automation and executor evidence. Reviewer/verifier evidence and structured
+   findings must return through the host's read-only role dispatcher, which
+   supplies an opaque receipt to `recordDispatchedRoleResultV2`. Finding IDs are
+   derived by Guardrails and independent closure uses
+   `verifyFindingFromDispatchedResultV2`; never accept a caller-selected role
+   label or finding ID as assurance provenance.
    Record a completed task with `record task <change> <task-id> --status complete
    --event-id <id>`; this operation updates the authoritative checkbox in
    `tasks.md` and returns the next dependency-satisfied task. Do not edit

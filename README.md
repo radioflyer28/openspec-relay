@@ -112,15 +112,21 @@ precedence:
 Generated state is stored under
 `openspec/changes/<change>/.guardrails/events.json`; `run.json`,
 and `assurance.json` are replaceable v2 projections. Only the Guardrails
-orchestrator writes these files; role adapters return structured results through
-the supported operations instead of appending events directly. The core-owned
+orchestrator writes these files. Automation/executor records may use the CLI;
+read-only reviewer/verifier results must pass through `dispatchRoleV2` and its
+process-local opaque receipt before `recordDispatchedRoleResultV2`,
+`verifyFindingFromDispatchedResultV2`, or technical debug closure can mutate
+state. Structured findings omit caller-selected IDs; Guardrails derives stable
+IDs from provider, rule, category, and scope. Role adapters return structured
+results through these supported operations instead of appending events directly. The core-owned
 `.openspec-gates.json` records the durable `guardrails.assurance` archive
 obligation. Acceptance is digest-bound; stale evidence requires renewed human
 acceptance. Missing, disabled, corrupt, timed-out, or mismatched providers fail
 closed through OpenSpec's archive gate protocol.
 
 The package root intentionally exposes only host-facing run, check, status,
-workflow-result, UAT, debugging, tier-adapter, configuration, and gate APIs.
+workflow-result, dispatch receipt, stable-finding, UAT, debugging, tier-adapter,
+configuration, and gate APIs.
 Canonical event append, replay, projection-write, and filesystem-state helpers
 are internal implementation details.
 

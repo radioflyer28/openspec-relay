@@ -8,10 +8,11 @@ checks, scenario coverage, applicable TDD evidence, routed specialist checks,
 code review, and independent goal verification according to the selected run
 mode. A changed controlling artifact invalidates prior readiness evidence.
 
-Record any new evidence, findings, deviations, or completed repair attempts
-through `openspec-guardrails record`; evidence and findings require the
-orchestrated `--stage automation|executor|reviewer|verifier`. Never patch
-`events.json`, `run.json`, or `assurance.json`.
+Record automation/executor evidence, deviations, or completed repair attempts
+through `openspec-guardrails record`. Reviewer/verifier evidence and findings
+must return through a read-only host dispatch and the opaque-receipt APIs;
+ordinary CLI callers cannot claim those roles or choose stable finding IDs.
+Never patch `events.json`, `run.json`, or `assurance.json`.
 If a current result needs human acceptance, use
 `openspec-guardrails accept <change> <gate-id> --actor <actor>` before checking
 again.

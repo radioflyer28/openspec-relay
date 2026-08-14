@@ -234,6 +234,24 @@ async function refreshPlanningEvents(options: {
       { type: 'uat.scenario_stale', scenarioId: scenario.scenarioId, sourceRevision },
     );
   }
+  for (const session of options.current.assurance.debugSessions.filter((item) =>
+    item.status === 'resolved' && item.verification)) {
+    const sourceRevision = await computeMaterialRevision({
+      projectRoot: options.projectRoot,
+      compiled: options.compiled,
+      context: options.context,
+    });
+    if (session.verification!.sourceRevision !== sourceRevision) await append(
+      `debug-verification-stale:${session.sessionId}:${sourceRevision.slice(0, 12)}`,
+      { kind: 'automation' },
+      {
+        type: 'debug.verification_stale',
+        sessionId: session.sessionId,
+        verificationId: session.verification!.verificationId,
+        sourceRevision,
+      },
+    );
+  }
 }
 
 export async function startGuardrailsRunV2(options: {
