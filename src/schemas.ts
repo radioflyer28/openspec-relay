@@ -607,14 +607,6 @@ export const GuardrailsEventActorV2Schema = z.object({
 
 export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal('v1.migrated'),
-    sourceVersion: z.literal(1),
-    sourceKind: z.enum(['event', 'evidence', 'finding', 'deviation', 'repair', 'human_action']),
-    sourceId: z.string().min(1),
-    sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    record: z.unknown(),
-  }).strict(),
-  z.object({
     type: z.literal('task.transition'),
     taskId: z.string().min(1),
     status: z.enum(['pending', 'in_progress', 'complete', 'blocked']),

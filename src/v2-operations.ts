@@ -1,14 +1,13 @@
-import { compileOpenSpecChange } from './artifacts.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   appendGuardrailsEventV2,
   createGuardrailsEventV2,
   readEventStoreV2,
-  readOrMigrateEventStoreV2,
   replayGuardrailsEventsV2,
   writeReplayedProjectionsV2,
 } from './events.js';
+import { loadCanonicalGuardrailsState } from './canonical-state.js';
 import {
   debugSessionForRepairExhaustion,
   observeDebugExperiment,
@@ -36,9 +35,8 @@ import {
 
 async function currentV2(options: { change: string; projectRoot?: string }) {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const store = await readOrMigrateEventStoreV2(resolved.changeDir);
-  const compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: store.seed.config.taskOverrides });
-  return { resolved, store, compiled, projection: replayGuardrailsEventsV2({ store, compiled }) };
+  const canonical = await loadCanonicalGuardrailsState(resolved.changeDir);
+  return { resolved, ...canonical };
 }
 
 function sources(compiled: Awaited<ReturnType<typeof currentV2>>['compiled']): Record<string, string> {
@@ -690,11 +688,9 @@ export async function recordLegacyPayloadV2(options: {
       });
     }
   }
-  const compiled = await compileOpenSpecChange({
-    changeDir: current.resolved.changeDir, taskMetadata: current.store.seed.config.taskOverrides,
-  });
+  const refreshed = await loadCanonicalGuardrailsState(current.resolved.changeDir);
   const projection = await writeReplayedProjectionsV2({
-    changeDir: current.resolved.changeDir, store: await readEventStoreV2(current.resolved.changeDir), compiled,
+    changeDir: current.resolved.changeDir, store: refreshed.store, compiled: refreshed.compiled,
   });
   return {
     accepted: true, appended: appended.appended, eventId: options.eventId, eventType: payload.type,

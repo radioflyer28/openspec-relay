@@ -28,16 +28,6 @@ export const GUARDRAILS_GENERATED_FILES = {
   run: 'run.json',
   assurance: 'assurance.json',
   events: 'events.json',
-  eventsLock: 'events.lock',
-  v1MigrationBackup: 'reports/v1-migration-backup.json',
-  migrationPreview: 'reports/migration-preview.json',
-  v1CompatibilityExport: 'reports/v1-compatibility-export.json',
-  repositoryContext: 'reports/repository-context.json',
-  readiness: 'reports/readiness.json',
-  findings: 'reports/findings.json',
-  debug: 'reports/debug.json',
-  uat: 'reports/uat.json',
-  release: 'reports/release.json',
 } as const;
 
 export type GuardrailsGeneratedFile = keyof typeof GUARDRAILS_GENERATED_FILES;

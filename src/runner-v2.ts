@@ -7,11 +7,11 @@ import {
   createGuardrailsEventV2,
   appendGuardrailsEventV2,
   readEventStoreV2,
-  readOrMigrateEventStoreV2,
   replayGuardrailsEventsV2,
   eventStorePath,
   writeReplayedProjectionsV2,
 } from './events.js';
+import { loadCanonicalGuardrailsState } from './canonical-state.js';
 import { selectAssurancePipeline } from './modes.js';
 import { evaluateAssuranceV2 } from './assurance-v2.js';
 import { compileRepositoryContext, computeMaterialRevision, discoverRepositoryChangedFiles } from './repository-context.js';
@@ -35,8 +35,16 @@ import {
 } from './state.js';
 import { negotiateExecutionTier, type TierAdaptersV1 } from './tiers.js';
 import { GUARDRAILS_VERSION } from './version.js';
-import { DEFAULT_HOST_CAPABILITIES } from './runner.js';
 import { mapScenarioCoverage } from './verification.js';
+
+export const DEFAULT_HOST_CAPABILITIES: HostCapabilitiesV1 = {
+  agentDispatch: false,
+  parallelism: false,
+  worktrees: false,
+  git: false,
+  structuredResults: true,
+  humanInteraction: false,
+};
 
 function legacyConfig(config: GuardrailsConfigV2) {
   const legacy = Object.fromEntries(Object.entries(config).filter(([key]) => key !== 'features'));
@@ -245,17 +253,11 @@ export async function startGuardrailsRunV2(options: {
     createParents: true,
     allowMissingFile: true,
   });
-  // A run is an auditable history, not a reset button. Preserve an active v1
-  // run by migrating it before any v2 command can append a new event, and make
-  // repeated `run` invocations deterministic projections of the same history.
+  // A run is an auditable history, not a reset button. Repeated invocations
+  // deterministically project the same canonical history.
   if (await fs.access(safeRunPath).then(() => true).catch(() => false)) {
-    const store = await readOrMigrateEventStoreV2(resolved.changeDir);
-    const compiled = await compileOpenSpecChange({
-      changeDir: resolved.changeDir,
-      taskMetadata: store.seed.config.taskOverrides,
-    });
+    const { store, compiled, projection: current } = await loadCanonicalGuardrailsState(resolved.changeDir);
     const now = options.now ?? new Date().toISOString();
-    const current = replayGuardrailsEventsV2({ store, compiled });
     const planning = await planningInputs({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir,
       changeName: resolved.changeName, compiled, config: store.seed.config, tier: store.seed.tier,
       adapters: options.adapters, changedFiles: options.changedFiles, now });
@@ -377,10 +379,8 @@ export async function checkGuardrailsRunV2(options: {
   now?: string;
 }): Promise<{ run: GuardrailsRunV2; assurance: GuardrailsAssuranceV2 }> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const store = await readOrMigrateEventStoreV2(resolved.changeDir);
+  const { store, compiled, projection: current } = await loadCanonicalGuardrailsState(resolved.changeDir);
   const config = store.seed.config;
-  const compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: config.taskOverrides });
-  const current = replayGuardrailsEventsV2({ store, compiled });
   const now = options.now ?? new Date().toISOString();
   const planning = await planningInputs({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir,
     changeName: resolved.changeName, compiled, config, tier: store.seed.tier, adapters: options.adapters,

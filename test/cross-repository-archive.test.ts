@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { acceptGuardrailsGate, seedAssuranceState, startGuardrailsRun } from '../src/index.js';
+import { acceptGuardrailsGateV2, startGuardrailsRunV2 } from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -41,18 +41,8 @@ describe('cross-repository archive gate flow', () => {
     expect(generatedRun).toContain('openspec-extension:guardrails@');
     expect(generatedRun).toContain('guardrails record');
 
-    const run = await startGuardrailsRun({ change: 'demo', projectRoot: root });
+    const run = await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
     expect(run.run.mode).toBe('guarded');
-    await seedAssuranceState({
-      change: 'demo', projectRoot: root,
-      update: (assurance) => ({
-        ...assurance,
-        status: 'human_needed',
-        checks: assurance.checks.map((check) => ({ ...check, status: 'pass' as const })),
-        scenarioCoverage: assurance.scenarioCoverage.map((scenario) => ({ ...scenario, status: 'covered' as const })),
-        unresolvedHumanActions: ['Confirm the observable result.'],
-      }),
-    });
 
     const blocked = openspec(root, [
       'archive', 'demo', '--yes', '--no-validate', '--skip-specs', '--json',
@@ -63,7 +53,7 @@ describe('cross-repository archive gate flow', () => {
       status: [expect.objectContaining({ code: 'archive_gate_blocked' })],
     });
 
-    await expect(acceptGuardrailsGate({
+    await expect(acceptGuardrailsGateV2({
       change: 'demo',
       projectRoot: root,
       gateId: 'guardrails.assurance',
@@ -95,24 +85,7 @@ describe('cross-repository archive gate flow', () => {
     const { root } = await createOpenSpecProject('override-demo');
     const linked = openspec(root, ['extension', 'link', path.resolve('.')]);
     expect(linked.status, linked.stderr || linked.stdout).toBe(0);
-    const run = await startGuardrailsRun({ change: 'override-demo', projectRoot: root });
-    const requirementId = run.run.artifacts.flatMap((artifact) => artifact.ids)
-      .find((id) => id.includes('#requirement:') && !id.includes('/scenario:'))!;
-    await seedAssuranceState({
-      change: 'override-demo', projectRoot: root,
-      update: (assurance) => ({
-        ...assurance,
-        status: 'fail',
-        findings: [{
-          findingId: 'goal-verification-failed',
-          requirementId,
-          status: 'fail',
-          summary: 'Observable goal evidence is incomplete.',
-          evidenceIds: [],
-          origin: 'verifier',
-        }],
-      }),
-    });
+    await startGuardrailsRunV2({ change: 'override-demo', projectRoot: root });
 
     const archived = openspec(root, [
       'archive', 'override-demo', '--yes', '--no-validate', '--skip-specs', '--json',
