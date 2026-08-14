@@ -44,6 +44,24 @@ openspec extension link ../openspec-gsd
 openspec extension doctor gsd
 ```
 
+### Pi 0.84.2
+
+The companion is also a Pi package. A private system-level installation uses
+the local checkout directly and does not publish to a registry:
+
+```bash
+pnpm build
+pi install /absolute/path/to/openspec-gsd
+pi list
+```
+
+This exposes `/opsx-run`, `/opsx-check`, `/opsx-run-status`, `/opsx-debug`, and
+`/opsx-uat`, plus the corresponding `openspec-*` skills. The Pi package includes
+a minimal runtime extension that places its bundled `openspec-gsd` CLI on the
+`PATH` of Pi-launched commands, so no separate global CLI installation is
+required. Re-run `pnpm build` after changing a workflow; the build regenerates
+the Pi resources from the canonical workflow contributions.
+
 The local development dependency uses `../OpenSpec`; it is not included in the
 private packed artifact. Runtime imports use only `@fission-ai/openspec/extensions`.
 
