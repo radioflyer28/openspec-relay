@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beginRepairAttempt, runBoundedRepair } from '../src/index.js';
+import { beginRepairAttempt, runBoundedRepair } from '../src/repairs.js';
 
 describe('bounded repair', () => {
   it('records a relevant repair and successful rerun', async () => {

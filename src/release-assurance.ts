@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   ReleaseAssuranceConfigV2Schema,
-  type ConfiguredReleaseDriverV2,
+  type ConfiguredReleaseCommandV2,
   type ReleaseCandidateV2,
   type RunMode,
 } from './schemas.js';
@@ -45,8 +45,8 @@ async function runHostReleaseCommand(
   assertReleaseCommandSafe(request.command, request.args);
   if (!request.cwd || !request.allowedRoot) throw new Error('Constrained candidate execution requires an allowed workspace.');
   const relative = path.relative(path.resolve(request.allowedRoot), path.resolve(request.cwd));
-  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Candidate command escapes its constrained workspace.');
-  const environment = Object.fromEntries(Object.entries(constrainedEnvironment(request.cwd, request.env))
+  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Candidate command escapes its temporary workspace.');
+  const environment = Object.fromEntries(Object.entries(minimalEnvironment(request.cwd, request.env))
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   const result = await runner.run(Object.freeze({ ...request, env: environment }));
   if (!Number.isInteger(result.exitCode) || !/^[a-f0-9]{64}$/.test(result.outputDigest)) {
@@ -58,7 +58,7 @@ async function runHostReleaseCommand(
 const RELEASE_OUTPUT_LIMIT = 64 * 1024;
 const SAFE_ENV_KEYS = ['PATH', 'SystemRoot', 'COMSPEC', 'PATHEXT', 'TMPDIR', 'TEMP', 'TMP'] as const;
 
-function constrainedEnvironment(cwd: string, additions: Record<string, string> = {}): NodeJS.ProcessEnv {
+function minimalEnvironment(cwd: string, additions: Record<string, string> = {}): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     CI: 'true', NO_COLOR: '1', HOME: cwd, USERPROFILE: cwd,
     npm_config_cache: path.join(cwd, '.npm-cache'), npm_config_update_notifier: 'false',
@@ -124,9 +124,9 @@ export async function detectReleaseApplicability(options: {
     enabled: 'auto' | 'always' | 'off';
     disabledReason: string;
     surfaces: string[];
-    configuredCommands: ConfiguredReleaseDriverV2[];
+    configuredCommands: ConfiguredReleaseCommandV2[];
     requiredPlatforms: Array<'linux' | 'macos' | 'windows'>;
-    buildCommand: ConfiguredReleaseDriverV2;
+    buildCommand: ConfiguredReleaseCommandV2;
   }>;
 }): Promise<ReleaseCandidateV2[]> {
   const config = ReleaseAssuranceConfigV2Schema.parse(options.config ?? {});
@@ -195,14 +195,14 @@ export async function detectReleaseApplicability(options: {
       // The surface is not present in this repository.
     }
   }
-  for (const driver of config.configuredCommands) candidates.push(candidate({
-    candidateId: `release:configured:${driver.id}`,
+  for (const command of config.configuredCommands) candidates.push(candidate({
+    candidateId: `release:configured:${command.id}`,
     surface: 'configured',
     applicable: true,
     activationEvidence: [{
-      referenceId: `config:release-command:${driver.id}`,
+      referenceId: `config:release-command:${command.id}`,
       kind: 'external',
-      externalId: driver.id,
+      externalId: command.id,
       available: true,
     }],
     status: 'pending',
@@ -265,7 +265,7 @@ export async function runLocalReleaseCommand(options: ReleaseCommandV2): Promise
   return new Promise((resolve, reject) => {
     const child = execFile(options.command, options.args, {
       cwd: options.cwd,
-      env: constrainedEnvironment(options.cwd ?? process.cwd(), options.env),
+      env: minimalEnvironment(options.cwd ?? process.cwd(), options.env),
       timeout: options.timeoutMs ?? 120_000,
       encoding: 'utf8',
       maxBuffer: 1024 * 1024,
@@ -369,19 +369,19 @@ async function smokePublicEntries(
   const smoke = await runHostReleaseCommand(runner, { command: process.execPath,
     args: ['--input-type=module', '-e', script, ...publicEntries], cwd: installDirectory,
     allowedRoot: installDirectory });
-  if (!smoke || smoke.exitCode !== 0) throw new Error('Public export smoke failed in the constrained release runner.');
+  if (!smoke || smoke.exitCode !== 0) throw new Error('Public export smoke failed in the host release verifier.');
 }
 
 /**
  * Pack locally, install the exact artifact into a disposable project, and
  * smoke its declared public entries. Publishing and install lifecycle scripts
- * are deliberately excluded from this driver.
+ * are deliberately excluded from this verifier.
  */
 export async function verifyNodePackageRelease(options: {
   packageRoot: string;
   mode: RunMode;
   manifestSurfaces?: Array<'extension' | 'plugin'>;
-  buildCommand?: ConfiguredReleaseDriverV2;
+  buildCommand?: ConfiguredReleaseCommandV2;
   releaseRunner?: HostReleaseRunnerV2;
 }): Promise<NodeReleaseVerificationV2> {
   const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-guardrails-artifact-'));
@@ -491,7 +491,7 @@ export async function verifyNodePackageRelease(options: {
           cwd: installDirectory,
           allowedRoot: installDirectory,
         });
-        if (!smoke || smoke.exitCode !== 0) throw new Error(`CLI '${bin}' failed in the constrained release runner.`);
+        if (!smoke || smoke.exitCode !== 0) throw new Error(`CLI '${bin}' failed in the host release verifier.`);
       }
       checks.push(check('public-smoke', 'pass', 'Installed public exports and CLI entry points completed local smoke checks.', artifactEvidence));
     } catch {
@@ -503,7 +503,7 @@ export async function verifyNodePackageRelease(options: {
       'Full-mode cross-platform evidence is collected by hosted CI rather than inferred locally.', artifactEvidence));
     return { status: candidateStatusFromChecks(checks), artifactDigest, checks };
   } catch {
-    checks.push(check('release-driver', 'error', 'Release driver encountered an internal error; raw output was not persisted.'));
+    checks.push(check('release-verifier', 'error', 'Release verification encountered an internal error; raw output was not persisted.'));
     return { status: 'error', artifactDigest, checks };
   } finally {
     await Promise.all([
@@ -513,20 +513,20 @@ export async function verifyNodePackageRelease(options: {
   }
 }
 
-export async function runConfiguredReleaseDriver(options: {
+export async function runConfiguredReleaseCommand(options: {
   projectRoot: string;
-  driver: ConfiguredReleaseDriverV2;
+  configuredCommand: ConfiguredReleaseCommandV2;
   releaseRunner?: HostReleaseRunnerV2;
 }): Promise<ReleaseCandidateV2> {
-  const command = createConfiguredCommandPlan(options.driver);
+  const command = createConfiguredCommandPlan(options.configuredCommand);
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-guardrails-configured-release-'));
   const sourceDirectory = path.join(workspace, 'source');
-  const evidence = [{ referenceId: `config:release-command:${options.driver.id}`, kind: 'external' as const, externalId: options.driver.id, available: true }];
+  const evidence = [{ referenceId: `config:release-command:${options.configuredCommand.id}`, kind: 'external' as const, externalId: options.configuredCommand.id, available: true }];
   try {
     if (!hasHostReleaseRunner(options.releaseRunner)) return candidate({
-      candidateId: `release:configured:${options.driver.id}`,
+      candidateId: `release:configured:${options.configuredCommand.id}`,
       surface: 'configured', applicable: true, activationEvidence: evidence, status: 'human_needed',
-      checks: [check(`configured:${options.driver.id}`, 'human_needed',
+      checks: [check(`configured:${options.configuredCommand.id}`, 'human_needed',
         'Configured candidate code requires an enabled host release runner.', evidence)],
     });
     await copyPackageSource(options.projectRoot, sourceDirectory);
@@ -540,14 +540,14 @@ export async function runConfiguredReleaseDriver(options: {
       .filter((item) => !item.present);
     const status = result?.exitCode === 0 && !missing.length ? 'pass' : 'fail';
     return candidate({
-      candidateId: `release:configured:${options.driver.id}`,
+      candidateId: `release:configured:${options.configuredCommand.id}`,
       surface: 'configured',
       applicable: true,
       activationEvidence: evidence,
       status,
-      checks: [check(`configured:${options.driver.id}`, status,
-        status === 'pass' ? `Configured driver '${options.driver.id}' completed in a temporary workspace.`
-          : `Configured driver '${options.driver.id}' failed or omitted declared artifacts.`, evidence)],
+      checks: [check(`configured:${options.configuredCommand.id}`, status,
+        status === 'pass' ? `Configured command '${options.configuredCommand.id}' completed in a temporary workspace.`
+          : `Configured command '${options.configuredCommand.id}' failed or omitted declared artifacts.`, evidence)],
     });
   } finally {
     await fs.rm(workspace, { recursive: true, force: true });
@@ -619,9 +619,9 @@ export async function executeReleaseCandidates(options: {
   candidates: ReleaseCandidateV2[];
   mode: RunMode;
   config: {
-    configuredCommands: ConfiguredReleaseDriverV2[];
+    configuredCommands: ConfiguredReleaseCommandV2[];
     requiredPlatforms?: Array<'linux' | 'macos' | 'windows'>;
-    buildCommand?: ConfiguredReleaseDriverV2;
+    buildCommand?: ConfiguredReleaseCommandV2;
   };
   releaseRunner?: HostReleaseRunnerV2;
 }): Promise<ReleaseCandidateV2[]> {
@@ -639,7 +639,7 @@ export async function executeReleaseCandidates(options: {
       releaseRunner: options.releaseRunner,
     })
     : undefined;
-  const configured = new Map(options.config.configuredCommands.map((driver) => [driver.id, driver]));
+  const configured = new Map(options.config.configuredCommands.map((command) => [command.id, command]));
   const output: ReleaseCandidateV2[] = [];
   for (const item of options.candidates) {
     if (!item.applicable) {
@@ -648,12 +648,12 @@ export async function executeReleaseCandidates(options: {
     }
     if (item.surface === 'configured') {
       const id = item.candidateId.replace(/^release:configured:/, '');
-      const driver = configured.get(id);
-      output.push(driver ? await runConfiguredReleaseDriver({ projectRoot: options.packageRoot, driver,
+      const configuredCommand = configured.get(id);
+      output.push(configuredCommand ? await runConfiguredReleaseCommand({ projectRoot: options.packageRoot, configuredCommand,
         releaseRunner: options.releaseRunner }) : {
         ...item,
         status: 'human_needed',
-        checks: [check('configured-driver', 'human_needed', `Configured driver '${id}' has no executable command definition.`)],
+        checks: [check('configured-command', 'human_needed', `Configured command '${id}' has no executable definition.`)],
       });
       continue;
     }
@@ -661,7 +661,7 @@ export async function executeReleaseCandidates(options: {
       output.push({
         ...item,
         status: 'human_needed',
-        checks: [check('release-driver', 'human_needed', 'No package artifact driver is available for this release surface.')],
+        checks: [check('release-verifier', 'human_needed', 'No private artifact verifier is available for this release surface.')],
       });
       continue;
     }
@@ -696,7 +696,7 @@ export async function inspectNodePackageMetadata(packageRoot: string): Promise<{
     name?: string; version?: string; exports?: string | Record<string, unknown>;
     bin?: string | Record<string, string>; peerDependencies?: Record<string, string>; scripts?: Record<string, string>;
   };
-  if (!manifest.name || !manifest.version) throw new Error('Node release driver requires package name and version.');
+  if (!manifest.name || !manifest.version) throw new Error('Node package verification requires package name and version.');
   const exportPaths = (value: unknown): string[] => {
     if (typeof value === 'string') return [value];
     if (value && typeof value === 'object') return Object.values(value).flatMap(exportPaths);
@@ -793,16 +793,6 @@ export function evaluateReleasePolicy(options: {
     });
   }
   return { status: checks.some((check) => check.status === 'fail') ? 'fail' : 'pass', checks };
-}
-
-export function evaluateRollbackRequirement(options: {
-  applicable: boolean;
-  available: boolean;
-  destructive?: boolean;
-}): { status: 'pass' | 'not_applicable' | 'human_needed' } {
-  if (!options.applicable) return { status: 'not_applicable' };
-  if (!options.available || options.destructive) return { status: 'human_needed' };
-  return { status: 'pass' };
 }
 
 export function createConfiguredCommandPlan(options: {

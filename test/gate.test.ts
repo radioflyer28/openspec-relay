@@ -4,13 +4,12 @@ import type { GateContextV1 } from '@fission-ai/openspec/extensions';
 import {
   assuranceStatePath,
   digestJson,
-  guardrailsAssuranceGate,
   readAssuranceStateV2,
   readRunStateV2,
   runStatePath,
-  checkGuardrailsRunV2,
-  startGuardrailsRunV2,
-} from '../src/index.js';
+} from '../src/state.js';
+import { guardrailsAssuranceGate } from '../src/gate.js';
+import { checkGuardrailsRunV2, startGuardrailsRunV2 } from '../src/runner-v2.js';
 import { appendGuardrailsEventV2, createGuardrailsEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { startDebugSession } from '../src/debug-sessions.js';

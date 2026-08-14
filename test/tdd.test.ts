@@ -3,8 +3,8 @@ import {
   classifyTddRequirement,
   resolveTddPolicy,
   validateTddEvidence,
-  type TaskNodeV1,
-} from '../src/index.js';
+} from '../src/tdd.js';
+import type { TaskNodeV1 } from '../src/schemas.js';
 import { evidence } from './helpers.js';
 
 const executable: TaskNodeV1 = {

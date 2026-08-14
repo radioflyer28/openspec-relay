@@ -3,10 +3,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GateContextV1 } from '@fission-ai/openspec/extensions';
 import {
-  guardrailsAssuranceGate,
   readRunStateV2,
-  startGuardrailsRunV2,
-} from '../src/index.js';
+} from '../src/state.js';
+import { guardrailsAssuranceGate } from '../src/gate.js';
+import { startGuardrailsRunV2 } from '../src/runner-v2.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);

@@ -318,7 +318,7 @@ export const UatConfigV2Schema = z.object({
   required: z.boolean().default(false),
 }).strict();
 
-export const ConfiguredReleaseDriverV2Schema = z.object({
+export const ConfiguredReleaseCommandV2Schema = z.object({
   id: z.string().min(1),
   command: z.string().min(1),
   args: z.array(z.string()).max(100).default([]),
@@ -335,9 +335,9 @@ export const ReleaseAssuranceConfigV2Schema = z.object({
   enabled: z.enum(['auto', 'always', 'off']).default('auto'),
   disabledReason: z.string().min(1).optional(),
   surfaces: z.array(z.string().min(1)).max(50).default([]),
-  configuredCommands: z.array(ConfiguredReleaseDriverV2Schema).max(20).default([]),
+  configuredCommands: z.array(ConfiguredReleaseCommandV2Schema).max(20).default([]),
   requiredPlatforms: z.array(z.enum(['linux', 'macos', 'windows'])).default([]),
-  buildCommand: ConfiguredReleaseDriverV2Schema.optional(),
+  buildCommand: ConfiguredReleaseCommandV2Schema.optional(),
 }).strict().refine((value) => value.enabled !== 'off' || Boolean(value.disabledReason), {
   message: 'release assurance disabled requires a recorded reason',
 });
@@ -678,7 +678,7 @@ export const GuardrailsEventStoreV2Schema = z.object({
 
 export type PortableReferenceV2 = z.infer<typeof PortableReferenceV2Schema>;
 export type GuardrailsConfigV2 = z.infer<typeof GuardrailsConfigV2Schema>;
-export type ConfiguredReleaseDriverV2 = z.infer<typeof ConfiguredReleaseDriverV2Schema>;
+export type ConfiguredReleaseCommandV2 = z.infer<typeof ConfiguredReleaseCommandV2Schema>;
 export type RepositoryContextClaimV2 = z.infer<typeof RepositoryContextClaimV2Schema>;
 export type RepositoryContextV2 = z.infer<typeof RepositoryContextV2Schema>;
 export type ReadinessIssueV2 = z.infer<typeof ReadinessIssueV2Schema>;

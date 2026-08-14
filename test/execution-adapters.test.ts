@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  buildExecutionGraph,
   executeWithTier,
-  readEventStoreV2,
-  startGuardrailsRunV2,
   type RoleDispatcherV1,
-  type TaskNodeV1,
-} from '../src/index.js';
+} from '../src/execution-adapters.js';
+import { buildExecutionGraph } from '../src/graph.js';
+import { readEventStoreV2 } from '../src/events.js';
+import { startGuardrailsRunV2 } from '../src/runner-v2.js';
+import type { TaskNodeV1 } from '../src/schemas.js';
 import * as publicApi from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
