@@ -225,8 +225,29 @@ export async function detectReleaseApplicability(options: {
 
 export function assertReleaseCommandSafe(command: string, args: string[]): void {
   const unsafe = new Set(['publish', 'release', 'deprecate', 'dist-tag', 'unpublish']);
-  if (unsafe.has(command) || args.some((arg) => unsafe.has(arg))) {
+  const nestedPublication = /(?:^|[\s;&|])(?:npm|pnpm|yarn\s+npm)?\s*(?:publish|unpublish|deprecate|dist-tag|release)(?:$|[\s;&|])/i;
+  const executable = command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.exe$/, '');
+  if (unsafe.has(executable) ||
+      args.some((arg) => unsafe.has(arg.toLowerCase()) || nestedPublication.test(arg))) {
     throw new Error(`Release assurance will not run external publication command '${[command, ...args].join(' ')}'.`);
+  }
+}
+
+function assertConfiguredReleaseCommandSafe(command: string, args: string[]): void {
+  assertReleaseCommandSafe(command, args);
+  const executable = command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.exe$/, '');
+  const interpretersAndWrappers = new Set([
+    'sh', 'bash', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'powershell', 'pwsh',
+    'node', 'deno', 'bun', 'python', 'python3', 'perl', 'ruby', 'env', 'xargs',
+    'npx', 'pnpx', 'bunx',
+  ]);
+  const packageManagerScript = ['npm', 'pnpm', 'yarn'].includes(executable) &&
+    args.some((arg) => ['run', 'exec', 'x', 'dlx'].includes(arg.toLowerCase()));
+  if (interpretersAndWrappers.has(executable) || packageManagerScript) {
+    throw new Error(
+      `Configured release command '${[command, ...args].join(' ')}' uses a shell, interpreter, or indirect command wrapper ` +
+      'that cannot establish the no-publication requirement before dispatch.',
+    );
   }
 }
 
@@ -417,7 +438,7 @@ export async function verifyNodePackageRelease(options: {
       return { status: 'human_needed', checks };
     }
     if (options.buildCommand) {
-      const buildPlan = createConfiguredCommandPlan(options.buildCommand);
+      const buildPlan = createConfiguredCommandPlan(options.buildCommand, 'explicit-build');
       const build = await runHostReleaseCommand(options.releaseRunner, { ...buildPlan, cwd: sourceDirectory,
         allowedRoot: artifactDirectory });
       if (!build) {
@@ -818,8 +839,9 @@ export function createConfiguredCommandPlan(options: {
   args: string[];
   expectedArtifacts: string[];
   timeoutMs?: number;
-}): ReleaseCommandV2 {
-  assertReleaseCommandSafe(options.command, options.args);
+}, authorization: 'configured-distribution' | 'explicit-build' = 'configured-distribution'): ReleaseCommandV2 {
+  if (authorization === 'explicit-build') assertReleaseCommandSafe(options.command, options.args);
+  else assertConfiguredReleaseCommandSafe(options.command, options.args);
   for (const artifact of options.expectedArtifacts) {
     if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(artifact) || artifact.includes('\\') ||
         !artifact.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')) {
