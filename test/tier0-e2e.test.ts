@@ -20,7 +20,7 @@ import {
 } from '../src/v2-operations.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 import { readAssuranceStateV2 } from '../src/state.js';
-import { runLocalReleaseCommand, type ConstrainedReleaseRunnerV2 } from '../src/release-assurance.js';
+import { runLocalReleaseCommand, type HostReleaseRunnerV2 } from '../src/release-assurance.js';
 
 afterEach(cleanupTemporaryRoots);
 
@@ -47,11 +47,7 @@ const scenarioId = `${requirementId}/scenario:works`;
 const portableEvidence = [{
   referenceId: 'test:tier0-e2e', kind: 'generated' as const, externalId: 'tier0-e2e', available: true,
 }];
-const trustedTestRunner: ConstrainedReleaseRunnerV2 = {
-  capabilities: {
-    filesystemIsolation: 'enforced', networkIsolation: 'enforced',
-    sourceWorkspaceHidden: true, opaqueOutput: true,
-  },
+const trustedTestRunner: HostReleaseRunnerV2 = {
   async run(request) {
     const result = await runLocalReleaseCommand(request);
     return {

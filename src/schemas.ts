@@ -326,44 +326,18 @@ export const ConfiguredReleaseDriverV2Schema = z.object({
     (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) &&
       value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..') &&
       !value.includes('\\'),
-    'expected artifact path must be a portable relative path inside the isolated release workspace',
+    'expected artifact path must be a portable relative path inside the temporary release workspace',
   )).max(50).default([]),
   timeoutMs: z.number().int().positive().max(15 * 60_000).default(120_000),
 }).strict();
-
-const PortableReleasePathV2Schema = z.string().min(1).refine(
-  (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) &&
-    value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..') &&
-    !value.includes('\\'),
-  'release state paths must be portable relative paths',
-);
-
-export const ReleaseStateContractV2Schema = z.object({
-  id: z.string().min(1),
-  seedFile: PortableReleasePathV2Schema,
-  stateFile: PortableReleasePathV2Schema,
-  verifyCommand: ConfiguredReleaseDriverV2Schema,
-  rollback: z.enum(['reversible', 'irreversible']).default('reversible'),
-}).strict().refine((value) => {
-  const command = JSON.stringify([value.verifyCommand.command, ...value.verifyCommand.args]);
-  return command.includes('{state}') && command.includes('{package}');
-}, { message: 'state verification command must exercise both {state} and {package}' });
 
 export const ReleaseAssuranceConfigV2Schema = z.object({
   enabled: z.enum(['auto', 'always', 'off']).default('auto'),
   disabledReason: z.string().min(1).optional(),
   surfaces: z.array(z.string().min(1)).max(50).default([]),
-  drivers: z.array(z.string().min(1)).max(20).default([]),
   configuredCommands: z.array(ConfiguredReleaseDriverV2Schema).max(20).default([]),
   requiredPlatforms: z.array(z.enum(['linux', 'macos', 'windows'])).default([]),
-  previousArtifactPath: z.string().min(1).refine(
-    (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) && !value.split('/').includes('..') && !value.includes('\\'),
-    'previous artifact path must be project-relative',
-  ).optional(),
   buildCommand: ConfiguredReleaseDriverV2Schema.optional(),
-  stateContracts: z.array(ReleaseStateContractV2Schema).max(20).default([]),
-  requireFilesystemIsolation: z.boolean().default(false),
-  requireNetworkIsolation: z.boolean().default(false),
 }).strict().refine((value) => value.enabled !== 'off' || Boolean(value.disabledReason), {
   message: 'release assurance disabled requires a recorded reason',
 });
@@ -374,9 +348,7 @@ export const GuardrailsFeatureConfigV2Schema = z.object({
   debug: DebugConfigV2Schema.default({ enabled: true, automaticTransition: true }),
   uat: UatConfigV2Schema.default({ enabled: true, required: false }),
   releaseAssurance: ReleaseAssuranceConfigV2Schema.default({
-    enabled: 'auto', surfaces: [], drivers: [], configuredCommands: [], requiredPlatforms: [],
-    stateContracts: [],
-    requireFilesystemIsolation: false, requireNetworkIsolation: false,
+    enabled: 'auto', surfaces: [], configuredCommands: [], requiredPlatforms: [],
   }),
 }).strict();
 
@@ -387,9 +359,7 @@ export const GuardrailsConfigV2Schema = GuardrailsConfigV1Schema.omit({ version:
     readiness: { rollout: 'required', independentRequired: true },
     debug: { enabled: true, automaticTransition: true },
     uat: { enabled: true, required: false },
-    releaseAssurance: { enabled: 'auto', surfaces: [], drivers: [], configuredCommands: [], requiredPlatforms: [],
-      stateContracts: [],
-      requireFilesystemIsolation: false, requireNetworkIsolation: false },
+    releaseAssurance: { enabled: 'auto', surfaces: [], configuredCommands: [], requiredPlatforms: [] },
   }),
 }).strict();
 
@@ -702,7 +672,6 @@ export const GuardrailsEventStoreV2Schema = z.object({
     config: GuardrailsConfigV2Schema,
     checks: z.array(AssuranceCheckV2Schema),
     scenarioCoverage: z.array(ScenarioCoverageV1Schema),
-    migratedFrom: z.object({ version: z.literal(1), digest: z.string().regex(/^[a-f0-9]{64}$/) }).optional(),
   }).strict(),
   events: z.array(GuardrailsEventEnvelopeV2Schema),
 }).strict();
@@ -710,7 +679,6 @@ export const GuardrailsEventStoreV2Schema = z.object({
 export type PortableReferenceV2 = z.infer<typeof PortableReferenceV2Schema>;
 export type GuardrailsConfigV2 = z.infer<typeof GuardrailsConfigV2Schema>;
 export type ConfiguredReleaseDriverV2 = z.infer<typeof ConfiguredReleaseDriverV2Schema>;
-export type ReleaseStateContractV2 = z.infer<typeof ReleaseStateContractV2Schema>;
 export type RepositoryContextClaimV2 = z.infer<typeof RepositoryContextClaimV2Schema>;
 export type RepositoryContextV2 = z.infer<typeof RepositoryContextV2Schema>;
 export type ReadinessIssueV2 = z.infer<typeof ReadinessIssueV2Schema>;
