@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { satisfies, valid, validRange } from 'semver';
 import {
   ReleaseAssuranceConfigV2Schema,
   type ConfiguredReleaseCommandV2,
@@ -297,6 +298,24 @@ function candidateStatusFromChecks(checks: ReleaseCheck[]): ReleaseCandidateV2['
   if (checks.some((item) => item.status === 'human_needed')) return 'human_needed';
   if (checks.some((item) => item.status === 'pending')) return 'pending';
   return 'pass';
+}
+
+function mergeCandidateChecks(original: ReleaseCandidateV2, executed: ReleaseCandidateV2): ReleaseCandidateV2 {
+  const checks = [...original.checks];
+  for (const check of executed.checks) {
+    const index = checks.findIndex((existing) => existing.checkId === check.checkId);
+    if (index < 0) checks.push(check);
+    else {
+      const precedence = ['pass', 'pending', 'human_needed', 'fail', 'error'];
+      if (precedence.indexOf(check.status) > precedence.indexOf(checks[index].status)) checks[index] = check;
+    }
+  }
+  return {
+    ...original,
+    ...executed,
+    status: candidateStatusFromChecks(checks),
+    checks,
+  };
 }
 
 function parseNpmPack(stdout: string): { filename: string; files: string[] } {
@@ -649,20 +668,23 @@ export async function executeReleaseCandidates(options: {
     if (item.surface === 'configured') {
       const id = item.candidateId.replace(/^release:configured:/, '');
       const configuredCommand = configured.get(id);
-      output.push(configuredCommand ? await runConfiguredReleaseCommand({ projectRoot: options.packageRoot, configuredCommand,
-        releaseRunner: options.releaseRunner }) : {
-        ...item,
-        status: 'human_needed',
-        checks: [check('configured-command', 'human_needed', `Configured command '${id}' has no executable definition.`)],
-      });
+      const executed: ReleaseCandidateV2 = configuredCommand
+        ? await runConfiguredReleaseCommand({ projectRoot: options.packageRoot, configuredCommand,
+          releaseRunner: options.releaseRunner })
+        : {
+          ...item,
+          status: 'human_needed',
+          checks: [check('configured-command', 'human_needed', `Configured command '${id}' has no executable definition.`)],
+        };
+      output.push(mergeCandidateChecks(item, executed));
       continue;
     }
     if (!packageVerification) {
-      output.push({
+      output.push(mergeCandidateChecks(item, {
         ...item,
         status: 'human_needed',
         checks: [check('release-verifier', 'human_needed', 'No private artifact verifier is available for this release surface.')],
-      });
+      }));
       continue;
     }
     const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
@@ -670,12 +692,12 @@ export async function executeReleaseCandidates(options: {
       required === platform ? 'pass' : 'human_needed', required === platform
         ? `Release checks ran on required ${required}.` : `Required ${required} release evidence is unavailable on ${platform}.`));
     const checks = [...packageVerification.checks, ...platformChecks];
-    output.push({
+    output.push(mergeCandidateChecks(item, {
       ...item,
       status: candidateStatusFromChecks(checks),
       ...(packageVerification.artifactDigest ? { artifactDigest: packageVerification.artifactDigest } : {}),
       checks,
-    });
+    }));
   }
   return output;
 }
@@ -753,16 +775,9 @@ export function selectReleaseChecks(mode: RunMode): string[] {
   return checks;
 }
 
-function versionInRange(version: string, range: string): boolean {
-  const match = /^(?:>=([0-9]+)\.([0-9]+)\.([0-9]+)\s+)?<([0-9]+)\.0\.0$/.exec(range.trim());
-  const current = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-  if (!match || !current) return true;
-  const value = current.slice(1).map(Number);
-  const lower = match[1] ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
-  const upperMajor = Number(match[4]);
-  const atLeast = !lower || value[0] > lower[0] || (value[0] === lower[0] &&
-    (value[1] > lower[1] || (value[1] === lower[1] && value[2] >= lower[2])));
-  return atLeast && value[0] < upperMajor;
+function versionInRange(version: string, range: string): { matches: boolean; valid: boolean } {
+  if (!valid(version) || !validRange(range)) return { matches: false, valid: false };
+  return { matches: satisfies(version, range), valid: true };
 }
 
 export function evaluateReleasePolicy(options: {
@@ -784,12 +799,15 @@ export function evaluateReleasePolicy(options: {
   });
   for (const [dependency, tested] of Object.entries(options.testedDependencyVersions ?? {})) {
     const range = options.compatibilityRanges?.[dependency];
+    const compatibility = range ? versionInRange(tested, range) : { matches: true, valid: true };
     checks.push({
       checkId: `compatibility-range:${dependency}`,
-      status: !range || versionInRange(tested, range) ? 'pass' : 'fail',
-      summary: !range || versionInRange(tested, range)
+      status: compatibility.matches ? 'pass' : 'fail',
+      summary: compatibility.matches
         ? `${dependency} tested version is within the declared range.`
-        : `${dependency} tested version '${tested}' is outside '${range}'.`,
+        : compatibility.valid
+          ? `${dependency} tested version '${tested}' is outside '${range}'.`
+          : `${dependency} has an invalid tested version or compatibility range ('${tested}' against '${range}').`,
     });
   }
   return { status: checks.some((check) => check.status === 'fail') ? 'fail' : 'pass', checks };
