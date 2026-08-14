@@ -2,6 +2,11 @@
   "name": "openspec-gsd",
   "version": "0.1.0",
   "description": "Risk-aware execution and assurance workflows for OpenSpec",
+  "keywords": [
+    "openspec",
+    "gsd",
+    "pi-package"
+  ],
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
@@ -21,8 +26,20 @@
       "default": "./dist/gate.js"
     }
   },
+  "pi": {
+    "extensions": [
+      "./pi/extensions/openspec-gsd.ts"
+    ],
+    "skills": [
+      "./pi/skills"
+    ],
+    "prompts": [
+      "./pi/prompts"
+    ]
+  },
   "files": [
     "dist",
+    "pi",
     "workflows",
     "openspec-extension.json",
     "README.md",
@@ -31,6 +48,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:pi": "node scripts/generate-pi-resources.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "npm run build && vitest run",
