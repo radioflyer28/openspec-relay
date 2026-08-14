@@ -1,16 +1,16 @@
-import type { GuardrailsConfigV1 } from './schemas.js';
+import type { GsdConfigV1 } from './schemas.js';
 
 export type GitOperation = 'commit' | 'branch' | 'worktree';
 export type GitAdapterCapabilitiesV1 = Record<GitOperation, boolean>;
 
-const CONFIG_KEY: Record<GitOperation, keyof GuardrailsConfigV1['git']> = {
+const CONFIG_KEY: Record<GitOperation, keyof GsdConfigV1['git']> = {
   commit: 'commits',
   branch: 'branches',
   worktree: 'worktrees',
 };
 
 export function isGitOperationAllowed(
-  config: GuardrailsConfigV1,
+  config: GsdConfigV1,
   operation: GitOperation,
   adapters: Partial<GitAdapterCapabilitiesV1> = {},
 ): boolean {
@@ -18,7 +18,7 @@ export function isGitOperationAllowed(
 }
 
 export function assertGitOperationAllowed(
-  config: GuardrailsConfigV1,
+  config: GsdConfigV1,
   operation: GitOperation,
   adapters: Partial<GitAdapterCapabilitiesV1> = {},
 ): void {
@@ -30,7 +30,7 @@ export function assertGitOperationAllowed(
 }
 
 export function plannedGitOperations(
-  config: GuardrailsConfigV1,
+  config: GsdConfigV1,
   adapters: Partial<GitAdapterCapabilitiesV1> = {},
 ): GitOperation[] {
   return (['branch', 'worktree', 'commit'] as const)

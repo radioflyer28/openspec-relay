@@ -2,20 +2,20 @@
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
-import { GUARDRAILS_VERSION } from './version.js';
+import { GSD_VERSION } from './version.js';
 import {
   ExecutionTierSchema,
-  GuardrailsConfigV2Schema,
+  GsdConfigV2Schema,
   PortableReferenceV2Schema,
   RunModeSchema,
   DeviationV1Schema,
   EvidenceV1Schema,
   RepairAttemptV1Schema,
 } from './schemas.js';
-import { checkGuardrailsRunV2, startGuardrailsRunV2 } from './runner-v2.js';
+import { checkGsdRunV2, startGsdRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
 import {
-  acceptGuardrailsGateV2,
+  acceptGsdGateV2,
   observeDebugExperimentV2,
   planDebugExperimentV2,
   recordDebugConclusionV2,
@@ -57,9 +57,9 @@ async function readInput(filename: string): Promise<unknown> {
 }
 
 const program = new Command()
-  .name('openspec-guardrails')
+  .name('openspec-gsd')
   .description('Risk-aware execution and assurance for OpenSpec changes')
-  .version(GUARDRAILS_VERSION);
+  .version(GSD_VERSION);
 
 program.command('run')
   .argument('<change>')
@@ -75,7 +75,7 @@ program.command('run')
   .action(async (change, options) => {
     const mode = RunModeSchema.parse(options.mode);
     const requestedTier = ExecutionTierSchema.parse(options.tier);
-    const config = GuardrailsConfigV2Schema.partial().parse({
+    const config = GsdConfigV2Schema.partial().parse({
       mode,
       requestedTier,
       allowAgentDispatch: Boolean(options.enableAgentDispatch),
@@ -86,9 +86,9 @@ program.command('run')
         worktrees: Boolean(options.enableWorktrees),
       },
     });
-    const result = await startGuardrailsRunV2({ change, projectRoot: options.project, config });
+    const result = await startGsdRunV2({ change, projectRoot: options.project, config });
     print(options.json ? result :
-      `Guardrails ${result.run.mode} run ${result.run.runId} started at ${result.run.tier}; ` +
+      `OpenSpec GSD ${result.run.mode} run ${result.run.runId} started at ${result.run.tier}; ` +
       `${result.run.tasks.length} task(s), ${result.run.executionWaves.length} wave(s); ` +
       `${result.blockedBeforeExecution ? 'readiness blocks implementation.' : 'readiness is recorded before implementation.'}`,
     Boolean(options.json));
@@ -99,9 +99,9 @@ program.command('check')
   .option('--project <path>')
   .option('--json')
   .action(async (change, options) => {
-    const result = await checkGuardrailsRunV2({ change, projectRoot: options.project });
+    const result = await checkGsdRunV2({ change, projectRoot: options.project });
     print(options.json ? result :
-      `Guardrails assurance: ${result.assurance.status}; ` +
+      `OpenSpec GSD assurance: ${result.assurance.status}; ` +
       `${result.assurance.checks.filter((check) => check.status === 'fail' || check.status === 'error').length} blocking check(s).`,
     Boolean(options.json));
   });
@@ -113,7 +113,7 @@ program.command('run-status')
   .action(async (change, options) => {
     const status = await getRunStatusV2({ change, projectRoot: options.project });
     const human = status.integrity.status === 'error'
-      ? `${status.changeName}: error; Guardrails state integrity error: ${status.integrity.summary} ` +
+      ? `${status.changeName}: error; OpenSpec GSD execution-record integrity error: ${status.integrity.summary} ` +
         `${status.nextActions[0] ?? 'Regenerate projections before relying on status.'}`
       : `${status.changeName}: ${status.status}; mode=${status.mode}; tier=${status.tier}; ` +
         `tasks=${status.tasks.complete}/${status.tasks.total}; assurance=${status.assuranceStatus}; ` +
@@ -271,7 +271,7 @@ program.command('uat')
   });
 
 const record = program.command('record')
-  .description('Submit validated workflow results to the Guardrails orchestrator');
+  .description('Submit validated workflow results to the OpenSpec GSD orchestrator');
 
 record.command('task')
   .argument('<change>')
@@ -370,7 +370,7 @@ program.command('accept')
   .option('--event-id <id>')
   .option('--project <path>')
   .action(async (change, gateId, options) => {
-    print(await acceptGuardrailsGateV2({
+    print(await acceptGsdGateV2({
       change,
       projectRoot: options.project,
       gateId,

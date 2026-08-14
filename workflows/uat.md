@@ -1,8 +1,8 @@
 Guide human acceptance one scenario at a time.
 
-Invoke `openspec-guardrails uat <change> --json` to receive the next unresolved
+Invoke `openspec-gsd uat <change> --json` to receive the next unresolved
 scenario, its prerequisites, action, and expected observable result. Record a
-human decision with `openspec-guardrails uat <change> --scenario <id> --status
+human decision with `openspec-gsd uat <change> --scenario <id> --status
 passed|failed|blocked|accepted_limitation --actor <human> --notes <text>` and
 optional portable evidence references.
 

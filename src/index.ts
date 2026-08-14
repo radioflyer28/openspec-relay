@@ -3,19 +3,19 @@
  *
  * Canonical event and projection writers are intentionally not exported. Role
  * adapters return structured results; only these orchestrated operations may
- * commit them to Guardrails state.
+ * commit them to OpenSpec GSD execution records.
  */
-export { GUARDRAILS_VERSION } from './version.js';
-export { guardrailsAssuranceGate } from './gate.js';
+export { GSD_VERSION } from './version.js';
+export { gsdAssuranceGate } from './gate.js';
 export {
   DEFAULT_HOST_CAPABILITIES,
-  checkGuardrailsRunV2,
-  startGuardrailsRunV2,
+  checkGsdRunV2,
+  startGsdRunV2,
   type StartRunResultV2,
 } from './runner-v2.js';
 export { getRunStatusV2, type RunStatusV2 } from './status.js';
 export {
-  acceptGuardrailsGateV2,
+  acceptGsdGateV2,
   observeDebugExperimentV2,
   planDebugExperimentV2,
   presentUatV2,
@@ -51,17 +51,17 @@ export {
   type TierAdaptersV1,
   type TierDecisionV1,
 } from './tiers.js';
-export { loadGuardrailsConfigV2 } from './config.js';
+export { loadGsdConfigV2 } from './config.js';
 export {
   ExecutionTierSchema,
-  GuardrailsConfigV2Schema,
+  GsdConfigV2Schema,
   PortableReferenceV2Schema,
   RunModeSchema,
   TddPolicySchema,
   type ExecutionTier,
-  type GuardrailsAssuranceV2,
-  type GuardrailsConfigV2,
-  type GuardrailsRunV2,
+  type GsdAssuranceV2,
+  type GsdConfigV2,
+  type GsdRunV2,
   type PortableReferenceV2,
   type RunMode,
   type TddPolicy,

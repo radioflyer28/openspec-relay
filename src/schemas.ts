@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-/** The latest generated-state format written by Guardrails. */
-export const GUARDRAILS_STATE_VERSION = 2 as const;
+/** The latest generated-state format written by OpenSpec GSD. */
+export const GSD_STATE_VERSION = 2 as const;
 /** Retained solely for parsing and migrating pre-v2 projections. */
-export const GUARDRAILS_V1_STATE_VERSION = 1 as const;
+export const GSD_V1_STATE_VERSION = 1 as const;
 
 export const RunModeSchema = z.enum(['quick', 'guarded', 'full']);
 export const ExecutionTierSchema = z.enum(['tier0', 'tier1', 'tier2']);
@@ -35,8 +35,8 @@ const TaskOverrideV1Schema = z.object({
   tdd: TddPolicySchema.optional(),
 }).strict();
 
-export const GuardrailsConfigV1Schema = z.object({
-  version: z.literal(GUARDRAILS_V1_STATE_VERSION).default(GUARDRAILS_V1_STATE_VERSION),
+export const GsdConfigV1Schema = z.object({
+  version: z.literal(GSD_V1_STATE_VERSION).default(GSD_V1_STATE_VERSION),
   mode: RunModeSchema.default('guarded'),
   tdd: TddPolicySchema.default('auto'),
   repairLimit: z.number().int().min(0).max(10).default(2),
@@ -151,8 +151,8 @@ export const VerificationFindingV1Schema = z.object({
   origin: z.enum(['reviewer', 'verifier', 'human']),
 }).strict();
 
-export const GuardrailsRunV1Schema = z.object({
-  version: z.literal(GUARDRAILS_V1_STATE_VERSION),
+export const GsdRunV1Schema = z.object({
+  version: z.literal(GSD_V1_STATE_VERSION),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   changeRef: z.string().min(1),
@@ -167,12 +167,12 @@ export const GuardrailsRunV1Schema = z.object({
   gateIds: z.array(z.string().min(1)),
   deviations: z.array(DeviationV1Schema).default([]),
   repairIds: z.array(z.string().min(1)).default([]),
-  config: GuardrailsConfigV1Schema,
+  config: GsdConfigV1Schema,
   assuranceDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).strict();
 
-export const GuardrailsAssuranceV1Schema = z.object({
-  version: z.literal(GUARDRAILS_V1_STATE_VERSION),
+export const GsdAssuranceV1Schema = z.object({
+  version: z.literal(GSD_V1_STATE_VERSION),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   mode: RunModeSchema,
@@ -187,8 +187,8 @@ export const GuardrailsAssuranceV1Schema = z.object({
   unresolvedHumanActions: z.array(z.string().min(1)).default([]),
 }).strict();
 
-export const GuardrailsReportV1Schema = z.object({
-  version: z.literal(GUARDRAILS_V1_STATE_VERSION),
+export const GsdReportV1Schema = z.object({
+  version: z.literal(GSD_V1_STATE_VERSION),
   reportId: z.string().min(1),
   runId: z.string().min(1),
   kind: z.enum(['review', 'verification', 'security', 'integration', 'ui', 'ai-evaluation', 'compatibility', 'documentation', 'human-uat']),
@@ -198,18 +198,18 @@ export const GuardrailsReportV1Schema = z.object({
   evidenceRefs: z.array(z.string().min(1)),
 }).strict();
 
-export const GuardrailsEventActorV1Schema = z.object({
+export const GsdEventActorV1Schema = z.object({
   kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host']),
   id: z.string().min(1).optional(),
 }).strict();
 
-export const GuardrailsEventProvenanceV1Schema = z.object({
+export const GsdEventProvenanceV1Schema = z.object({
   origin: z.string().min(1),
   adapter: z.string().min(1).optional(),
   command: z.string().min(1).optional(),
 }).strict();
 
-export const GuardrailsEventPayloadV1Schema = z.discriminatedUnion('type', [
+export const GsdEventPayloadV1Schema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('task.transition'),
     taskId: z.string().min(1),
@@ -230,56 +230,56 @@ export const GuardrailsEventPayloadV1Schema = z.discriminatedUnion('type', [
   }).strict(),
 ]);
 
-export const GuardrailsEventEnvelopeV1Schema = z.object({
-  version: z.literal(GUARDRAILS_V1_STATE_VERSION),
+export const GsdEventEnvelopeV1Schema = z.object({
+  version: z.literal(GSD_V1_STATE_VERSION),
   eventId: z.string().min(1),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   occurredAt: z.string().datetime(),
   sourceDigests: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/)),
-  actor: GuardrailsEventActorV1Schema,
-  provenance: GuardrailsEventProvenanceV1Schema,
+  actor: GsdEventActorV1Schema,
+  provenance: GsdEventProvenanceV1Schema,
   payloadDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  payload: GuardrailsEventPayloadV1Schema,
+  payload: GsdEventPayloadV1Schema,
 }).strict();
 
-export const GuardrailsEventStoreSeedV1Schema = z.object({
+export const GsdEventStoreSeedV1Schema = z.object({
   changeRef: z.string().min(1),
   mode: RunModeSchema,
   tier: ExecutionTierSchema,
   status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']),
   startedAt: z.string().datetime(),
   gateIds: z.array(z.string().min(1)),
-  config: GuardrailsConfigV1Schema,
+  config: GsdConfigV1Schema,
   checks: z.array(AssuranceCheckV1Schema),
   scenarioCoverage: z.array(ScenarioCoverageV1Schema),
 }).strict();
 
-export const GuardrailsEventStoreV1Schema = z.object({
-  version: z.literal(GUARDRAILS_V1_STATE_VERSION),
-  owner: z.literal('openspec-guardrails'),
+export const GsdEventStoreV1Schema = z.object({
+  version: z.literal(GSD_V1_STATE_VERSION),
+  owner: z.literal('openspec-gsd'),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   createdAt: z.string().datetime(),
-  seed: GuardrailsEventStoreSeedV1Schema,
-  events: z.array(GuardrailsEventEnvelopeV1Schema),
+  seed: GsdEventStoreSeedV1Schema,
+  events: z.array(GsdEventEnvelopeV1Schema),
 }).strict();
 
 export type RunMode = z.infer<typeof RunModeSchema>;
 export type ExecutionTier = z.infer<typeof ExecutionTierSchema>;
 export type TddPolicy = z.infer<typeof TddPolicySchema>;
-export type GuardrailsConfigV1 = z.infer<typeof GuardrailsConfigV1Schema>;
+export type GsdConfigV1 = z.infer<typeof GsdConfigV1Schema>;
 export type TaskNodeV1 = z.infer<typeof TaskNodeV1Schema>;
 export type EvidenceV1 = z.infer<typeof EvidenceV1Schema>;
 export type RepairAttemptV1 = z.infer<typeof RepairAttemptV1Schema>;
 export type AssuranceCheckV1 = z.infer<typeof AssuranceCheckV1Schema>;
 export type VerificationFindingV1 = z.infer<typeof VerificationFindingV1Schema>;
-export type GuardrailsRunV1 = z.infer<typeof GuardrailsRunV1Schema>;
-export type GuardrailsAssuranceV1 = z.infer<typeof GuardrailsAssuranceV1Schema>;
-export type GuardrailsReportV1 = z.infer<typeof GuardrailsReportV1Schema>;
-export type GuardrailsEventPayloadV1 = z.infer<typeof GuardrailsEventPayloadV1Schema>;
-export type GuardrailsEventEnvelopeV1 = z.infer<typeof GuardrailsEventEnvelopeV1Schema>;
-export type GuardrailsEventStoreV1 = z.infer<typeof GuardrailsEventStoreV1Schema>;
+export type GsdRunV1 = z.infer<typeof GsdRunV1Schema>;
+export type GsdAssuranceV1 = z.infer<typeof GsdAssuranceV1Schema>;
+export type GsdReportV1 = z.infer<typeof GsdReportV1Schema>;
+export type GsdEventPayloadV1 = z.infer<typeof GsdEventPayloadV1Schema>;
+export type GsdEventEnvelopeV1 = z.infer<typeof GsdEventEnvelopeV1Schema>;
+export type GsdEventStoreV1 = z.infer<typeof GsdEventStoreV1Schema>;
 
 export const PortableReferenceV2Schema = z.object({
   referenceId: z.string().min(1),
@@ -342,7 +342,7 @@ export const ReleaseAssuranceConfigV2Schema = z.object({
   message: 'release assurance disabled requires a recorded reason',
 });
 
-export const GuardrailsFeatureConfigV2Schema = z.object({
+export const GsdFeatureConfigV2Schema = z.object({
   repositoryContext: RepositoryAnalysisConfigV2Schema.default({ enabled: true, boundaries: [] }),
   readiness: ReadinessConfigV2Schema.default({ rollout: 'required', independentRequired: true }),
   debug: DebugConfigV2Schema.default({ enabled: true, automaticTransition: true }),
@@ -352,9 +352,9 @@ export const GuardrailsFeatureConfigV2Schema = z.object({
   }),
 }).strict();
 
-export const GuardrailsConfigV2Schema = GuardrailsConfigV1Schema.omit({ version: true }).extend({
-  version: z.literal(GUARDRAILS_STATE_VERSION).default(GUARDRAILS_STATE_VERSION),
-  features: GuardrailsFeatureConfigV2Schema.default({
+export const GsdConfigV2Schema = GsdConfigV1Schema.omit({ version: true }).extend({
+  version: z.literal(GSD_STATE_VERSION).default(GSD_STATE_VERSION),
+  features: GsdFeatureConfigV2Schema.default({
     repositoryContext: { enabled: true, boundaries: [] },
     readiness: { rollout: 'required', independentRequired: true },
     debug: { enabled: true, automaticTransition: true },
@@ -570,12 +570,12 @@ export const AssuranceCheckV2Schema = AssuranceCheckV1Schema.extend({
   ]),
 }).strict();
 
-export const GuardrailsEventActorV2Schema = z.object({
+export const GsdEventActorV2Schema = z.object({
   kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host', 'analyzer', 'release_driver']),
   id: z.string().min(1).optional(),
 }).strict();
 
-export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
+export const GsdEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('task.transition'),
     taskId: z.string().min(1),
@@ -628,31 +628,31 @@ export const GuardrailsEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('human.disposition_recorded'), subjectId: z.string().min(1), disposition: z.enum(['accepted_risk', 'human_needed']), actor: z.string().min(1), reason: z.string().min(1), scope: z.string().min(1), expiry: z.string().datetime().optional() }).strict(),
 ]);
 
-export const GuardrailsEventEnvelopeV2Schema = z.object({
-  version: z.literal(GUARDRAILS_STATE_VERSION),
+export const GsdEventEnvelopeV2Schema = z.object({
+  version: z.literal(GSD_STATE_VERSION),
   eventId: z.string().min(1),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   occurredAt: z.string().datetime(),
   sourceDigests: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/)),
-  actor: GuardrailsEventActorV2Schema,
-  provenance: GuardrailsEventProvenanceV1Schema,
+  actor: GsdEventActorV2Schema,
+  provenance: GsdEventProvenanceV1Schema,
   payloadDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  payload: GuardrailsEventPayloadV2Schema,
+  payload: GsdEventPayloadV2Schema,
 }).strict();
 
-export const GuardrailsRunV2Schema = GuardrailsRunV1Schema.omit({ version: true, config: true }).extend({
-  version: z.literal(GUARDRAILS_STATE_VERSION),
-  config: GuardrailsConfigV2Schema,
+export const GsdRunV2Schema = GsdRunV1Schema.omit({ version: true, config: true }).extend({
+  version: z.literal(GSD_STATE_VERSION),
+  config: GsdConfigV2Schema,
   stateRevision: z.string().regex(/^[a-f0-9]{64}$/),
   repositoryContextId: z.string().min(1).optional(),
   readinessResultId: z.string().min(1).optional(),
 }).strict();
 
-export const GuardrailsAssuranceV2Schema = GuardrailsAssuranceV1Schema.omit({
+export const GsdAssuranceV2Schema = GsdAssuranceV1Schema.omit({
   version: true, checks: true, findings: true,
 }).extend({
-  version: z.literal(GUARDRAILS_STATE_VERSION),
+  version: z.literal(GSD_STATE_VERSION),
   checks: z.array(AssuranceCheckV2Schema),
   findings: z.array(FindingLifecycleRecordV2Schema),
   repositoryContext: RepositoryContextV2Schema.optional(),
@@ -662,9 +662,9 @@ export const GuardrailsAssuranceV2Schema = GuardrailsAssuranceV1Schema.omit({
   releaseCandidates: z.array(ReleaseCandidateV2Schema).default([]),
 }).strict();
 
-export const GuardrailsEventStoreV2Schema = z.object({
-  version: z.literal(GUARDRAILS_STATE_VERSION),
-  owner: z.literal('openspec-guardrails'),
+export const GsdEventStoreV2Schema = z.object({
+  version: z.literal(GSD_STATE_VERSION),
+  owner: z.literal('openspec-gsd'),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   createdAt: z.string().datetime(),
@@ -675,15 +675,15 @@ export const GuardrailsEventStoreV2Schema = z.object({
     status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']),
     startedAt: z.string().datetime(),
     gateIds: z.array(z.string().min(1)),
-    config: GuardrailsConfigV2Schema,
+    config: GsdConfigV2Schema,
     checks: z.array(AssuranceCheckV2Schema),
     scenarioCoverage: z.array(ScenarioCoverageV1Schema),
   }).strict(),
-  events: z.array(GuardrailsEventEnvelopeV2Schema),
+  events: z.array(GsdEventEnvelopeV2Schema),
 }).strict();
 
 export type PortableReferenceV2 = z.infer<typeof PortableReferenceV2Schema>;
-export type GuardrailsConfigV2 = z.infer<typeof GuardrailsConfigV2Schema>;
+export type GsdConfigV2 = z.infer<typeof GsdConfigV2Schema>;
 export type ConfiguredReleaseCommandV2 = z.infer<typeof ConfiguredReleaseCommandV2Schema>;
 export type RepositoryContextClaimV2 = z.infer<typeof RepositoryContextClaimV2Schema>;
 export type RepositoryContextV2 = z.infer<typeof RepositoryContextV2Schema>;
@@ -699,9 +699,9 @@ export type DebugVerificationV2 = z.infer<typeof DebugVerificationV2Schema>;
 export type DebugSessionV2 = z.infer<typeof DebugSessionV2Schema>;
 export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;
-export type GuardrailsEventPayloadV2 = z.infer<typeof GuardrailsEventPayloadV2Schema>;
-export type GuardrailsEventActorV2 = z.infer<typeof GuardrailsEventActorV2Schema>;
-export type GuardrailsEventEnvelopeV2 = z.infer<typeof GuardrailsEventEnvelopeV2Schema>;
-export type GuardrailsRunV2 = z.infer<typeof GuardrailsRunV2Schema>;
-export type GuardrailsAssuranceV2 = z.infer<typeof GuardrailsAssuranceV2Schema>;
-export type GuardrailsEventStoreV2 = z.infer<typeof GuardrailsEventStoreV2Schema>;
+export type GsdEventPayloadV2 = z.infer<typeof GsdEventPayloadV2Schema>;
+export type GsdEventActorV2 = z.infer<typeof GsdEventActorV2Schema>;
+export type GsdEventEnvelopeV2 = z.infer<typeof GsdEventEnvelopeV2Schema>;
+export type GsdRunV2 = z.infer<typeof GsdRunV2Schema>;
+export type GsdAssuranceV2 = z.infer<typeof GsdAssuranceV2Schema>;
+export type GsdEventStoreV2 = z.infer<typeof GsdEventStoreV2Schema>;

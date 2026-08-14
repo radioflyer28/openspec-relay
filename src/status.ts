@@ -1,17 +1,17 @@
-import { loadCanonicalGuardrailsRecords } from './canonical-state.js';
-import type { GuardrailsAssuranceV2, GuardrailsRunV2 } from './schemas.js';
+import { loadCanonicalGsdRecords } from './canonical-state.js';
+import type { GsdAssuranceV2, GsdRunV2 } from './schemas.js';
 import { resolveChangeDirectory } from './state.js';
 
 export interface RunStatusV2 {
   changeName: string;
-  mode: GuardrailsRunV2['mode'];
-  tier: GuardrailsRunV2['tier'];
-  status: GuardrailsRunV2['status'];
+  mode: GsdRunV2['mode'];
+  tier: GsdRunV2['tier'];
+  status: GsdRunV2['status'];
   tasks: { total: number; complete: number; blocked: number };
-  checks: GuardrailsAssuranceV2['checks'];
-  assuranceStatus: GuardrailsAssuranceV2['status'];
+  checks: GsdAssuranceV2['checks'];
+  assuranceStatus: GsdAssuranceV2['status'];
   repositoryContext: { status: 'current' | 'stale' | 'unavailable' | 'missing' };
-  readiness: { status: NonNullable<GuardrailsAssuranceV2['readiness']>['status'] | 'missing'; issueCount: number };
+  readiness: { status: NonNullable<GsdAssuranceV2['readiness']>['status'] | 'missing'; issueCount: number };
   findings: Record<string, number>;
   debugSessions: { active: string[]; humanNeeded: string[] };
   uat: { pending: string[]; acceptedLimitations: string[] };
@@ -28,7 +28,7 @@ export async function getRunStatusV2(options: {
   projectRoot?: string;
 }): Promise<RunStatusV2> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const canonical = await loadCanonicalGuardrailsRecords(resolved.changeDir);
+  const canonical = await loadCanonicalGsdRecords(resolved.changeDir);
   const { run, assurance } = canonical.projection;
   const integrityError = !canonical.projectionsMatch;
   const findings: Record<string, number> = {};
@@ -39,7 +39,7 @@ export async function getRunStatusV2(options: {
     ['pending', 'fail', 'human_needed', 'error'].includes(candidate.status));
   const nextActions = [
     ...(integrityError
-      ? ['Regenerate projections from canonical Guardrails history with openspec-guardrails check.'] : []),
+      ? ['Regenerate projections from canonical OpenSpec GSD history with openspec-gsd check.'] : []),
     ...(assurance.repositoryContext?.status === 'stale' ? ['Refresh stale repository context.'] : []),
     ...(assurance.readiness && assurance.readiness.status !== 'pass'
       ? assurance.readiness.issues.filter((issue) => issue.blocking).flatMap((issue) => issue.remediation) : []),
@@ -84,7 +84,7 @@ export async function getRunStatusV2(options: {
     staleEvidenceCount: assurance.staleEvidenceIds.length,
     assuranceDigestMatches: canonical.projectionsMatch,
     integrity: integrityError
-      ? { status: 'error', summary: 'Generated projections do not match canonical Guardrails history.' }
-      : { status: 'pass', summary: 'Generated projections match canonical Guardrails history.' },
+      ? { status: 'error', summary: 'Generated projections do not match canonical OpenSpec GSD history.' }
+      : { status: 'pass', summary: 'Generated projections match canonical OpenSpec GSD history.' },
   };
 }

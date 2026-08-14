@@ -1,5 +1,5 @@
 {
-  "name": "openspec-guardrails",
+  "name": "openspec-gsd",
   "version": "0.1.0",
   "description": "Risk-aware execution and assurance workflows for OpenSpec",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "node": ">=20.19.0"
   },
   "bin": {
-    "openspec-guardrails": "./dist/cli.js"
+    "openspec-gsd": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@fission-ai/openspec": ">=1.8.0-guardrails.1 <2.0.0"
+    "@fission-ai/openspec": ">=1.8.0-gsd.1 <2.0.0"
   },
   "dependencies": {
     "commander": "14.0.3",

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { acceptGuardrailsGateV2, startGuardrailsRunV2 } from '../src/index.js';
+import { acceptGsdGateV2, startGsdRunV2 } from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -31,17 +31,17 @@ describe('cross-repository archive gate flow', () => {
     expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
     const linked = openspec(root, ['extension', 'link', path.resolve('.')]);
     expect(linked.status, linked.stderr || linked.stdout).toBe(0);
-    const doctor = openspec(root, ['extension', 'doctor', 'guardrails']);
+    const doctor = openspec(root, ['extension', 'doctor', 'gsd']);
     expect(doctor.status, doctor.stderr || doctor.stdout).toBe(0);
     expect(doctor.stdout).toContain('reconciliation: ok');
     const generatedRun = await fs.readFile(
       path.join(root, '.agents', 'skills', 'openspec-run', 'SKILL.md'),
       'utf8',
     );
-    expect(generatedRun).toContain('openspec-extension:guardrails@');
-    expect(generatedRun).toContain('guardrails record');
+    expect(generatedRun).toContain('openspec-extension:gsd@');
+    expect(generatedRun).toContain('gsd record');
 
-    const run = await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    const run = await startGsdRunV2({ change: 'demo', projectRoot: root });
     expect(run.run.mode).toBe('guarded');
 
     const blocked = openspec(root, [
@@ -53,10 +53,10 @@ describe('cross-repository archive gate flow', () => {
       status: [expect.objectContaining({ code: 'archive_gate_blocked' })],
     });
 
-    await expect(acceptGuardrailsGateV2({
+    await expect(acceptGsdGateV2({
       change: 'demo',
       projectRoot: root,
-      gateId: 'guardrails.assurance',
+      gateId: 'gsd.assurance',
       actor: 'integration-test',
     })).rejects.toThrow(/no current human-needed result/i);
     const stillBlocked = openspec(root, [
@@ -65,12 +65,12 @@ describe('cross-repository archive gate flow', () => {
     expect(stillBlocked.status).not.toBe(0);
     const archived = openspec(root, [
       'archive', 'demo', '--yes', '--no-validate', '--skip-specs', '--json',
-      '--override-gate', 'guardrails.assurance', '--reason', 'Cross-repository fixture intentionally leaves deterministic checks pending.',
+      '--override-gate', 'gsd.assurance', '--reason', 'Cross-repository fixture intentionally leaves deterministic checks pending.',
     ]);
     expect(archived.status, archived.stderr || archived.stdout).toBe(0);
     const archiveRoot = path.join(root, 'openspec', 'changes', 'archive');
     const archivedName = (await fs.readdir(archiveRoot)).find((name) => name.endsWith('-demo'))!;
-    await expect(fs.access(path.join(archiveRoot, archivedName, '.guardrails', 'assurance.json')))
+    await expect(fs.access(path.join(archiveRoot, archivedName, '.openspec-gsd', 'assurance.json')))
       .resolves.toBeUndefined();
     const gateRecord = JSON.parse(await fs.readFile(
       path.join(archiveRoot, archivedName, '.openspec-gates.json'), 'utf8',
@@ -85,11 +85,11 @@ describe('cross-repository archive gate flow', () => {
     const { root } = await createOpenSpecProject('override-demo');
     const linked = openspec(root, ['extension', 'link', path.resolve('.')]);
     expect(linked.status, linked.stderr || linked.stdout).toBe(0);
-    await startGuardrailsRunV2({ change: 'override-demo', projectRoot: root });
+    await startGsdRunV2({ change: 'override-demo', projectRoot: root });
 
     const archived = openspec(root, [
       'archive', 'override-demo', '--yes', '--no-validate', '--skip-specs', '--json',
-      '--override-gate', 'guardrails.assurance',
+      '--override-gate', 'gsd.assurance',
       '--reason', 'Release owner accepted the documented residual risk.',
     ]);
     expect(archived.status, archived.stderr || archived.stdout).toBe(0);

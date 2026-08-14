@@ -2,14 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
-  GuardrailsAssuranceV1Schema,
-  GuardrailsAssuranceV2Schema,
-  GuardrailsRunV1Schema,
-  GuardrailsRunV2Schema,
-  type GuardrailsAssuranceV1,
-  type GuardrailsAssuranceV2,
-  type GuardrailsRunV1,
-  type GuardrailsRunV2,
+  GsdAssuranceV1Schema,
+  GsdAssuranceV2Schema,
+  GsdRunV1Schema,
+  GsdRunV2Schema,
+  type GsdAssuranceV1,
+  type GsdAssuranceV2,
+  type GsdRunV1,
+  type GsdRunV2,
 } from './schemas.js';
 
 export interface ResolvedChange {
@@ -21,16 +21,16 @@ export interface ResolvedChange {
 }
 
 /**
- * Every generated path owned by Guardrails. Values are portable identities;
- * callers must use guardrailsGeneratedPath() at a filesystem boundary.
+ * Every generated path owned by OpenSpec GSD. Values are portable identities;
+ * callers must use gsdGeneratedPath() at a filesystem boundary.
  */
-export const GUARDRAILS_GENERATED_FILES = {
+export const GSD_GENERATED_FILES = {
   run: 'run.json',
   assurance: 'assurance.json',
   events: 'events.json',
 } as const;
 
-export type GuardrailsGeneratedFile = keyof typeof GUARDRAILS_GENERATED_FILES;
+export type GsdGeneratedFile = keyof typeof GSD_GENERATED_FILES;
 
 async function isDirectory(candidate: string): Promise<boolean> {
   try {
@@ -108,24 +108,24 @@ export async function resolveChangeDirectory(options: {
   };
 }
 
-export function guardrailsDirectory(changeDir: string): string {
-  return path.join(changeDir, '.guardrails');
+export function gsdDirectory(changeDir: string): string {
+  return path.join(changeDir, '.openspec-gsd');
 }
 
-export function guardrailsGeneratedPath(
+export function gsdGeneratedPath(
   changeDir: string,
-  file: GuardrailsGeneratedFile,
+  file: GsdGeneratedFile,
   pathApi: path.PlatformPath = path,
 ): string {
-  return pathApi.join(guardrailsDirectory(changeDir), ...GUARDRAILS_GENERATED_FILES[file].split('/'));
+  return pathApi.join(gsdDirectory(changeDir), ...GSD_GENERATED_FILES[file].split('/'));
 }
 
 export function runStatePath(changeDir: string): string {
-  return guardrailsGeneratedPath(changeDir, 'run');
+  return gsdGeneratedPath(changeDir, 'run');
 }
 
 export function assuranceStatePath(changeDir: string): string {
-  return guardrailsGeneratedPath(changeDir, 'assurance');
+  return gsdGeneratedPath(changeDir, 'assurance');
 }
 
 function contained(root: string, candidate: string): boolean {
@@ -134,48 +134,48 @@ function contained(root: string, candidate: string): boolean {
 }
 
 /**
- * Validate that a registered Guardrails path is contained by the active change
+ * Validate that a registered OpenSpec GSD path is contained by the active change
  * and that its existing ancestors are ordinary directories rather than links.
  */
-export async function assertGuardrailsGeneratedPath(options: {
+export async function assertGsdGeneratedPath(options: {
   changeDir: string;
   filename: string;
   createParents?: boolean;
   allowMissingFile?: boolean;
 }): Promise<string> {
   const logicalChangeRoot = path.resolve(options.changeDir);
-  const logicalGuardrailsRoot = path.join(logicalChangeRoot, '.guardrails');
+  const logicalGsdRoot = path.join(logicalChangeRoot, '.openspec-gsd');
   const target = path.resolve(options.filename);
-  if (!contained(logicalGuardrailsRoot, target)) {
-    throw new Error(`Generated Guardrails path '${target}' escapes the active change workspace.`);
+  if (!contained(logicalGsdRoot, target)) {
+    throw new Error(`Generated OpenSpec GSD path '${target}' escapes the active change workspace.`);
   }
   const realChangeRoot = await fs.realpath(logicalChangeRoot);
-  const expectedRealRoot = path.join(realChangeRoot, '.guardrails');
+  const expectedRealRoot = path.join(realChangeRoot, '.openspec-gsd');
   try {
-    const rootStat = await fs.lstat(logicalGuardrailsRoot);
+    const rootStat = await fs.lstat(logicalGsdRoot);
     if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
-      throw new Error(`Generated Guardrails directory '${logicalGuardrailsRoot}' must be a real directory, not a symlink or junction.`);
+      throw new Error(`Generated OpenSpec GSD directory '${logicalGsdRoot}' must be a real directory, not a symlink or junction.`);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.createParents) throw error;
-    await fs.mkdir(logicalGuardrailsRoot).catch((mkdirError) => {
+    await fs.mkdir(logicalGsdRoot).catch((mkdirError) => {
       if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError;
     });
   }
-  const realGuardrailsRoot = await fs.realpath(logicalGuardrailsRoot);
-  if (path.normalize(realGuardrailsRoot) !== path.normalize(expectedRealRoot)) {
-    throw new Error(`Generated Guardrails directory '${logicalGuardrailsRoot}' resolves outside the active change workspace.`);
+  const realGsdRoot = await fs.realpath(logicalGsdRoot);
+  if (path.normalize(realGsdRoot) !== path.normalize(expectedRealRoot)) {
+    throw new Error(`Generated OpenSpec GSD directory '${logicalGsdRoot}' resolves outside the active change workspace.`);
   }
 
-  const relative = path.relative(logicalGuardrailsRoot, target);
+  const relative = path.relative(logicalGsdRoot, target);
   const parentSegments = path.dirname(relative) === '.' ? [] : path.dirname(relative).split(path.sep);
-  let current = logicalGuardrailsRoot;
+  let current = logicalGsdRoot;
   for (const segment of parentSegments) {
     current = path.join(current, segment);
     try {
       const stat = await fs.lstat(current);
       if (stat.isSymbolicLink() || !stat.isDirectory()) {
-        throw new Error(`Generated Guardrails ancestor '${current}' must be a real directory.`);
+        throw new Error(`Generated OpenSpec GSD ancestor '${current}' must be a real directory.`);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.createParents) throw error;
@@ -184,21 +184,21 @@ export async function assertGuardrailsGeneratedPath(options: {
       });
     }
     const realCurrent = await fs.realpath(current);
-    if (!contained(realGuardrailsRoot, realCurrent)) {
-      throw new Error(`Generated Guardrails ancestor '${current}' resolves outside the active change workspace.`);
+    if (!contained(realGsdRoot, realCurrent)) {
+      throw new Error(`Generated OpenSpec GSD ancestor '${current}' resolves outside the active change workspace.`);
     }
   }
   try {
     const targetStat = await fs.lstat(target);
-    if (targetStat.isSymbolicLink()) throw new Error(`Generated Guardrails file '${target}' must not be a symlink.`);
+    if (targetStat.isSymbolicLink()) throw new Error(`Generated OpenSpec GSD file '${target}' must not be a symlink.`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.allowMissingFile) throw error;
   }
   return target;
 }
 
-export async function readGuardrailsText(changeDir: string, filename: string): Promise<string> {
-  const safe = await assertGuardrailsGeneratedPath({ changeDir, filename });
+export async function readGsdText(changeDir: string, filename: string): Promise<string> {
+  const safe = await assertGsdGeneratedPath({ changeDir, filename });
   return fs.readFile(safe, 'utf8');
 }
 
@@ -244,13 +244,13 @@ export async function atomicWriteText(
   }
 }
 
-export async function atomicWriteGuardrailsJson(
+export async function atomicWriteGsdJson(
   changeDir: string,
   filename: string,
   value: unknown,
   operations: { beforeCommit?: () => Promise<void>; failBeforeCommit?: boolean } = {},
 ): Promise<void> {
-  const safe = await assertGuardrailsGeneratedPath({
+  const safe = await assertGsdGeneratedPath({
     changeDir, filename, createParents: true, allowMissingFile: true,
   });
   await operations.beforeCommit?.();
@@ -259,70 +259,70 @@ export async function atomicWriteGuardrailsJson(
       ? { rename: async () => { throw new Error('interrupted'); } }
       : {}),
   });
-  await assertGuardrailsGeneratedPath({ changeDir, filename: safe });
+  await assertGsdGeneratedPath({ changeDir, filename: safe });
 }
 
-export async function removeGuardrailsGeneratedFile(
+export async function removeGsdGeneratedFile(
   changeDir: string,
   filename: string,
   operations: { beforeRemove?: () => Promise<void> } = {},
 ): Promise<void> {
-  const safe = await assertGuardrailsGeneratedPath({ changeDir, filename, allowMissingFile: true });
+  const safe = await assertGsdGeneratedPath({ changeDir, filename, allowMissingFile: true });
   await operations.beforeRemove?.();
-  await assertGuardrailsGeneratedPath({ changeDir, filename: safe, allowMissingFile: true });
+  await assertGsdGeneratedPath({ changeDir, filename: safe, allowMissingFile: true });
   await fs.rm(safe, { force: true });
 }
 
-export async function readRunState(changeDir: string): Promise<GuardrailsRunV1> {
-  return GuardrailsRunV1Schema.parse(JSON.parse(await readGuardrailsText(changeDir, runStatePath(changeDir))));
+export async function readRunState(changeDir: string): Promise<GsdRunV1> {
+  return GsdRunV1Schema.parse(JSON.parse(await readGsdText(changeDir, runStatePath(changeDir))));
 }
 
-export async function readAssuranceState(changeDir: string): Promise<GuardrailsAssuranceV1> {
-  return GuardrailsAssuranceV1Schema.parse(
-    JSON.parse(await readGuardrailsText(changeDir, assuranceStatePath(changeDir))),
+export async function readAssuranceState(changeDir: string): Promise<GsdAssuranceV1> {
+  return GsdAssuranceV1Schema.parse(
+    JSON.parse(await readGsdText(changeDir, assuranceStatePath(changeDir))),
   );
 }
 
-export async function readRunStateV2(changeDir: string): Promise<GuardrailsRunV2> {
-  return GuardrailsRunV2Schema.parse(JSON.parse(await readGuardrailsText(changeDir, runStatePath(changeDir))));
+export async function readRunStateV2(changeDir: string): Promise<GsdRunV2> {
+  return GsdRunV2Schema.parse(JSON.parse(await readGsdText(changeDir, runStatePath(changeDir))));
 }
 
-export async function readAssuranceStateV2(changeDir: string): Promise<GuardrailsAssuranceV2> {
-  return GuardrailsAssuranceV2Schema.parse(
-    JSON.parse(await readGuardrailsText(changeDir, assuranceStatePath(changeDir))),
+export async function readAssuranceStateV2(changeDir: string): Promise<GsdAssuranceV2> {
+  return GsdAssuranceV2Schema.parse(
+    JSON.parse(await readGsdText(changeDir, assuranceStatePath(changeDir))),
   );
 }
 
-export async function writeRunState(changeDir: string, run: GuardrailsRunV1): Promise<void> {
-  await atomicWriteGuardrailsJson(changeDir, runStatePath(changeDir), GuardrailsRunV1Schema.parse(run));
+export async function writeRunState(changeDir: string, run: GsdRunV1): Promise<void> {
+  await atomicWriteGsdJson(changeDir, runStatePath(changeDir), GsdRunV1Schema.parse(run));
 }
 
 export async function writeAssuranceState(
   changeDir: string,
-  assurance: GuardrailsAssuranceV1,
-  run?: GuardrailsRunV1,
+  assurance: GsdAssuranceV1,
+  run?: GsdRunV1,
 ): Promise<string> {
-  const validated = GuardrailsAssuranceV1Schema.parse(assurance);
+  const validated = GsdAssuranceV1Schema.parse(assurance);
   const assuranceDigest = digestJson(validated);
-  await atomicWriteGuardrailsJson(changeDir, assuranceStatePath(changeDir), validated);
+  await atomicWriteGsdJson(changeDir, assuranceStatePath(changeDir), validated);
   if (run) {
     await writeRunState(changeDir, { ...run, assuranceDigest, updatedAt: new Date().toISOString() });
   }
   return assuranceDigest;
 }
 
-export async function writeRunStateV2(changeDir: string, run: GuardrailsRunV2): Promise<void> {
-  await atomicWriteGuardrailsJson(changeDir, runStatePath(changeDir), GuardrailsRunV2Schema.parse(run));
+export async function writeRunStateV2(changeDir: string, run: GsdRunV2): Promise<void> {
+  await atomicWriteGsdJson(changeDir, runStatePath(changeDir), GsdRunV2Schema.parse(run));
 }
 
 export async function writeAssuranceStateV2(
   changeDir: string,
-  assurance: GuardrailsAssuranceV2,
-  run?: GuardrailsRunV2,
+  assurance: GsdAssuranceV2,
+  run?: GsdRunV2,
 ): Promise<string> {
-  const validated = GuardrailsAssuranceV2Schema.parse(assurance);
+  const validated = GsdAssuranceV2Schema.parse(assurance);
   const assuranceDigest = digestJson(validated);
-  await atomicWriteGuardrailsJson(changeDir, assuranceStatePath(changeDir), validated);
+  await atomicWriteGsdJson(changeDir, assuranceStatePath(changeDir), validated);
   if (run) {
     await writeRunStateV2(changeDir, { ...run, assuranceDigest, updatedAt: new Date().toISOString() });
   }

@@ -5,7 +5,7 @@ import {
 } from '../src/execution-adapters.js';
 import { buildExecutionGraph } from '../src/graph.js';
 import { readEventStoreV2 } from '../src/events.js';
-import { startGuardrailsRunV2 } from '../src/runner-v2.js';
+import { startGsdRunV2 } from '../src/runner-v2.js';
 import type { TaskNodeV1 } from '../src/schemas.js';
 import * as publicApi from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
@@ -73,9 +73,9 @@ describe('portable execution adapters', () => {
     expect(result.review).toBeUndefined();
   });
 
-  it('returns higher-tier outcomes to the orchestrator without writing canonical state', async () => {
+  it('returns higher-tier outcomes to the orchestrator without writing canonical execution records', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    await startGsdRunV2({ change: 'demo', projectRoot: root });
     const before = await readEventStoreV2(changeDir);
     const outcome = await executeWithTier({
       tier: 'tier1', graph: buildExecutionGraph([node('1.1'), node('1.2', ['1.1'])]),
