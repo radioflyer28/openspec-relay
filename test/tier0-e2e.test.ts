@@ -12,7 +12,7 @@ import {
   planDebugExperimentV2,
   presentUatV2,
   recordDebugHypothesisV2,
-  recordLegacyPayloadV2,
+  recordWorkflowResultV2,
   recordUatV2,
   resolveDebugSessionV2,
   recordDebugConclusionV2,
@@ -47,12 +47,6 @@ const scenarioId = `${requirementId}/scenario:works`;
 const portableEvidence = [{
   referenceId: 'test:tier0-e2e', kind: 'generated' as const, externalId: 'tier0-e2e', available: true,
 }];
-const regressionEvidence = [
-  { referenceId: 'test:tier0-e2e:red', kind: 'generated' as const, externalId: 'tier0-e2e-red',
-    digest: digest('tier0-e2e-red'), available: true },
-  { referenceId: 'test:tier0-e2e:green', kind: 'generated' as const, externalId: 'tier0-e2e-green',
-    digest: digest('tier0-e2e-green'), available: true },
-];
 const trustedTestRunner: ConstrainedReleaseRunnerV2 = {
   capabilities: {
     filesystemIsolation: 'enforced', networkIsolation: 'enforced',
@@ -137,31 +131,39 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
     });
     expect(remediated.assurance.readiness).toMatchObject({ status: 'pass' });
 
-    await recordLegacyPayloadV2({
+    await recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'e2e:task:1.1:start', occurredAt: '2026-08-11T20:42:00.000Z',
+      stage: 'host',
       payload: { type: 'task.transition', taskId: '1.1', status: 'in_progress' },
     });
-    await recordLegacyPayloadV2({
+    await recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'e2e:task:1.1:complete', occurredAt: '2026-08-11T20:42:01.000Z',
+      stage: 'host',
       payload: { type: 'task.transition', taskId: '1.1', status: 'complete' },
     });
-    await recordLegacyPayloadV2({
+    await recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'e2e:task:1.2:complete', occurredAt: '2026-08-11T20:42:02.000Z',
+      stage: 'host',
       payload: { type: 'task.transition', taskId: '1.2', status: 'complete' },
     });
 
     const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: configuration.taskOverrides });
     const sourceDigests = Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
     const evidence = (evidenceId: string, checkId: string, reference: string, observedAt: string,
-      actor = { kind: 'verifier' as const, id: 'e2e-verifier' }) => recordLegacyPayloadV2({
+      actor: { kind: 'executor' | 'verifier'; id: string } = { kind: 'verifier', id: 'e2e-verifier' },
+      details: Partial<{ phase: 'red' | 'green' | 'verify'; sourceState: string; exitCode: number;
+        result: 'pass' | 'fail'; relevantFailure: boolean }> = {}) => recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: `e2e:evidence:${evidenceId}`, occurredAt: observedAt,
-      actor,
+      stage: actor.kind, actorId: actor.id,
       payload: {
         type: 'evidence.recorded',
         evidence: {
-          evidenceId, taskId: '1.1', phase: 'verify', checkId, observedAt, sourceState: 'tier0-e2e',
-          sourceDigests, exitCode: 0, result: 'pass', outputDigest: digest(evidenceId), preExistingFailure: false,
-          origin: 'verifier', reference,
+          evidenceId, taskId: '1.1', phase: details.phase ?? 'verify', checkId, observedAt,
+          sourceState: details.sourceState ?? 'tier0-e2e', sourceDigests,
+          exitCode: details.exitCode ?? 0, result: details.result ?? 'pass',
+          outputDigest: digest(evidenceId), relevantFailure: details.relevantFailure,
+          preExistingFailure: false,
+          origin: actor.kind, reference,
         },
       },
     });
@@ -169,6 +171,9 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
     await evidence('targeted', 'targeted-tests', 'reports/targeted.txt', '2026-08-11T20:43:01.000Z');
     await evidence('scenario', 'scenario-coverage', scenarioId, '2026-08-11T20:43:02.000Z');
     await evidence('goal', 'goal-verification', 'reports/goal.txt', '2026-08-11T20:43:03.000Z');
+    await evidence('debug-red', 'targeted-tests', 'reports/debug-red.txt', '2026-08-11T20:41:30.000Z',
+      { kind: 'executor', id: 'e2e-executor' },
+      { phase: 'red', sourceState: 'before-fix', exitCode: 1, result: 'fail', relevantFailure: true });
 
     const defect = discoverFinding({
       providerId: 'review', ruleId: 'e2e-defect', category: 'review',
@@ -178,8 +183,9 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       actor: { kind: 'reviewer', id: 'e2e-reviewer' },
     });
     await recordFinding({ changeDir, finding: defect, occurredAt: '2026-08-11T20:44:00.000Z' });
-    await recordLegacyPayloadV2({
+    await recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'e2e:repair:exhausted', occurredAt: '2026-08-11T20:44:01.000Z',
+      stage: 'executor',
       payload: { type: 'repair.recorded', repair: {
         repairId: 'e2e-repair', checkId: 'targeted-tests', attempt: 1, startedAt: '2026-08-11T20:44:01.000Z',
         changedReferences: ['index.js'], result: 'fail',
@@ -207,21 +213,22 @@ describe('Tier 0 Guardrails end-to-end assurance', () => {
       experimentIds: [experiment.experiments[0].experimentId], evidence: portableEvidence,
       now: '2026-08-11T20:44:05.500Z',
     });
-    await evidence('targeted-debug-resolution', 'targeted-tests', 'reports/targeted-debug.txt',
-      '2026-08-11T20:44:05.750Z', { kind: 'verifier', id: 'e2e-debug-verifier' });
+    await evidence('debug-green', 'targeted-tests', 'reports/debug-green.txt',
+      '2026-08-11T20:44:05.750Z', { kind: 'verifier', id: 'e2e-debug-verifier' },
+      { phase: 'green', sourceState: 'after-fix', exitCode: 0, result: 'pass' });
     await resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debugging.session.sessionId,
-      regressionEvidence, verifier: { kind: 'verifier', id: 'e2e-debug-verifier' },
+      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verifierId: 'e2e-debug-verifier',
       now: '2026-08-11T20:44:06.000Z',
     });
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: defect.findingId, to: 'repaired',
-      actor: { kind: 'executor', id: 'e2e-executor' }, reason: 'Applied the investigated correction.',
+      change: 'demo', projectRoot: root, findingId: defect.findingId, action: 'repair',
+      actorId: 'e2e-executor', reason: 'Applied the investigated correction.',
       evidence: portableEvidence, now: '2026-08-11T20:44:07.000Z',
     });
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: defect.findingId, to: 'independently_verified',
-      actor: { kind: 'verifier', id: 'e2e-verifier' }, reason: 'Rechecked the original review concern.',
+      change: 'demo', projectRoot: root, findingId: defect.findingId, action: 'verify',
+      actorId: 'e2e-verifier', reason: 'Rechecked the original review concern.',
       evidence: portableEvidence, now: '2026-08-11T20:44:08.000Z',
     });
 

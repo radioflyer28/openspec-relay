@@ -35,6 +35,7 @@ describe('companion CLI', () => {
     }));
     const evidenceRecord = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'record', 'evidence', 'demo', '--project', root, '--input', evidenceInput,
+      '--stage', 'automation',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(evidenceRecord).toMatchObject({ accepted: true, eventType: 'evidence.recorded' });
     const check = JSON.parse(execFileSync(process.execPath, [

@@ -102,12 +102,28 @@ function debugSession(current: Awaited<ReturnType<typeof currentV2>>, sessionId:
  * this structured entry point instead of inferring closure from an executor's
  * claim or from a later checker omitting the finding.
  */
+export type FindingWorkflowActionV2 = 'repair' | 'verify' | 'accept-risk' | 'request-human' | 'mark-stale';
+
+function findingAction(action: FindingWorkflowActionV2, actorId?: string): {
+  to: FindingStateV2;
+  actor: FindingTransitionV2['actor'];
+} {
+  if (action === 'repair') return { to: 'repaired', actor: { kind: 'executor', ...(actorId ? { id: actorId } : {}) } };
+  if (action === 'verify') return { to: 'independently_verified', actor: { kind: 'verifier', ...(actorId ? { id: actorId } : {}) } };
+  if (action === 'accept-risk') {
+    if (!actorId) throw new Error('Accepted risk requires explicit human attribution.');
+    return { to: 'accepted_risk', actor: { kind: 'human', id: actorId } };
+  }
+  if (action === 'request-human') return { to: 'human_needed', actor: { kind: 'reviewer', ...(actorId ? { id: actorId } : {}) } };
+  return { to: 'stale', actor: { kind: 'automation', ...(actorId ? { id: actorId } : {}) } };
+}
+
 export async function transitionFindingV2(options: {
   change: string;
   projectRoot?: string;
   findingId: string;
-  to: FindingStateV2;
-  actor: FindingTransitionV2['actor'];
+  action: FindingWorkflowActionV2;
+  actorId?: string;
   reason: string;
   evidence?: PortableReferenceV2[];
   expiry?: string;
@@ -117,6 +133,11 @@ export async function transitionFindingV2(options: {
   const current = await currentV2(options);
   const finding = current.projection.assurance.findings.find((item) => item.findingId === options.findingId);
   if (!finding) throw new Error(`Unknown finding '${options.findingId}'. Record or reconcile it before transitioning.`);
+  const workflow = findingAction(options.action, options.actorId);
+  if (options.action === 'verify' && finding.transitions.some((transition) =>
+    transition.actor.kind === 'executor' && transition.actor.id && transition.actor.id === options.actorId)) {
+    throw new Error('Independent verification must come from a verifier stage distinct from the repair executor.');
+  }
   const now = options.now ?? new Date().toISOString();
   const evidence = await bindRepositoryEvidenceDigests({
     projectRoot: current.resolved.projectRoot,
@@ -124,8 +145,8 @@ export async function transitionFindingV2(options: {
   });
   const updated = transitionFinding({
     finding,
-    to: options.to,
-    actor: options.actor,
+    to: workflow.to,
+    actor: workflow.actor,
     reason: options.reason,
     evidence,
     sourceRevision: await sourceRevision(current, [...finding.evidence, ...finding.transitions.flatMap((item) => item.evidence), ...evidence]),
@@ -142,8 +163,8 @@ export async function transitionFindingV2(options: {
       changeName: current.store.changeName,
       occurredAt: now,
       sourceDigests: sources(current.compiled),
-      actor: options.actor,
-      provenance: { origin: 'tier0-finding-lifecycle' },
+      actor: workflow.actor,
+      provenance: { origin: `guardrails-finding-${options.action}` },
       payload: { type: 'finding.transitioned', findingId: finding.findingId, transition },
     }),
   });
@@ -159,8 +180,8 @@ export async function transitionFindingV2(options: {
         changeName: current.store.changeName,
         occurredAt: now,
         sourceDigests: sources(current.compiled),
-        actor: options.actor,
-        provenance: { origin: 'tier0-finding-lifecycle' },
+        actor: workflow.actor,
+        provenance: { origin: `guardrails-finding-${options.action}` },
         payload: { type: 'uat.scenario_retest', scenarioId: scenario.scenarioId, sourceRevision: transition.sourceRevision },
       }),
     });
@@ -317,8 +338,8 @@ export async function recordDebugConclusionV2(options: {
 }
 
 export async function resolveDebugSessionV2(options: {
-  change: string; projectRoot?: string; sessionId: string; regressionEvidence: PortableReferenceV2[];
-  verifier: { kind: 'verifier' | 'human'; id: string };
+  change: string; projectRoot?: string; sessionId: string;
+  redEvidenceId?: string; greenEvidenceId?: string; verifierId?: string;
   exemption?: { reason: string; acceptedBy: string }; now?: string;
 }) {
   const current = await currentV2(options);
@@ -331,11 +352,17 @@ export async function resolveDebugSessionV2(options: {
     ? session.logicalFailureId.slice('check:'.length)
     : undefined;
   const currentSourceDigests = sources(current.compiled);
+  if (!options.exemption && !options.verifierId) {
+    throw new Error('Debug resolution requires verifier-stage attribution.');
+  }
+  const workflowActor: { kind: 'verifier' | 'human'; id: string } = options.exemption
+    ? { kind: 'human', id: options.exemption.acceptedBy }
+    : { kind: 'verifier', id: options.verifierId! };
   const equivalentCheckEvent = !finding && checkId
     ? [...current.store.events].reverse().find((event) => event.payload.type === 'evidence.recorded' &&
       event.payload.evidence.checkId === checkId && event.payload.evidence.result === 'pass' &&
-      event.payload.evidence.origin === options.verifier.kind && event.actor.kind === options.verifier.kind &&
-      event.actor.id === options.verifier.id && Date.parse(event.occurredAt) >= Date.parse(session.startedAt) &&
+      event.payload.evidence.origin === 'verifier' && event.actor.kind === 'verifier' &&
+      event.actor.id === workflowActor.id && Date.parse(event.occurredAt) >= Date.parse(session.startedAt) &&
       Date.parse(event.payload.evidence.observedAt) >= Date.parse(session.startedAt) &&
       Boolean(event.payload.evidence.sourceDigests) && Object.entries(currentSourceDigests).every(
         ([artifactPath, sourceDigest]) => event.payload.type === 'evidence.recorded' &&
@@ -354,26 +381,63 @@ export async function resolveDebugSessionV2(options: {
   if (finding) {
     const repairingActors = new Set(finding.transitions.filter((item) => item.actor.kind === 'executor')
       .map((item) => item.actor.id).filter(Boolean));
-    if (repairingActors.has(options.verifier.id)) {
+    if (repairingActors.has(workflowActor.id)) {
       throw new Error('Debug resolution verifier must be distinct from the executor who repaired the finding.');
     }
+    const verificationTransition = [...finding.transitions].reverse().find((item) => item.to === 'independently_verified');
+    if (!options.exemption && (verificationTransition?.actor.kind !== 'verifier' ||
+        verificationTransition.actor.id !== workflowActor.id)) {
+      throw new Error('Debug resolution must use the distinct orchestrator verifier stage that verified the finding.');
+    }
   }
-  let regressionEvidence = await bindRepositoryEvidenceDigests({
-    projectRoot: current.resolved.projectRoot,
-    evidence: options.regressionEvidence,
-  });
-  if (options.exemption && regressionEvidence.length === 0) regressionEvidence = [{
+  let regressionEvidence: PortableReferenceV2[];
+  if (options.exemption) regressionEvidence = [{
     referenceId: `debug-exemption:${digestJson(options.exemption).slice(0, 24)}`,
     kind: 'generated',
     externalId: options.exemption.acceptedBy,
     digest: digestJson(options.exemption),
     available: true,
   }];
-  if (!options.exemption && regressionEvidence.length < 2) {
-    throw new Error('Debug resolution requires distinct fail-before and pass-after regression evidence.');
-  }
-  if (!options.exemption && regressionEvidence.some((item) => !item.available || !item.digest)) {
-    throw new Error('Debug resolution requires current digest-bound regression evidence.');
+  else {
+    if (!options.redEvidenceId || !options.greenEvidenceId) {
+      throw new Error('Debug resolution requires canonical RED and GREEN evidence IDs.');
+    }
+    const red = current.projection.assurance.evidence.find((item) => item.evidenceId === options.redEvidenceId);
+    const green = current.projection.assurance.evidence.find((item) => item.evidenceId === options.greenEvidenceId);
+    if (!red || !green) throw new Error('Debug resolution evidence IDs must reference existing canonical evidence records.');
+    if (current.projection.assurance.staleEvidenceIds.includes(red.evidenceId) ||
+        current.projection.assurance.staleEvidenceIds.includes(green.evidenceId)) {
+      throw new Error('Debug resolution requires current canonical RED and GREEN evidence.');
+    }
+    if (red.phase !== 'red' || red.result !== 'fail' || red.exitCode === 0 || !red.relevantFailure ||
+        red.preExistingFailure || green.phase !== 'green' || green.result !== 'pass') {
+      throw new Error('Debug resolution requires a relevant fail-first RED record and a passing GREEN record.');
+    }
+    if (red.checkId !== green.checkId || red.taskId !== green.taskId ||
+        (checkId && red.checkId !== checkId) ||
+        (finding?.taskIds.length && (!red.taskId || !finding.taskIds.includes(red.taskId)))) {
+      throw new Error('Debug RED and GREEN evidence must identify the same check and task or defect subject.');
+    }
+    if (Date.parse(red.observedAt) >= Date.parse(green.observedAt) || red.sourceState === green.sourceState ||
+        red.outputDigest === green.outputDigest) {
+      throw new Error('Debug RED evidence must precede GREEN evidence from the resulting implementation revision.');
+    }
+    if (Object.entries(currentSourceDigests).some(([artifactPath, sourceDigest]) =>
+      red.sourceDigests?.[artifactPath] !== sourceDigest || green.sourceDigests?.[artifactPath] !== sourceDigest)) {
+      throw new Error('Debug resolution requires RED and GREEN evidence bound to current controlling OpenSpec revisions.');
+    }
+    const repairTransition = finding?.transitions.find((item) => item.to === 'repaired');
+    if (repairTransition && (Date.parse(red.observedAt) >= Date.parse(repairTransition.occurredAt) ||
+        Date.parse(green.observedAt) < Date.parse(repairTransition.occurredAt))) {
+      throw new Error('Debug RED must precede the repair and GREEN must verify the resulting revision.');
+    }
+    regressionEvidence = [red, green].map((item) => ({
+      referenceId: `evidence:${item.evidenceId}`,
+      kind: 'generated' as const,
+      externalId: item.evidenceId,
+      digest: item.outputDigest,
+      available: true,
+    }));
   }
   const equivalentCheckReference = equivalentCheck ? {
     referenceId: `evidence:${equivalentCheck.evidenceId}`,
@@ -400,11 +464,11 @@ export async function resolveDebugSessionV2(options: {
     : { checkId: equivalentCheck!.checkId };
   const verification = {
     verificationId: `debug-verification:${digestJson({
-      sessionId: session.sessionId, ...verifiedSubject, verifier: options.verifier, revision,
+      sessionId: session.sessionId, ...verifiedSubject, verifier: workflowActor, revision,
       evidence: verificationEvidence.map((item) => [item.referenceId, item.digest]),
     }).slice(0, 24)}`,
     ...verifiedSubject,
-    verifier: options.verifier,
+    verifier: workflowActor,
     evidence: verificationEvidence,
     ...(!options.exemption ? {
       failBeforeEvidence: regressionEvidence[0],
@@ -419,14 +483,14 @@ export async function resolveDebugSessionV2(options: {
   });
   await appendDebugEvent({ current, now,
     eventId: `debug-verification:${options.sessionId}:${verification.verificationId}`,
-    actor: options.verifier,
+    actor: workflowActor,
     payload: { type: 'debug.verification_recorded', sessionId: options.sessionId, verification },
   });
   const refreshed = await currentV2(options);
   const resolutionAt = new Date(Date.parse(now) + 1).toISOString();
   const sessions = await appendDebugEvent({ current: refreshed, now: resolutionAt,
     eventId: `debug-resolved:${options.sessionId}:${verification.verificationId}`,
-    actor: options.verifier,
+    actor: workflowActor,
     payload: { type: 'debug.session_resolved', sessionId: options.sessionId,
       verificationId: verification.verificationId, nextAction: updated.nextAction! },
   });
@@ -607,17 +671,36 @@ async function updateTaskCheckbox(changeDir: string, taskId: string, complete: b
   await atomicWriteText(filename, input.replace(pattern, `$1${complete ? 'x' : ' '}$2`));
 }
 
-export async function recordLegacyPayloadV2(options: {
+export type WorkflowStageV2 = 'automation' | 'executor' | 'reviewer' | 'verifier' | 'host';
+
+function validateWorkflowResultProvenance(stage: WorkflowStageV2, payload: GuardrailsEventPayloadV1): void {
+  if (payload.type === 'human.decision') {
+    throw new Error('Human decisions require a dedicated human action.');
+  }
+  if (payload.type === 'evidence.recorded') {
+    const expected = stage === 'automation' ? 'automated' : stage;
+    if (!['automation', 'executor', 'reviewer', 'verifier'].includes(stage) || payload.evidence.origin !== expected) {
+      throw new Error(`Evidence origin '${payload.evidence.origin}' does not match orchestrated ${stage} stage.`);
+    }
+  }
+  if (payload.type === 'finding.recorded' &&
+      (!['reviewer', 'verifier'].includes(stage) || payload.finding.origin !== stage)) {
+    throw new Error(`Finding origin '${payload.finding.origin}' does not match orchestrated ${stage} stage.`);
+  }
+}
+
+export async function recordWorkflowResultV2(options: {
   change: string;
   projectRoot?: string;
   eventId: string;
   occurredAt?: string;
-  actor?: { kind: 'automation' | 'executor' | 'reviewer' | 'verifier' | 'human' | 'host'; id?: string };
-  provenance?: { origin: string; adapter?: string; command?: string };
+  stage: WorkflowStageV2;
+  actorId?: string;
   payload: GuardrailsEventPayloadV1;
 }) {
   const current = await currentV2(options);
   const payload = GuardrailsEventPayloadV1Schema.parse(options.payload);
+  validateWorkflowResultProvenance(options.stage, payload);
   const task = payload.type === 'task.transition' ? current.projection.run.tasks.find((item) => item.taskId === payload.taskId)
     : payload.type === 'evidence.recorded' && payload.evidence.taskId
       ? current.projection.run.tasks.find((item) => item.taskId === payload.evidence.taskId)
@@ -639,7 +722,8 @@ export async function recordLegacyPayloadV2(options: {
     event: createGuardrailsEventV2({
       eventId: options.eventId, runId: current.store.runId, changeName: current.store.changeName, occurredAt: now,
       sourceDigests: sources(current.compiled),
-      actor: options.actor ?? { kind: 'host' }, provenance: options.provenance ?? { origin: 'tier0-cli' },
+      actor: { kind: options.stage, ...(options.actorId ? { id: options.actorId } : {}) },
+      provenance: { origin: `guardrails-${options.stage}-result` },
       payload,
     }),
   });

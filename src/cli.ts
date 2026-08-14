@@ -12,8 +12,6 @@ import {
   EvidenceV1Schema,
   RepairAttemptV1Schema,
   VerificationFindingV1Schema,
-  type FindingStateV2,
-  type FindingTransitionV2,
 } from './schemas.js';
 import { checkGuardrailsRunV2, startGuardrailsRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
@@ -27,7 +25,7 @@ import {
   recordDebugReferenceChangeV2,
   presentUatV2,
   recordDebugHypothesisV2,
-  recordLegacyPayloadV2,
+  recordWorkflowResultV2,
   recordUatV2,
   resolveDebugSessionV2,
   startOrResumeDebugV2,
@@ -36,15 +34,6 @@ import {
 const RecordingMetadataSchema = z.object({
   eventId: z.string().min(1),
   occurredAt: z.string().datetime().optional(),
-  actor: z.object({
-    kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host']),
-    id: z.string().min(1).optional(),
-  }).strict().optional(),
-  provenance: z.object({
-    origin: z.string().min(1),
-    adapter: z.string().min(1).optional(),
-    command: z.string().min(1).optional(),
-  }).strict().optional(),
 }).strict();
 
 const EvidenceRecordingRequestV1Schema = RecordingMetadataSchema.extend({ evidence: EvidenceV1Schema }).strict();
@@ -150,8 +139,9 @@ program.command('debug')
   .option('--next-action <text>')
   .option('--evidence <json-file|->')
   .option('--resolve')
-  .option('--verifier <id>')
-  .option('--verifier-kind <kind>', 'verifier or human', 'verifier')
+  .option('--verified-by <id>', 'Attribution for the orchestrator-dispatched verifier stage')
+  .option('--red-evidence-id <id>', 'Canonical fail-first evidence ID')
+  .option('--green-evidence-id <id>', 'Canonical passing evidence ID')
   .option('--exemption-reason <text>')
   .option('--accepted-by <human>')
   .option('--project <path>')
@@ -231,13 +221,16 @@ program.command('debug')
       return;
     }
     if (options.resolve) {
-      if (!options.session || !options.verifier || !['verifier', 'human'].includes(options.verifierKind) ||
-          (options.exemptionReason && !options.acceptedBy)) {
-        throw new Error('Debug resolution requires --session, --verifier, a valid --verifier-kind, and an --accepted-by actor for any exemption.');
+      if (!options.session || (options.exemptionReason
+        ? !options.acceptedBy
+        : !options.verifiedBy || !options.redEvidenceId || !options.greenEvidenceId)) {
+        throw new Error('Debug resolution requires --session plus --verified-by, --red-evidence-id, and --green-evidence-id; an exemption instead requires --exemption-reason and --accepted-by.');
       }
       const session = await resolveDebugSessionV2({
-        change, projectRoot: options.project, sessionId: options.session, regressionEvidence: evidence,
-        verifier: { kind: options.verifierKind, id: options.verifier },
+        change, projectRoot: options.project, sessionId: options.session,
+        ...(options.verifiedBy ? { verifierId: options.verifiedBy } : {}),
+        ...(options.redEvidenceId ? { redEvidenceId: options.redEvidenceId } : {}),
+        ...(options.greenEvidenceId ? { greenEvidenceId: options.greenEvidenceId } : {}),
         ...(options.exemptionReason ? { exemption: { reason: options.exemptionReason, acceptedBy: options.acceptedBy } } : {}),
       });
       print(options.json ? { session } : `Resolved debug session ${session.sessionId}.`, Boolean(options.json));
@@ -299,12 +292,12 @@ record.command('task')
     const status = ['pending', 'in_progress', 'complete', 'blocked'].includes(options.status)
       ? options.status as 'pending' | 'in_progress' | 'complete' | 'blocked'
       : (() => { throw new Error(`Invalid task status '${options.status}'.`); })();
-    print(await recordLegacyPayloadV2({
+    print(await recordWorkflowResultV2({
       change,
       projectRoot: options.project,
       eventId: options.eventId,
-      actor: { kind: 'host', ...(options.actor ? { id: options.actor } : {}) },
-      provenance: { origin: 'tier0-cli-task' },
+      stage: 'host',
+      ...(options.actor ? { actorId: options.actor } : {}),
       payload: { type: 'task.transition', taskId, status, ...(options.reason ? { reason: options.reason } : {}) },
     }), true);
   });
@@ -313,7 +306,6 @@ record.command('finding-transition')
   .argument('<change>')
   .argument('<finding-id>')
   .requiredOption('--to <state>', 'repaired, independently_verified, accepted_risk, human_needed, or stale')
-  .requiredOption('--actor-kind <kind>', 'executor, verifier, reviewer, human, automation, or host')
   .requiredOption('--actor <id>')
   .requiredOption('--reason <text>')
   .option('--evidence <json-file|->')
@@ -323,9 +315,12 @@ record.command('finding-transition')
   .option('--json')
   .action(async (change, findingId, options) => {
     const states = ['repaired', 'independently_verified', 'accepted_risk', 'human_needed', 'stale'];
-    const kinds = ['executor', 'verifier', 'reviewer', 'human', 'automation', 'host'];
     if (!states.includes(options.to)) throw new Error(`Invalid finding state '${options.to}'.`);
-    if (!kinds.includes(options.actorKind)) throw new Error(`Invalid finding actor '${options.actorKind}'.`);
+    const actionByState = {
+      repaired: 'repair', independently_verified: 'verify', accepted_risk: 'accept-risk',
+      human_needed: 'request-human', stale: 'mark-stale',
+    } as const;
+    const action = actionByState[options.to as keyof typeof actionByState];
     const evidence = options.evidence
       ? PortableReferenceV2Schema.array().parse(await readInput(options.evidence))
       : [];
@@ -333,8 +328,8 @@ record.command('finding-transition')
       change,
       projectRoot: options.project,
       findingId,
-      to: options.to as FindingStateV2,
-      actor: { kind: options.actorKind as FindingTransitionV2['actor']['kind'], id: options.actor },
+      action,
+      actorId: options.actor,
       reason: options.reason,
       evidence,
       ...(options.expiry ? { expiry: options.expiry } : {}),
@@ -352,17 +347,25 @@ for (const contribution of [
   record.command(contribution.name)
     .argument('<change>')
     .requiredOption('--input <json-file|->')
+    .option('--stage <stage>', 'automation, executor, reviewer, or verifier')
+    .option('--actor <id>', 'Optional stage actor attribution')
     .option('--project <path>')
     .action(async (change, options) => {
       const request = contribution.schema.parse(await readInput(options.input));
       const value = (request as unknown as Record<string, unknown>)[contribution.field];
-      print(await recordLegacyPayloadV2({
+      const stage = contribution.name === 'deviation' || contribution.name === 'repair'
+        ? 'executor'
+        : options.stage;
+      if (!['automation', 'executor', 'reviewer', 'verifier'].includes(stage)) {
+        throw new Error(`Recording ${contribution.name} requires an orchestrated --stage.`);
+      }
+      print(await recordWorkflowResultV2({
         change,
         projectRoot: options.project,
         eventId: request.eventId,
         occurredAt: request.occurredAt,
-        actor: request.actor,
-        provenance: request.provenance,
+        stage,
+        ...(options.actor ? { actorId: options.actor } : {}),
         payload: { type: contribution.type, [contribution.field]: value } as never,
       }), true);
     });
