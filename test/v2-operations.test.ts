@@ -9,7 +9,7 @@ import { startGuardrailsRunV2 } from '../src/runner-v2.js';
 import { readAssuranceStateV2 } from '../src/state.js';
 import {
   presentUatV2,
-  recordLegacyPayloadV2,
+  recordWorkflowResultV2,
   recordUatV2,
   resolveDebugSessionV2,
   transitionFindingV2,
@@ -62,28 +62,43 @@ async function addHumanFinding(root: string, changeDir: string) {
 describe('v2 debug and UAT operations', () => {
   it('records an executor repair and a separately authorized verifier closure for a stable finding', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
+    const started = await startGuardrailsRunV2({ change: 'demo', projectRoot: root });
     const finding = await addHumanFinding(root, changeDir);
     const evidence = [{ referenceId: 'test:repair', kind: 'generated' as const, externalId: 'repair', available: true }];
 
+    await expect(recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'forged-verifier-result', stage: 'executor',
+      payload: { type: 'evidence.recorded', evidence: {
+        evidenceId: 'forged-verifier-result', phase: 'verify', checkId: 'goal-verification',
+        observedAt: '2026-08-09T15:00:00.000Z', sourceState: 'forged',
+        sourceDigests: digests(started.run.artifacts), exitCode: 0, result: 'pass',
+        outputDigest: createHash('sha256').update('forged').digest('hex'), preExistingFailure: false,
+        origin: 'verifier',
+      } },
+    })).rejects.toThrow(/does not match orchestrated executor stage/i);
+
     const repaired = await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
-      actor: { kind: 'executor', id: 'executor-1' }, reason: 'Implemented the required repair.', evidence,
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
+      actorId: 'executor-1', reason: 'Implemented the required repair.', evidence,
       now: '2026-08-09T15:01:00.000Z',
     });
-    expect(repaired).toMatchObject({ state: 'repaired' });
+    expect(repaired).toMatchObject({ state: 'repaired', transitions: expect.arrayContaining([
+      expect.objectContaining({ to: 'repaired', actor: { kind: 'executor', id: 'executor-1' } }),
+    ]) });
 
     await expect(transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-      actor: { kind: 'executor', id: 'executor-1' }, reason: 'Self verification is not independent.', evidence, now: '2026-08-09T15:02:00.000Z',
-    })).rejects.toThrow(/read-only verifier/i);
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
+      actorId: 'executor-1', reason: 'Self verification is not independent.', evidence, now: '2026-08-09T15:02:00.000Z',
+    })).rejects.toThrow(/distinct from the repair executor/i);
 
     const verified = await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-      actor: { kind: 'verifier', id: 'verifier-1' }, reason: 'Verified the original concern against current evidence.', evidence,
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
+      actorId: 'verifier-1', reason: 'Verified the original concern against current evidence.', evidence,
       now: '2026-08-09T15:03:00.000Z',
     });
-    expect(verified).toMatchObject({ state: 'independently_verified' });
+    expect(verified).toMatchObject({ state: 'independently_verified', transitions: expect.arrayContaining([
+      expect.objectContaining({ to: 'independently_verified', actor: { kind: 'verifier', id: 'verifier-1' } }),
+    ]) });
     expect((await readAssuranceStateV2(changeDir)).findings).toEqual([
       expect.objectContaining({ findingId: finding.findingId, state: 'independently_verified' }),
     ]);
@@ -96,10 +111,10 @@ describe('v2 debug and UAT operations', () => {
     } });
     const finding = await addHumanFinding(root, changeDir);
     const repairEvidence = [{ referenceId: 'test:repair', kind: 'generated' as const, externalId: 'repair', available: true }];
-    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
-      actor: { kind: 'executor', id: 'executor' }, reason: 'Repaired.', evidence: repairEvidence });
-    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-      actor: { kind: 'verifier', id: 'verifier' }, reason: 'Verified.', evidence: repairEvidence });
+    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
+      actorId: 'executor', reason: 'Repaired.', evidence: repairEvidence });
+    await transitionFindingV2({ change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
+      actorId: 'verifier', reason: 'Verified.', evidence: repairEvidence });
     const presented = await presentUatV2({ change: 'demo', projectRoot: root });
     await recordUatV2({ change: 'demo', projectRoot: root, scenarioId: presented.next!.scenarioId,
       status: 'passed', actor: 'maintainer', notes: 'Observed.' });
@@ -131,12 +146,12 @@ describe('v2 debug and UAT operations', () => {
       referenceId: 'test:uat-repair', kind: 'generated' as const, externalId: 'uat-repair', available: true,
     }];
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: failed.findingId, to: 'repaired',
-      actor: { kind: 'executor', id: 'executor' }, reason: 'Repaired the failed behavior.', evidence: repairEvidence,
+      change: 'demo', projectRoot: root, findingId: failed.findingId, action: 'repair',
+      actorId: 'executor', reason: 'Repaired the failed behavior.', evidence: repairEvidence,
     });
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: failed.findingId, to: 'independently_verified',
-      actor: { kind: 'verifier', id: 'verifier' }, reason: 'Verified the repair against current evidence.',
+      change: 'demo', projectRoot: root, findingId: failed.findingId, action: 'verify',
+      actorId: 'verifier', reason: 'Verified the repair against current evidence.',
       evidence: repairEvidence,
     });
     const retest = await presentUatV2({ change: 'demo', projectRoot: root });
@@ -169,12 +184,12 @@ describe('v2 debug and UAT operations', () => {
       payload: { type: 'finding.discovered', finding },
     }) });
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
-      actor: { kind: 'executor', id: 'executor' }, reason: 'Repaired.', evidence: repositoryEvidence,
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
+      actorId: 'executor', reason: 'Repaired.', evidence: repositoryEvidence,
     });
     const verified = await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-      actor: { kind: 'verifier', id: 'verifier' }, reason: 'Verified.', evidence: repositoryEvidence,
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
+      actorId: 'verifier', reason: 'Verified.', evidence: repositoryEvidence,
     });
     expect(verified.transitions.at(-1)?.evidence).toEqual([
       expect.objectContaining({ referenceId: 'repository:src/index.ts', digest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
@@ -201,8 +216,9 @@ describe('v2 debug and UAT operations', () => {
   it('automatically begins a resumable debug session after repair exhaustion and records human-needed when debugging is unavailable', async () => {
     const active = await createOpenSpecProject('active');
     await startGuardrailsRunV2({ change: 'active', projectRoot: active.root, config: { repairLimit: 1 } });
-    const repair = (change: string) => recordLegacyPayloadV2({
+    const repair = (change: string) => recordWorkflowResultV2({
       change, projectRoot: active.root, eventId: `repair:${change}`,
+      stage: 'executor',
       payload: {
         type: 'repair.recorded', repair: {
           repairId: `repair:${change}`, checkId: 'targeted-tests', attempt: 1, startedAt: now,
@@ -219,8 +235,9 @@ describe('v2 debug and UAT operations', () => {
     await startGuardrailsRunV2({ change: 'unavailable', projectRoot: unavailable.root, config: {
       repairLimit: 1, features: { debug: { enabled: false, automaticTransition: false } },
     } });
-    await recordLegacyPayloadV2({
+    await recordWorkflowResultV2({
       change: 'unavailable', projectRoot: unavailable.root, eventId: 'repair:unavailable',
+      stage: 'executor',
       payload: {
         type: 'repair.recorded', repair: {
           repairId: 'repair:unavailable', checkId: 'targeted-tests', attempt: 1, startedAt: now,
@@ -292,13 +309,7 @@ describe('v2 debug and UAT operations', () => {
     expect(actioned.session.nextAction).toBe('Verify the repaired public contract.');
     await expect(resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
-      regressionEvidence: [
-        { referenceId: 'test:debug:red', kind: 'generated', externalId: 'debug-red',
-          digest: createHash('sha256').update('debug-red').digest('hex'), available: true },
-        { referenceId: 'test:debug:green', kind: 'generated', externalId: 'debug-green',
-          digest: createHash('sha256').update('debug-green').digest('hex'), available: true },
-      ],
-      verifier: { kind: 'verifier', id: 'verifier-1' },
+      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verifierId: 'verifier-1',
     })).rejects.toThrow(/linked finding.*independently verified/i);
     const lifecycleEvidence = [
       { referenceId: 'test:debug:red', kind: 'generated' as const, externalId: 'debug-red',
@@ -307,22 +318,49 @@ describe('v2 debug and UAT operations', () => {
         digest: createHash('sha256').update('debug-green').digest('hex'), available: true },
     ];
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'repaired',
-      actor: { kind: 'executor', id: 'executor-1' }, reason: 'Repaired the root cause.', evidence: lifecycleEvidence,
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
+      actorId: 'executor-1', reason: 'Repaired the root cause.', evidence: lifecycleEvidence,
+      now: '2026-08-09T15:02:00.000Z',
+    });
+    const canonicalCompiled = await compileOpenSpecChange({ changeDir });
+    const canonicalDigests = digests(canonicalCompiled.artifacts);
+    await recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'debug-evidence:red', occurredAt: '2026-08-09T15:01:00.000Z',
+      stage: 'executor', actorId: 'executor-1',
+      payload: { type: 'evidence.recorded', evidence: {
+        evidenceId: 'debug-red', taskId: '1.1', phase: 'red', checkId: 'targeted-tests',
+        observedAt: '2026-08-09T15:01:00.000Z', sourceState: 'before-fix', sourceDigests: canonicalDigests,
+        exitCode: 1, result: 'fail', outputDigest: createHash('sha256').update('debug-red').digest('hex'),
+        relevantFailure: true, preExistingFailure: false, origin: 'executor', reference: 'test:debug:red',
+      } },
+    });
+    await recordWorkflowResultV2({
+      change: 'demo', projectRoot: root, eventId: 'debug-evidence:green', occurredAt: '2026-08-09T15:03:00.000Z',
+      stage: 'verifier', actorId: 'verifier-1',
+      payload: { type: 'evidence.recorded', evidence: {
+        evidenceId: 'debug-green', taskId: '1.1', phase: 'green', checkId: 'targeted-tests',
+        observedAt: '2026-08-09T15:03:00.000Z', sourceState: 'after-fix', sourceDigests: canonicalDigests,
+        exitCode: 0, result: 'pass', outputDigest: createHash('sha256').update('debug-green').digest('hex'),
+        preExistingFailure: false, origin: 'verifier', reference: 'test:debug:green',
+      } },
     });
     await transitionFindingV2({
-      change: 'demo', projectRoot: root, findingId: finding.findingId, to: 'independently_verified',
-      actor: { kind: 'verifier', id: 'verifier-1' }, reason: 'Verified current regression evidence.',
-      evidence: lifecycleEvidence,
+      change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'verify',
+      actorId: 'verifier-1', reason: 'Verified current regression evidence.',
+      evidence: lifecycleEvidence, now: '2026-08-09T15:04:00.000Z',
     });
     await expect(resolveDebugSessionV2({
       change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
-      regressionEvidence: lifecycleEvidence,
-      verifier: { kind: 'verifier', id: 'executor-1' },
+      redEvidenceId: 'debug-red', greenEvidenceId: 'debug-green', verifierId: 'executor-1',
     })).rejects.toThrow(/distinct from the executor/i);
+    await expect(resolveDebugSessionV2({
+      change: 'demo', projectRoot: root, sessionId: debug.session.sessionId,
+      redEvidenceId: 'test:debug:red', greenEvidenceId: 'test:debug:green', verifierId: 'verifier-1',
+    })).rejects.toThrow(/existing canonical evidence records/i);
     const resolved = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'debug', 'demo', '--project', root, '--session', debug.session.sessionId,
-      '--resolve', '--verifier', 'verifier-1', '--evidence', evidenceFile, '--json',
+      '--resolve', '--verified-by', 'verifier-1', '--red-evidence-id', 'debug-red',
+      '--green-evidence-id', 'debug-green', '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(resolved.session).toMatchObject({ status: 'resolved', verification: {
       verifier: { kind: 'verifier', id: 'verifier-1' }, findingId: finding.findingId,
