@@ -120,4 +120,64 @@ describe('independent plan readiness', () => {
     });
     expect(adapted).toMatchObject({ inputRevision: expected.inputRevision, independent: true });
   });
+
+  it('preserves deterministic blockers when an isolated evaluator claims the plan passes', async () => {
+    const incomplete = compiled({ graph: { nodes: [{
+      ...compiled().graph.nodes[0], requirementRefs: [], scenarioRefs: [], expectedVerification: [],
+    }], waves: [['1.1']] } });
+    const adapted = await readiness.evaluatePlanReadinessWithAdapter({
+      changeName: 'demo', compiled: incomplete, repositoryContext: context(), tier: 'tier1',
+      now: '2026-08-09T12:00:00.000Z',
+      adapter: { evaluate: async ({ deterministicResult }) => ({
+        ...deterministicResult, status: 'pass', issues: [], evaluator: 'caller-claims-independent',
+      }) },
+    });
+    expect(adapted.status).toBe('fail');
+    expect(adapted.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'uncovered_requirement', blocking: true }),
+      expect.objectContaining({ kind: 'unmapped_scenario', blocking: true }),
+    ]));
+  });
+
+  it('derives unsupported assumptions from the current OpenSpec artifact text', () => {
+    const result = readiness.evaluatePlanReadiness({
+      changeName: 'demo',
+      compiled: compiled({
+        routingText: [
+          '## Assumptions',
+          '',
+          '- The remote production service will remain stable, but no validation is planned.',
+          '',
+          '## Tasks',
+        ].join('\n'),
+      }),
+      repositoryContext: context(),
+      now: '2026-08-09T12:00:00.000Z',
+    });
+    expect(result).toMatchObject({ status: 'fail' });
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'risky_assumption', summary: expect.stringContaining('remote production service') }),
+    ]));
+  });
+
+  it('accepts an artifact assumption with an explicit validation path', () => {
+    const result = readiness.evaluatePlanReadiness({
+      changeName: 'demo',
+      compiled: compiled({
+        routingText: [
+          '## Assumptions',
+          '',
+          '- The remote production service remains stable. Validation task: 2.1.',
+          '',
+          '## Tasks',
+        ].join('\n'),
+      }),
+      repositoryContext: context(),
+      now: '2026-08-09T12:00:00.000Z',
+    });
+    expect(result).toMatchObject({ status: 'pass' });
+    expect(result.issues).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'risky_assumption' }),
+    ]));
+  });
 });

@@ -24,6 +24,12 @@ export interface ReadinessEvaluatorV2 {
   }>): Promise<ReadinessResultV2>;
 }
 
+export interface PlanAssumptionV2 {
+  id: string;
+  summary: string;
+  supported: boolean;
+}
+
 export function createReadinessEvaluatorContract(options: {
   tier: ReadinessEvaluatorTierV2;
 }): ReadinessEvaluatorContractV2 {
@@ -32,6 +38,44 @@ export function createReadinessEvaluatorContract(options: {
 
 function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+export function deriveArtifactAssumptions(compiled: CompiledOpenSpecChangeV1): PlanAssumptionV2[] {
+  const assumptions: PlanAssumptionV2[] = [];
+  let inAssumptions = false;
+  for (const line of compiled.routingText.split(/\r?\n/)) {
+    const heading = /^#{2,6}\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      inAssumptions = /^assumptions(?:\s+and\s+defaults)?$/i.test(heading[1].replaceAll('*', '').trim());
+      continue;
+    }
+    if (!inAssumptions) continue;
+    const bullet = /^\s*[-*+]\s+(.+?)\s*$/.exec(line);
+    if (!bullet) continue;
+    const summary = bullet[1].trim();
+    const supported = /\b(?:supported\s+by|validated?\s+by|evidence\s*:|validation\s+(?:task|check)\s*:|verification\s+(?:task|check)\s*:|human\s+(?:disposition|acceptance)\s*:|accepted\s+by)/i
+      .test(summary);
+    assumptions.push({
+      id: `assumption:${digest(summary).slice(0, 20)}`,
+      summary,
+      supported,
+    });
+  }
+  return assumptions;
+}
+
+function resolveAssumptions(options: {
+  compiled: CompiledOpenSpecChangeV1;
+  assumptions?: PlanAssumptionV2[];
+}): PlanAssumptionV2[] {
+  const resolved = new Map<string, PlanAssumptionV2>();
+  for (const assumption of [...deriveArtifactAssumptions(options.compiled), ...(options.assumptions ?? [])]) {
+    const existing = resolved.get(assumption.id);
+    resolved.set(assumption.id, existing
+      ? { ...existing, supported: existing.supported && assumption.supported }
+      : assumption);
+  }
+  return [...resolved.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
 export function readinessInputRevision(options: {
@@ -91,7 +135,8 @@ export function evaluatePlanReadiness(options: {
   if (options.adapter) {
     throw new Error('Use evaluatePlanReadinessWithAdapter for an asynchronous independent evaluator.');
   }
-  const inputRevision = readinessInputRevision(options);
+  const assumptions = resolveAssumptions(options);
+  const inputRevision = readinessInputRevision({ ...options, assumptions });
   const issues: ReadinessIssueV2[] = [];
   const mappedRequirements = new Set(options.compiled.graph.nodes.flatMap((task) => task.requirementRefs));
   const mappedScenarios = new Set(options.compiled.graph.nodes.flatMap((task) => task.scenarioRefs));
@@ -147,7 +192,7 @@ export function evaluatePlanReadiness(options: {
       }
     }
   }
-  for (const assumption of options.assumptions ?? []) {
+  for (const assumption of assumptions) {
     if (!assumption.supported) issues.push(issue({
       kind: 'risky_assumption', severity: 'error', blocking: true,
       summary: `Risky assumption '${assumption.summary}' lacks a validation path.`, references: [assumption.id],
@@ -190,6 +235,9 @@ export async function evaluatePlanReadinessWithAdapter(options: Omit<Parameters<
   adapter: ReadinessEvaluatorV2;
 }): Promise<ReadinessResultV2> {
   const { adapter, ...input } = options;
+  if (options.tier !== 'tier1' && options.tier !== 'tier2') {
+    throw new Error('Readiness adapters require a negotiated Tier 1 or Tier 2 evaluator dispatch.');
+  }
   const deterministicResult = evaluatePlanReadiness({ ...input, tier: input.tier ?? 'tier0' });
   const result = ReadinessResultV2Schema.parse(await adapter.evaluate({
     contract: createReadinessEvaluatorContract({ tier: options.tier ?? 'tier0' }),
@@ -199,7 +247,21 @@ export async function evaluatePlanReadinessWithAdapter(options: Omit<Parameters<
       result.independent !== true) {
     throw new Error('Readiness evaluator returned a result for different controlling inputs.');
   }
-  return result;
+  const issues = new Map(result.issues.map((item) => [item.issueId, item]));
+  for (const item of deterministicResult.issues) issues.set(item.issueId, item);
+  const statusRank: Record<ReadinessResultV2['status'], number> = {
+    pass: 0, fail: 1, human_needed: 2, stale: 3, error: 4,
+  };
+  const status = statusRank[deterministicResult.status] > statusRank[result.status]
+    ? deterministicResult.status
+    : result.status;
+  return ReadinessResultV2Schema.parse({
+    ...result,
+    resultId: deterministicResult.resultId,
+    evaluatedAt: deterministicResult.evaluatedAt,
+    status,
+    issues: [...issues.values()].sort((left, right) => left.issueId.localeCompare(right.issueId)),
+  });
 }
 
 export function invalidateReadinessResult(options: {

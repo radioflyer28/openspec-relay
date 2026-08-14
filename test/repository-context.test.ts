@@ -122,6 +122,27 @@ describe('repository context', () => {
     });
   });
 
+  it('preserves deterministic unknowns when an analyzer claims unavailable context is current', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    const context = await repositoryContext.compileRepositoryContext({
+      projectRoot: root,
+      changeDir,
+      changeName: 'demo',
+      compiled: await compileOpenSpecChange({ changeDir }),
+      impactUnknown: 'Git comparison data is unavailable.',
+      changedFiles: [],
+      tier: 'tier1',
+      now: '2026-08-09T12:00:00.000Z',
+      adapter: { analyze: async ({ deterministicContext }) => ({
+        ...deterministicContext, status: 'current', claims: [],
+      }) },
+    });
+    expect(context.status).toBe('unavailable');
+    expect(context.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: 'unknown', summary: 'Git comparison data is unavailable.' }),
+    ]));
+  });
+
   it('returns discovered scope gaps to readiness instead of changing OpenSpec artifacts', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.mkdir(path.join(root, 'src'), { recursive: true });
