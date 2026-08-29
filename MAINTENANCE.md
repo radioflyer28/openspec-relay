@@ -60,7 +60,7 @@ must remain a fail-closed archive condition.
 4. Assign the companion version only after the fork artifact passes.
 5. Install both private artifacts in a clean project, unpack or locally install
    OpenSpec GSD, link its unpacked directory, run doctor, generate workflows,
-   exercise a guarded run, satisfy a human gate, exercise an audited override,
+   exercise `discuss → propose → plan → do`, satisfy a human gate, exercise an audited override,
    and archive.
 6. Record private release notes with the supported core range, API feature
    marker, execution-record regeneration notes, and compatible rollback pair.
@@ -84,6 +84,21 @@ unpublished schema incompatibly, retain the OpenSpec artifacts, remove only the
 known generated OpenSpec GSD records after reviewing them, regenerate with the
 selected companion revision, and reconfirm every human acceptance or accepted
 risk. Never present regenerated evidence as preserving an older decision.
+
+## Private command migration
+
+This private increment intentionally removes `run` and `run-status` without
+compatibility aliases. Use `do` and `status`; the canonical generated filenames
+remain `.openspec-gsd/run.json`, `assurance.json`, and `events.json`. Running
+`openspec extension doctor gsd` reconciles extension-owned host files: it removes
+only known legacy generated entries and creates `discuss`, `plan`, `do`, `check`,
+`status`, `debug`, and `uat`. It does not pattern-delete user files.
+
+To roll back, relink the previous companion revision, run doctor/update, and
+retain the compatible OpenSpec fork. Do not disable the current extension to
+bypass an active gate. A previous companion may not understand newer private
+events; retain the authoritative OpenSpec artifacts and follow the generated
+record regeneration procedure above rather than downgrading records.
 
 ## Transition to official OpenSpec
 

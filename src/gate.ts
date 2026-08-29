@@ -119,7 +119,7 @@ export const gsdAssuranceGate: GateProviderV1 = {
         'error',
         `OpenSpec GSD assurance records are unavailable or invalid: ${(error as Error).message}`,
         [],
-        ['Run openspec-gsd run or check to recreate valid generated records.'],
+        ['Run openspec-gsd plan or check to recreate valid generated records.'],
       );
     }
   },

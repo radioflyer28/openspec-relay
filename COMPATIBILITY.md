@@ -30,6 +30,15 @@ persistent GSD project state. None of those artifacts or runtime requirements is
 introduced by OpenSpec GSD v2, and the companion neither installs nor requires
 the complete GSD runtime.
 
+The semantic vocabulary is inspired by FRET and PVS principles, but neither is a
+runtime dependency. `simple`, `behavioral`, and `modeling` describe required
+analysis depth, not tool certification. Only official tool evidence may support
+FRET-valid, PVS-proven, or formal-verification claims.
+
+The public workflow migration from `run`/`run-status` to `do`/`status` is
+deliberately breaking. Internal `run.json` and event state identities remain
+unchanged. Reconciliation removes only extension-owned legacy host artifacts.
+
 Private installation is qualified on macOS through `openspec extension link
 <path>` or a locally packed artifact. Linux and Windows remain portability
 targets without a support claim in this increment. Package-registry publication

@@ -55,8 +55,9 @@ pi install /absolute/path/to/openspec-gsd
 pi list
 ```
 
-This exposes `/opsx-run`, `/opsx-check`, `/opsx-run-status`, `/opsx-debug`, and
-`/opsx-uat`, plus the corresponding `openspec-*` skills. The Pi package includes
+This exposes `/opsx-discuss`, `/opsx-plan`, `/opsx-do`, `/opsx-check`,
+`/opsx-status`, `/opsx-debug`, and `/opsx-uat`, plus the corresponding
+`openspec-*` skills. The Pi package includes
 a minimal runtime extension that places its bundled `openspec-gsd` CLI on the
 `PATH` of Pi-launched commands, so no separate global CLI installation is
 required. Re-run `pnpm build` after changing a workflow; the build regenerates
@@ -67,20 +68,37 @@ private packed artifact. Runtime imports use only `@fission-ai/openspec/extensio
 
 ## Workflows and CLI
 
+The lifecycle is proportional rather than phase-based:
+
+```text
+discuss → propose → plan → do → check/archive
+                     ↑      |
+                     └──────┘ blocking review or verification finding
+```
+
+`discuss` is conversational and may be bypassed for trivial or already-precise
+changes. Standard `$openspec-propose` creates the authoritative artifacts.
+`plan` refines and independently reviews those artifacts without creating a
+parallel plan. `do` wraps canonical `$openspec-apply-change`, then reviews,
+routes gaps through the same planner, repairs or replans, and goal-verifies.
+
 After OpenSpec reconciles the extension, supported tools receive:
 
-- `/opsx:run <change> [--mode quick|guarded|full]`
-- `/opsx:check <change> [--repair]`
-- `/opsx:run-status <change>`
+- `/opsx:discuss [<change>]`
+- `/opsx:plan <change>`
+- `/opsx:do <change>`
+- `/opsx:check <change>`
+- `/opsx:status <change>`
 - `/opsx:debug <change> [--finding <id>]`
 - `/opsx:uat <change>`
 
 The generated workflows invoke the portable companion CLI:
 
 ```bash
-openspec-gsd run add-feature
+openspec-gsd plan add-feature --allow-self-review # Tier 0 only; visibly non-independent
+openspec-gsd do add-feature
 openspec-gsd check add-feature
-openspec-gsd run-status add-feature --json
+openspec-gsd status add-feature --json
 openspec-gsd debug add-feature --finding <id> --json
 openspec-gsd uat add-feature --json
 ```
@@ -90,6 +108,61 @@ scenario mapping, and independent goal verification. `guarded` adds risk-aware
 TDD, code review, and applicable specialist checks. `full` requests maximum
 applicable specialist coverage and may use explicitly enabled higher execution
 tiers.
+
+### Discussion contract
+
+The discussion skill starts with Matt Pocock's complete `grilling` instruction
+body, vendored byte-for-byte from commit
+`85f83d3fde1d3a90d5c9a657f6998c79a6c37308`, followed by the OpenSpec GSD
+supplement. Attribution and the full MIT notice are in
+[`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md). The supplement preserves
+the design tree, prerequisite-aware frontier, recommendation-bearing rounds,
+agent-owned fact finding, complete material branch coverage, and final shared
+understanding. It asks the developer only about material product decisions,
+clusters large frontiers, and may use focused examples or counterexamples.
+Safe timeout-like or otherwise interchangeable technical choices remain with
+repository research, planning, or implementation.
+
+Updating the pin is an explicit reviewed change: replace the vendored body,
+update its revision/digest and third-party notice, regenerate all host skills,
+and run the discussion contract plus packed-install suites. Upstream changes
+never alter installed behavior implicitly.
+
+### Behavioral semantics
+
+Planning classifies every requirement at the same minimum in every execution
+mode:
+
+- `simple`: an ordinary observable outcome;
+- `behavioral`: event, state, mode, ordering, timing, cancellation, retry,
+  recovery, or prohibition semantics need concise controlled language;
+- `modeling`: subtle concurrency, authorization state, irreversible transitions,
+  or high-consequence invariants need explicit state, transition, assumption,
+  counterexample, and verification reasoning.
+
+Observable meaning remains in specs, supporting models and assumptions in
+design, and verification work in tasks. The vocabulary is FRET/PVS-inspired,
+but v1 installs or invokes neither tool and never claims `FRET-valid`,
+`PVS-proven`, or formally verified without corresponding official tool evidence.
+An unresolved required level produces `human_needed`; an accepted lower level is
+audited and remains visible as a warning rather than being reported as complete.
+
+### Role authority
+
+- The discussion role resolves material human intent; no raw transcript is
+  required or persisted.
+- The planner may edit only proposal, delta specs, design, and tasks. The
+  planning-only pathfinder has read-only repository access plus a disposable
+  experiment workspace. The plan reviewer is fresh-context and read-only.
+- Tier 0 may continue only after an explicit self-review choice; its approval is
+  recorded as `independent: false` and remains a warning.
+- The executor wrapper passes the approved revision, planner instructions,
+  semantic obligations, risk/TDD constraints, findings, and evidence needs to
+  canonical `$openspec-apply-change`. It does not own another task queue or apply
+  loop.
+- Code reviewers and goal verifiers are read-only. Executor self-report cannot
+  close their gates. Stable technical findings return to the planner; product
+  meaning gaps return to targeted discussion.
 
 ## Configuration
 
@@ -144,7 +217,7 @@ obligation. Acceptance is digest-bound; stale evidence requires renewed human
 acceptance. Missing, disabled, corrupt, timed-out, or mismatched providers fail
 closed through OpenSpec's archive gate protocol.
 
-The package root intentionally exposes only host-facing run, check, status,
+The package root intentionally exposes only host-facing plan, do, check, status,
 workflow-result, dispatch receipt, stable-finding, UAT, debugging, tier-adapter,
 configuration, and gate APIs.
 Canonical event append, replay, projection-write, and filesystem-record helpers
