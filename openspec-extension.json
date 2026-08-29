@@ -15,7 +15,7 @@
         "id": "discuss",
         "name": "OpenSpec GSD Discuss",
         "description": "Reach shared understanding of material product intent before proposal or targeted replanning.",
-        "entry": "workflows/discuss.md",
+        "entry": "workflows/discuss.generated.md",
         "artifactRequirements": [],
         "gateDependencies": [],
         "requiredHostCapabilities": ["structuredResults"]
@@ -30,10 +30,10 @@
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
-        "id": "run",
-        "name": "OpenSpec GSD Run",
-        "description": "Execute an OpenSpec change with risk-aware assurance.",
-        "entry": "workflows/run.md",
+        "id": "do",
+        "name": "OpenSpec GSD Do",
+        "description": "Implement, review, repair, and verify an approved OpenSpec change.",
+        "entry": "workflows/do.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
         "gateDependencies": ["gsd.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
@@ -48,10 +48,10 @@
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
-        "id": "run-status",
-        "name": "OpenSpec GSD Run Status",
+        "id": "status",
+        "name": "OpenSpec GSD Status",
         "description": "Report execution, assurance, repair, gate, and human-action state.",
-        "entry": "workflows/run-status.md",
+        "entry": "workflows/status.md",
         "artifactRequirements": ["tasks"],
         "gateDependencies": [],
         "requiredHostCapabilities": ["structuredResults"]

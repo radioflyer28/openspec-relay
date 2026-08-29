@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 describe('actual packed companion candidate', () => {
-  it('installs with the core seam and exposes all five workflows through host discovery', async () => {
+  it('installs with the core seam and exposes all seven workflows through host discovery', async () => {
     const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd actual candidate '));
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd installed host '));
     roots.push(artifactRoot, projectRoot);
@@ -37,7 +37,7 @@ describe('actual packed companion candidate', () => {
     const fileList = packed[0].files.map((item) => item.path).sort();
     expect(fileList).toEqual(expect.arrayContaining([
       'package.json', 'openspec-extension.json', 'dist/cli.js', 'dist/gate.js',
-      'workflows/run.md', 'workflows/check.md', 'workflows/run-status.md',
+      'workflows/plan.md', 'workflows/do.md', 'workflows/check.md', 'workflows/status.md',
       'workflows/debug.md', 'workflows/uat.md',
     ]));
     expect(createHash('sha256').update(await fs.readFile(candidate)).digest('hex')).toMatch(/^[a-f0-9]{64}$/);
@@ -74,26 +74,27 @@ describe('actual packed companion candidate', () => {
     const linked = execFileSync(process.execPath, [coreCli, 'extension', 'link', installedCompanion], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
-    expect(linked).toContain('workflows=5');
+    expect(linked).toContain('workflows=7');
     const listed = execFileSync(process.execPath, [coreCli, 'extension', 'list'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
-    expect(listed).toMatch(/gsd@0\.1\.0.*compatibility=compatible.*workflows=5/);
+    expect(listed).toMatch(/gsd@0\.1\.0.*compatibility=compatible.*workflows=7/);
     const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'gsd'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(doctor).toMatch(/manifest=valid; compatibility=compatible/);
 
-    for (const workflow of ['run', 'check', 'run-status', 'debug', 'uat']) {
+    for (const workflow of ['discuss', 'plan', 'do', 'check', 'status', 'debug', 'uat']) {
       const skill = await fs.readFile(path.join(
         projectRoot, '.agents', 'skills', `openspec-${workflow}`, 'SKILL.md',
       ), 'utf8');
       expect(skill).toContain(`openspec-extension:gsd@0.1.0/${workflow}/codex/skill`);
-      expect(skill).toContain('openspec-gsd');
+      expect(skill).toContain(workflow === 'discuss' ? 'Interview the user relentlessly' : 'openspec-gsd');
     }
     const help = execFileSync(process.execPath, [
       path.join(installedCompanion, 'dist', 'cli.js'), '--help',
     ], { cwd: projectRoot, encoding: 'utf8' });
-    for (const command of ['run', 'check', 'run-status', 'debug', 'uat']) expect(help).toContain(command);
+    for (const command of ['plan', 'do', 'check', 'status', 'debug', 'uat']) expect(help).toContain(command);
+    expect(help).not.toMatch(/^\s+run(?:-status)?\s/m);
   }, 60_000);
 });
