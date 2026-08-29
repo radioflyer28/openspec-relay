@@ -20,11 +20,29 @@ export interface TaskMetadataV1 {
 export interface CompiledOpenSpecChangeV1 {
   artifacts: ArtifactReferenceV1[];
   graph: ExecutionGraphV1;
+  requirements: CompiledRequirementV1[];
   requirementIds: string[];
   scenarioIds: string[];
   routingText: string;
   taskAdapter: 'openspec-apply-json-v1' | 'markdown-v1';
   requirementAdapter: 'openspec-show-json-v1' | 'markdown-v1';
+}
+
+export interface CompiledScenarioV1 {
+  id: string;
+  title: string;
+  body: string;
+  sourcePath: string;
+  sourceDigest: string;
+}
+
+export interface CompiledRequirementV1 {
+  id: string;
+  title: string;
+  body: string;
+  scenarios: CompiledScenarioV1[];
+  sourcePath: string;
+  sourceDigest: string;
 }
 
 export interface OpenSpecMachineReadableTaskV1 {
@@ -87,28 +105,68 @@ async function walkMarkdown(directory: string): Promise<string[]> {
   return results.sort();
 }
 
-function extractSpecIds(specPath: string, content: string, changeDir: string): {
-  requirements: string[];
-  scenarios: string[];
+function extractSpecStructure(specPath: string, content: string, changeDir: string): {
+  requirements: CompiledRequirementV1[];
+  fallbackId?: string;
 } {
   const capability = slug(path.basename(path.dirname(specPath)));
-  const requirements: string[] = [];
-  const scenarios: string[] = [];
-  let currentRequirement: string | undefined;
+  const sourcePath = portablePath(path.relative(changeDir, specPath));
+  const digest = sourceDigest(content);
+  const requirements: CompiledRequirementV1[] = [];
+  let currentRequirement: CompiledRequirementV1 | undefined;
+  let currentScenario: CompiledScenarioV1 | undefined;
+  const requirementBody: string[] = [];
+  const scenarioBody: string[] = [];
+  const flushScenario = () => {
+    if (!currentScenario) return;
+    currentScenario.body = scenarioBody.join('\n').trim();
+    scenarioBody.length = 0;
+    currentScenario = undefined;
+  };
+  const flushRequirement = () => {
+    flushScenario();
+    if (!currentRequirement) return;
+    currentRequirement.body = requirementBody.join('\n').trim();
+    requirementBody.length = 0;
+    currentRequirement = undefined;
+  };
   for (const line of content.split(/\r?\n/)) {
     const requirement = /^### Requirement:\s+(.+)$/.exec(line);
     if (requirement) {
-      currentRequirement = `spec:${capability}#requirement:${slug(requirement[1])}`;
+      flushRequirement();
+      const title = requirement[1].trim();
+      currentRequirement = {
+        id: `spec:${capability}#requirement:${slug(title)}`,
+        title,
+        body: '',
+        scenarios: [],
+        sourcePath,
+        sourceDigest: digest,
+      };
       requirements.push(currentRequirement);
       continue;
     }
     const scenario = /^#### Scenario:\s+(.+)$/.exec(line);
-    if (scenario && currentRequirement) scenarios.push(`${currentRequirement}/scenario:${slug(scenario[1])}`);
+    if (scenario && currentRequirement) {
+      flushScenario();
+      const title = scenario[1].trim();
+      currentScenario = {
+        id: `${currentRequirement.id}/scenario:${slug(title)}`,
+        title,
+        body: '',
+        sourcePath,
+        sourceDigest: digest,
+      };
+      currentRequirement.scenarios.push(currentScenario);
+      continue;
+    }
+    if (currentScenario) scenarioBody.push(line);
+    else if (currentRequirement) requirementBody.push(line);
   }
-  if (requirements.length === 0) {
-    requirements.push(`spec:${path.relative(changeDir, specPath).split(path.sep).join('/')}`);
-  }
-  return { requirements, scenarios };
+  flushRequirement();
+  return requirements.length > 0
+    ? { requirements }
+    : { requirements, fallbackId: `spec:${sourcePath}` };
 }
 
 function inferRisk(description: string): TaskNodeV1['risk'] {
@@ -225,22 +283,29 @@ export async function compileOpenSpecChange(options: {
   }
   const requirementIds: string[] = [];
   const scenarioIds: string[] = [];
+  const requirements: CompiledRequirementV1[] = [];
   for (const specPath of await walkMarkdown(path.join(options.changeDir, 'specs'))) {
     const content = await fs.readFile(specPath, 'utf8');
     routingParts.push(content);
-    const ids = extractSpecIds(specPath, content, options.changeDir);
+    const structure = extractSpecStructure(specPath, content, options.changeDir);
     const capability = slug(path.basename(path.dirname(specPath)));
     const machineRequirements = options.machineReadable?.requirements
       ?.filter((requirement) => slug(requirement.spec) === capability)
       .map((requirement) => `spec:${capability}#requirement:${slug(requirement.text)}`);
-    const resolvedRequirements = machineRequirements?.length ? machineRequirements : ids.requirements;
+    const parsedRequirementIds = structure.requirements.map((requirement) => requirement.id);
+    const resolvedRequirements = machineRequirements?.length ? machineRequirements :
+      parsedRequirementIds.length ? parsedRequirementIds : [structure.fallbackId!];
+    for (const [index, requirement] of structure.requirements.entries()) {
+      requirements.push({ ...requirement, id: resolvedRequirements[index] ?? requirement.id });
+    }
+    const resolvedScenarios = structure.requirements.flatMap((requirement) => requirement.scenarios.map((scenario) => scenario.id));
     requirementIds.push(...resolvedRequirements);
-    scenarioIds.push(...ids.scenarios);
+    scenarioIds.push(...resolvedScenarios);
     artifacts.push({
       kind: 'spec',
       path: portablePath(path.relative(options.changeDir, specPath)),
       sourceDigest: sourceDigest(content),
-      ids: [...resolvedRequirements, ...ids.scenarios],
+      ids: [...resolvedRequirements, ...resolvedScenarios],
     });
   }
   const tasks = parseTasks(tasksContent, options.taskMetadata ?? {}, options.machineReadable);
@@ -249,6 +314,7 @@ export async function compileOpenSpecChange(options: {
   return {
     artifacts,
     graph: buildExecutionGraph(tasks),
+    requirements: requirements.sort((left, right) => left.id.localeCompare(right.id)),
     requirementIds: requirementIds.sort(),
     scenarioIds: scenarioIds.sort(),
     routingText: routingParts.join('\n'),
