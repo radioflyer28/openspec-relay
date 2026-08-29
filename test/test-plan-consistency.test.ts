@@ -28,7 +28,7 @@ describe('assurance capability test map', () => {
     expect(lifecycle).toMatch(/debug\.verification_recorded/);
     expect(release).toMatch(/unrelated host secrets|allowlisted environment/i);
     expect(release).toMatch(/configured surfaces|required platform/i);
-    expect(installed).toMatch(/all five workflows through host discovery/);
-    expect(installed).toContain("['run', 'check', 'run-status', 'debug', 'uat']");
+    expect(installed).toMatch(/all seven workflows through host discovery/);
+    expect(installed).toContain("['discuss', 'plan', 'do', 'check', 'status', 'debug', 'uat']");
   });
 });

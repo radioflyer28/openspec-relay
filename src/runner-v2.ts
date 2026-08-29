@@ -37,6 +37,7 @@ import { negotiateExecutionTier, type TierAdaptersV1 } from './tiers.js';
 import { GSD_VERSION } from './version.js';
 import { mapScenarioCoverage } from './verification.js';
 import { computeSemanticPlanRevision } from './planning.js';
+import { classifySemanticRequirements } from './semantics.js';
 
 export const DEFAULT_HOST_CAPABILITIES: HostCapabilitiesV1 = {
   agentDispatch: false,
@@ -316,7 +317,7 @@ export async function startGsdRunV2(options: {
     const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store: refreshedStore, compiled });
     await registerRequiredGate(resolved.changeDir, {
       extensionId: 'gsd', extensionVersion: GSD_VERSION,
-      gateId: 'gsd.assurance', workflowId: 'run',
+      gateId: 'gsd.assurance', workflowId: 'do',
     });
     return {
       ...projection,
@@ -409,7 +410,7 @@ export async function startGsdRunV2(options: {
   const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store, compiled });
   await registerRequiredGate(resolved.changeDir, {
     extensionId: 'gsd', extensionVersion: GSD_VERSION,
-    gateId: 'gsd.assurance', workflowId: 'run',
+    gateId: 'gsd.assurance', workflowId: 'do',
   });
   return { ...projection, blockedBeforeExecution };
 }
@@ -451,6 +452,22 @@ export async function checkGsdRunV2(options: {
     uatScenarios: planning.uatScenarios,
     semanticPlanRevision: planning.semanticPlanRevision,
     now, origin: 'gsd-v2-check' });
+  for (const classification of classifySemanticRequirements(compiled.requirements)) {
+    const classificationStore = await readEventStoreV2(resolved.changeDir);
+    await appendGsdEventV2({
+      changeDir: resolved.changeDir,
+      event: createGsdEventV2({
+        eventId: `semantic-check:${classification.requirementId}:${classification.sourceRevision.slice(0, 12)}:${now}`,
+        runId: classificationStore.runId,
+        changeName: classificationStore.changeName,
+        occurredAt: now,
+        sourceDigests,
+        actor: { kind: 'analyzer', id: 'semantic-lower-bound' },
+        provenance: { origin: 'gsd-v2-check', adapter: classificationStore.seed.tier },
+        payload: { type: 'semantic.classified', classification },
+      }),
+    });
+  }
   let releaseStore = await readEventStoreV2(resolved.changeDir);
   for (const candidate of releaseCandidates) {
     await appendGsdEventV2({

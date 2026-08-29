@@ -12,6 +12,14 @@ export interface RunStatusV2 {
   assuranceStatus: GsdAssuranceV2['status'];
   repositoryContext: { status: 'current' | 'stale' | 'unavailable' | 'missing' };
   readiness: { status: NonNullable<GsdAssuranceV2['readiness']>['status'] | 'missing'; issueCount: number };
+  planning: {
+    revision?: string;
+    approval: GsdRunV2['planApprovalStatus'];
+    review: 'independent' | 'self_review' | 'missing';
+    pathfinderCount: number;
+    activeRoute?: string;
+    resume: 'plan' | 'do' | 'none';
+  };
   findings: Record<string, number>;
   debugSessions: { active: string[]; humanNeeded: string[] };
   uat: { pending: string[]; acceptedLimitations: string[] };
@@ -43,6 +51,7 @@ export async function getRunStatusV2(options: {
     ...(assurance.repositoryContext?.status === 'stale' ? ['Refresh stale repository context.'] : []),
     ...(assurance.readiness && assurance.readiness.status !== 'pass'
       ? assurance.readiness.issues.filter((issue) => issue.blocking).flatMap((issue) => issue.remediation) : []),
+    ...(run.planApprovalStatus !== 'current' ? [`Run /opsx:plan ${run.changeName} before implementation.`] : []),
     ...assurance.findings.filter((finding) => finding.blocking &&
       !['independently_verified', 'accepted_risk'].includes(finding.state))
       .map((finding) => `Resolve finding ${finding.findingId}.`),
@@ -64,6 +73,16 @@ export async function getRunStatusV2(options: {
     assuranceStatus: integrityError ? 'error' : assurance.status,
     repositoryContext: { status: assurance.repositoryContext?.status ?? 'missing' },
     readiness: { status: assurance.readiness?.status ?? 'missing', issueCount: assurance.readiness?.issues.length ?? 0 },
+    planning: {
+      ...(run.planRevision ? { revision: run.planRevision } : {}),
+      approval: run.planApprovalStatus,
+      review: assurance.planReviews.at(-1)?.independent === true ? 'independent'
+        : assurance.planReviews.at(-1) ? 'self_review' : 'missing',
+      pathfinderCount: assurance.pathfinderResults.length,
+      ...(assurance.findingRoutes.at(-1)?.route ? { activeRoute: assurance.findingRoutes.at(-1)!.route } : {}),
+      resume: run.planApprovalStatus !== 'current' ? 'plan'
+        : run.status === 'complete' ? 'none' : 'do',
+    },
     findings,
     debugSessions: {
       active: assurance.debugSessions.filter((session) => session.status === 'active').map((session) => session.sessionId),

@@ -75,6 +75,14 @@ export {
   type PlanGsdChangeResultV1,
 } from './plan-workflow.js';
 export {
+  assertCurrentPlanApprovalV1,
+  doGsdChangeV1,
+  type CanonicalApplyCapabilityV1,
+  type CanonicalApplyRequestV1,
+  type CanonicalApplyResultV1,
+  type DoGsdChangeResultV1,
+} from './do-workflow.js';
+export {
   ExecutionTierSchema,
   GsdConfigV2Schema,
   PortableReferenceV2Schema,
