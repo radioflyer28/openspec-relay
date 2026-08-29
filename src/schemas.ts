@@ -72,6 +72,7 @@ export const PlanReviewResultV1Schema = z.object({
 
 export const FindingRouteV1Schema = z.object({
   findingId: z.string().min(1),
+  source: z.enum(['discussion', 'planner', 'executor', 'pathfinder', 'reviewer', 'verifier']).optional(),
   route: z.enum(['executor', 'planner', 'discussion', 'pathfinder', 'verifier', 'human_needed']),
   taskId: z.string().min(1).optional(),
   planRevision: z.string().regex(/^[a-f0-9]{64}$/),
@@ -635,7 +636,7 @@ export const AssuranceCheckV2Schema = AssuranceCheckV1Schema.extend({
     'artifact-validation', 'repository-checks', 'targeted-tests', 'tdd', 'scenario-coverage',
     'code-review', 'goal-verification', 'security', 'integration', 'ui', 'ai-evaluation',
     'compatibility', 'documentation', 'human-uat', 'repository-context', 'plan-readiness',
-    'release-assurance',
+    'release-assurance', 'planning-assurance',
   ]),
 }).strict();
 

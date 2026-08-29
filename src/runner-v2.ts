@@ -98,6 +98,13 @@ function initialChecks(options: {
       evidenceIds: [], readOnly: true, independent: true,
       remediation: [],
     },
+    {
+      checkId: 'planning-assurance', kind: 'planning-assurance' as const,
+      status: 'pending' as const,
+      summary: 'Semantic plan approval has not been evaluated.',
+      evidenceIds: [], readOnly: true, independent: false,
+      remediation: ['Run /opsx:plan for the current OpenSpec artifact revision.'],
+    },
   ].map((check) => AssuranceCheckV2Schema.parse(check));
 }
 

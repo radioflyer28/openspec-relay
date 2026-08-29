@@ -82,6 +82,7 @@ export {
   type CanonicalApplyResultV1,
   type DoGsdChangeResultV1,
 } from './do-workflow.js';
+export { routeDispatchedFindingsV1 } from './finding-routing.js';
 export {
   ExecutionTierSchema,
   GsdConfigV2Schema,

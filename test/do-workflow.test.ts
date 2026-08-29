@@ -126,4 +126,26 @@ describe('approved do convergence', () => {
     expect(result).toMatchObject({ status: 'human_needed', convergenceCycles: 2 });
     expect(result.summary).toMatch(/did not converge within two cycles/i);
   });
+
+  it('routes verifier-discovered product-meaning omissions to targeted discussion', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await approve(root);
+    const roles: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'verifier'
+      ? { status: 'fail', summary: 'product intent omission', evidenceRefs: [], findings: [{
+        providerId: 'goal-verifier', ruleId: 'requirement-omission', category: 'product-intent',
+        scope: { kind: 'requirement', identity: requirementId }, severity: 'error', blocking: true,
+        summary: 'The implemented product meaning contradicts an omitted requirement decision.',
+        requirementIds: [requirementId], taskIds: ['1.1'],
+      }] }
+      : { status: 'pass', summary: 'pass', evidenceRefs: [] } };
+    const result = await doGsdChangeV1({
+      change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
+      applyCapability: { apply: async (request) => {
+        await completeTask(changeDir, request.taskId);
+        return { status: 'pass', summary: 'applied' };
+      } },
+    });
+    expect(result).toMatchObject({ status: 'human_needed', nextAction: '/opsx:discuss demo' });
+    expect(result.assurance.findingRoutes.at(-1)).toMatchObject({ source: 'verifier', route: 'discussion' });
+  });
 });
