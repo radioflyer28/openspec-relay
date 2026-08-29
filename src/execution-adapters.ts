@@ -7,7 +7,20 @@ import {
   type PortableReferenceV2,
 } from './schemas.js';
 
-export type ExecutionRole = 'executor' | 'reviewer' | 'verifier';
+export type ExecutionRole = 'planner' | 'plan_reviewer' | 'pathfinder' | 'executor' | 'reviewer' | 'verifier';
+
+export interface PlanningRoleContextV1 {
+  changeName: string;
+  planRevision: string;
+  invocation: 'initial_plan' | 'do_replan';
+  artifactRefs: string[];
+  plannerInstructions: string[];
+  semanticObligations: string[];
+  evidenceRequirements: string[];
+  findingIds?: string[];
+  pathfinderQuestion?: string;
+  disposableExperimentWorkspace?: boolean;
+}
 
 export interface RoleRequestV1 {
   role: ExecutionRole;
@@ -15,6 +28,7 @@ export interface RoleRequestV1 {
   readOnly: boolean;
   isolated: boolean;
   workspace?: string;
+  planning?: PlanningRoleContextV1;
 }
 
 export interface RoleResultV1 {
@@ -24,6 +38,16 @@ export interface RoleResultV1 {
   evidence?: PortableReferenceV2[];
   findings?: ReportedFindingV2[];
   events?: GsdEventPayloadV1[];
+  pathfinder?: {
+    assumptions: string[];
+    experiments: string[];
+    observations: string[];
+    counterexamples: string[];
+    conclusion: string;
+    confidence: 'high' | 'medium' | 'low';
+    routing: 'planner' | 'discussion' | 'human_needed';
+  };
+  scopeExpansion?: boolean;
 }
 
 /** A reviewer/verifier report deliberately omits findingId. OpenSpec GSD derives
@@ -75,7 +99,7 @@ export async function dispatchRoleV2(options: {
   dispatcher: RoleDispatcherV1;
   request: RoleRequestV1;
 }): Promise<DispatchedRoleResultV2> {
-  if (['reviewer', 'verifier'].includes(options.request.role) && !options.request.readOnly) {
+  if (['plan_reviewer', 'pathfinder', 'reviewer', 'verifier'].includes(options.request.role) && !options.request.readOnly) {
     throw new Error(`${options.request.role} dispatch requires a read-only contract.`);
   }
   const request = deepFreeze(structuredClone(options.request));
@@ -95,7 +119,7 @@ export function assertDispatchedRoleResultV2(
   if (expectedRole && receipt.request.role !== expectedRole) {
     throw new Error(`Expected a dispatched ${expectedRole} result, received ${receipt.request.role}.`);
   }
-  if (['reviewer', 'verifier'].includes(receipt.request.role) && !receipt.request.readOnly) {
+  if (['plan_reviewer', 'pathfinder', 'reviewer', 'verifier'].includes(receipt.request.role) && !receipt.request.readOnly) {
     throw new Error('Independent assurance receipts must come from a read-only dispatch contract.');
   }
 }
