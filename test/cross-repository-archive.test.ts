@@ -35,11 +35,11 @@ describe('cross-repository archive gate flow', () => {
     expect(doctor.status, doctor.stderr || doctor.stdout).toBe(0);
     expect(doctor.stdout).toContain('reconciliation: ok');
     const generatedRun = await fs.readFile(
-      path.join(root, '.agents', 'skills', 'openspec-run', 'SKILL.md'),
+      path.join(root, '.agents', 'skills', 'openspec-do', 'SKILL.md'),
       'utf8',
     );
     expect(generatedRun).toContain('openspec-extension:gsd@');
-    expect(generatedRun).toContain('gsd record');
+    expect(generatedRun).toContain('$openspec-apply-change');
 
     const run = await startGsdRunV2({ change: 'demo', projectRoot: root });
     expect(run.run.mode).toBe('guarded');

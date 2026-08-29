@@ -4,17 +4,15 @@ import { promises as fs } from 'node:fs';
 import { z } from 'zod';
 import { GSD_VERSION } from './version.js';
 import {
-  ExecutionTierSchema,
-  GsdConfigV2Schema,
   PortableReferenceV2Schema,
-  RunModeSchema,
   DeviationV1Schema,
   EvidenceV1Schema,
   RepairAttemptV1Schema,
 } from './schemas.js';
-import { checkGsdRunV2, startGsdRunV2 } from './runner-v2.js';
+import { checkGsdRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
 import { planGsdChangeV1 } from './plan-workflow.js';
+import { assertCurrentPlanApprovalV1 } from './do-workflow.js';
 import {
   acceptGsdGateV2,
   observeDebugExperimentV2,
@@ -79,36 +77,15 @@ program.command('plan')
     Boolean(options.json));
   });
 
-program.command('run')
+program.command('do')
   .argument('<change>')
   .option('--project <path>')
-  .option('--mode <mode>', 'quick, guarded, or full', 'guarded')
-  .option('--tier <tier>', 'tier0, tier1, or tier2', 'tier0')
-  .option('--enable-agent-dispatch')
-  .option('--enable-parallel')
-  .option('--enable-commits')
-  .option('--enable-branches')
-  .option('--enable-worktrees')
   .option('--json')
   .action(async (change, options) => {
-    const mode = RunModeSchema.parse(options.mode);
-    const requestedTier = ExecutionTierSchema.parse(options.tier);
-    const config = GsdConfigV2Schema.partial().parse({
-      mode,
-      requestedTier,
-      allowAgentDispatch: Boolean(options.enableAgentDispatch),
-      allowParallel: Boolean(options.enableParallel),
-      git: {
-        commits: Boolean(options.enableCommits),
-        branches: Boolean(options.enableBranches),
-        worktrees: Boolean(options.enableWorktrees),
-      },
-    });
-    const result = await startGsdRunV2({ change, projectRoot: options.project, config });
-    print(options.json ? result :
-      `OpenSpec GSD ${result.run.mode} run ${result.run.runId} started at ${result.run.tier}; ` +
-      `${result.run.tasks.length} task(s), ${result.run.executionWaves.length} wave(s); ` +
-      `${result.blockedBeforeExecution ? 'readiness blocks implementation.' : 'readiness is recorded before implementation.'}`,
+    const approval = await assertCurrentPlanApprovalV1({ change, projectRoot: options.project });
+    print(options.json ? { status: 'ready', approval } :
+      `OpenSpec GSD do is ready for '${approval.changeName}' at approved revision ${approval.revision}. ` +
+      `The host executor wrapper must delegate implementation to $openspec-apply-change.`,
     Boolean(options.json));
   });
 
@@ -124,7 +101,7 @@ program.command('check')
     Boolean(options.json));
   });
 
-program.command('run-status')
+program.command('status')
   .argument('<change>')
   .option('--project <path>')
   .option('--json')

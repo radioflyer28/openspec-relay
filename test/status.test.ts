@@ -24,7 +24,7 @@ describe('canonical run status', () => {
       nextActions: expect.arrayContaining([expect.stringMatching(/regenerate projections/i)]),
     });
 
-    const cli = spawnSync(process.execPath, [path.resolve('dist', 'cli.js'), 'run-status', 'demo', '--project', root], {
+    const cli = spawnSync(process.execPath, [path.resolve('dist', 'cli.js'), 'status', 'demo', '--project', root], {
       encoding: 'utf8',
     });
     expect(cli.status, cli.stderr).toBe(0);

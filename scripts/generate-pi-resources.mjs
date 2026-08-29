@@ -15,15 +15,15 @@ await Promise.all([
 ]);
 
 for (const workflow of manifest.contributes.workflows) {
-  const supplement = (await fs.readFile(path.join(root, workflow.entry), 'utf8')).trimEnd();
-  if (workflow.id === 'discuss') validateDiscussionContract({
-    body: grillingBody,
-    supplement,
-    notice: thirdPartyNotice,
-  });
-  const body = workflow.id === 'discuss'
-    ? `${grillingBody.trimEnd()}\n\n${supplement}`
-    : supplement;
+  let body;
+  if (workflow.id === 'discuss') {
+    const supplement = (await fs.readFile(path.join(root, 'workflows', 'discuss.md'), 'utf8')).trimEnd();
+    validateDiscussionContract({ body: grillingBody, supplement, notice: thirdPartyNotice });
+    body = `${grillingBody.trimEnd()}\n\n${supplement}`;
+    await fs.writeFile(path.join(root, workflow.entry), `${body}\n`);
+  } else {
+    body = (await fs.readFile(path.join(root, workflow.entry), 'utf8')).trimEnd();
+  }
   const promptPath = path.join(outputRoot, 'prompts', `opsx-${workflow.id}.md`);
   const skillPath = path.join(outputRoot, 'skills', `openspec-${workflow.id}`, 'SKILL.md');
   const prompt = `---\ndescription: ${JSON.stringify(workflow.description)}\n---\n\n${body}\n`;

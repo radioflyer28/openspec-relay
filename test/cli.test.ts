@@ -8,12 +8,12 @@ import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 afterEach(cleanupTemporaryRoots);
 
 describe('companion CLI', () => {
-  it('provides run, check, and run-status entry points', async () => {
+  it('provides plan, do, check, and status entry points without legacy aliases', async () => {
     const { root } = await createOpenSpecProject();
     const run = JSON.parse(execFileSync(process.execPath, [
-      'dist/cli.js', 'run', 'demo', '--project', root, '--mode', 'quick', '--json',
+      'dist/cli.js', 'plan', 'demo', '--project', root, '--allow-self-review', '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(run.run).toMatchObject({ changeName: 'demo', mode: 'quick', tier: 'tier0' });
+    expect(run.run).toMatchObject({ changeName: 'demo', mode: 'guarded', tier: 'tier0' });
     const taskRecord = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'record', 'task', 'demo', '1.1', '--project', root,
       '--status', 'in_progress', '--event-id', 'cli-task-start',
@@ -46,9 +46,14 @@ describe('companion CLI', () => {
       repositoryContext: { status: 'unavailable' },
     });
     const status = JSON.parse(execFileSync(process.execPath, [
-      'dist/cli.js', 'run-status', 'demo', '--project', root, '--json',
+      'dist/cli.js', 'status', 'demo', '--project', root, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(status).toMatchObject({ changeName: 'demo', mode: 'quick', tier: 'tier0' });
+    expect(status).toMatchObject({ changeName: 'demo', mode: 'guarded', tier: 'tier0' });
+    const rootHelp = execFileSync(process.execPath, ['dist/cli.js', '--help'], {
+      cwd: process.cwd(), encoding: 'utf8',
+    });
+    for (const command of ['plan', 'do', 'check', 'status']) expect(rootHelp).toContain(command);
+    expect(rootHelp).not.toMatch(/^\s+run(?:-status)?\s/m);
   }, 20_000);
 
   it('does not advertise repair when this host has no repair adapter', () => {

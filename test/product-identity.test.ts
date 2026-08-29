@@ -32,7 +32,7 @@ describe('OpenSpec GSD product identity', () => {
     expect(Object.keys(pkg.scripts)).not.toContain('publish');
     expect(pkg.dependencies).not.toHaveProperty('gsd-core');
     expect(manifest.id).toBe('gsd');
-    expect(manifest.contributes.workflows).toHaveLength(5);
+    expect(manifest.contributes.workflows).toHaveLength(7);
     expect(manifest.contributes.workflows.every(({ name }) => name.startsWith('OpenSpec GSD '))).toBe(true);
     expect(new Set(manifest.contributes.workflows.flatMap(({ gateDependencies }) => gateDependencies)))
       .toEqual(new Set(['gsd.assurance']));
