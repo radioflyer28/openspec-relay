@@ -36,6 +36,7 @@ import {
 import { negotiateExecutionTier, type TierAdaptersV1 } from './tiers.js';
 import { GSD_VERSION } from './version.js';
 import { mapScenarioCoverage } from './verification.js';
+import { computeSemanticPlanRevision } from './planning.js';
 
 export const DEFAULT_HOST_CAPABILITIES: HostCapabilitiesV1 = {
   agentDispatch: false,
@@ -149,6 +150,10 @@ async function planningInputs(options: {
     scenarioIds: options.compiled.scenarioIds, evidence: [], humanNeeded,
   });
   const revision = await computeMaterialRevision({ projectRoot: options.projectRoot, compiled: options.compiled, context });
+  const semanticPlanRevision = await computeSemanticPlanRevision({
+    changeDir: options.changeDir,
+    compiled: options.compiled,
+  });
   const uatScenarios = projectUatScenarios({
     coverage: scenarioCoverage,
     findings: [],
@@ -159,7 +164,15 @@ async function planningInputs(options: {
   if (options.config.features.uat.required && uatScenarios.length === 0) {
     uatScenarios.push(requiredUatProjectionError(revision));
   }
-  return { changedFiles, impactUnknown: discovery.unresolved, context, readiness, scenarioCoverage, uatScenarios };
+  return {
+    changedFiles,
+    impactUnknown: discovery.unresolved,
+    context,
+    readiness,
+    scenarioCoverage,
+    uatScenarios,
+    semanticPlanRevision,
+  };
 }
 
 async function refreshPlanningEvents(options: {
@@ -172,6 +185,7 @@ async function refreshPlanningEvents(options: {
   readiness: ReturnType<typeof evaluatePlanReadiness>;
   scenarioCoverage: GsdAssuranceV2['scenarioCoverage'];
   uatScenarios: GsdAssuranceV2['uatScenarios'];
+  semanticPlanRevision: Awaited<ReturnType<typeof computeSemanticPlanRevision>>;
   now: string;
   origin: string;
 }) {
@@ -198,6 +212,17 @@ async function refreshPlanningEvents(options: {
     `readiness-stale:${options.current.assurance.readiness.resultId}:${options.readiness.inputRevision.slice(0, 12)}`,
     { kind: 'automation' }, { type: 'readiness.stale', resultId: options.current.assurance.readiness.resultId,
       inputRevision: options.readiness.inputRevision },
+  );
+  if (options.current.assurance.planApproval &&
+      options.current.assurance.planApproval.revision !== options.semanticPlanRevision.revision &&
+      !options.current.assurance.planStale) await append(
+    `plan-stale:${options.current.assurance.planApproval.revision.slice(0, 12)}:${options.semanticPlanRevision.revision.slice(0, 12)}`,
+    { kind: 'automation' },
+    {
+      type: 'plan.stale',
+      approvedRevision: options.current.assurance.planApproval.revision,
+      currentRevision: options.semanticPlanRevision.revision,
+    },
   );
   await append(`context:${options.context.contextId}:${options.now}`, { kind: 'analyzer', id: 'repository-context' },
     { type: 'context.compiled', context: options.context });
@@ -285,6 +310,7 @@ export async function startGsdRunV2(options: {
     await refreshPlanningEvents({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, store, compiled, current,
       context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
       uatScenarios: planning.uatScenarios,
+      semanticPlanRevision: planning.semanticPlanRevision,
       now, origin: 'gsd-v2-resume' });
     const refreshedStore = await readEventStoreV2(resolved.changeDir);
     const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store: refreshedStore, compiled });
@@ -423,6 +449,7 @@ export async function checkGsdRunV2(options: {
   await refreshPlanningEvents({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir, store, compiled, current,
     context: planning.context, readiness: planning.readiness, scenarioCoverage: planning.scenarioCoverage,
     uatScenarios: planning.uatScenarios,
+    semanticPlanRevision: planning.semanticPlanRevision,
     now, origin: 'gsd-v2-check' });
   let releaseStore = await readEventStoreV2(resolved.changeDir);
   for (const candidate of releaseCandidates) {

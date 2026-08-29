@@ -17,11 +17,17 @@ import {
   type GsdEventStoreV2,
   type GsdEventPayloadV1,
   type GsdRunV2,
+  type FindingRouteV1,
+  type PathfinderResultV1,
+  type PlanApprovalV1,
+  type PlanReviewResultV1,
   type ReleaseCandidateV2,
   type RepositoryContextV2,
   type ReadinessResultV2,
   type UatScenarioV2,
   type VerificationFindingV1,
+  type SemanticClassificationV1,
+  type SemanticDowngradeV1,
 } from './schemas.js';
 import {
   assuranceStatePath,
@@ -158,12 +164,16 @@ function assuranceStatusV2(options: {
   debugSessions: DebugSessionV2[];
   uatScenarios: UatScenarioV2[];
   releaseCandidates: ReleaseCandidateV2[];
+  planStale: boolean;
+  semanticDowngrades: SemanticDowngradeV1[];
 }): GsdAssuranceV2['status'] {
   if (options.checks.some((check) => check.status === 'error') ||
       options.releaseCandidates.some((candidate) => candidate.status === 'error')) return 'error';
   if (options.checks.some((check) => check.status === 'fail') ||
       options.releaseCandidates.some((candidate) => candidate.status === 'fail') ||
       evaluateFindingObligations({ findings: options.findings, scenarios: options.uatScenarios }).blocking.length > 0) return 'fail';
+  if (options.planStale) return 'fail';
+  if (options.semanticDowngrades.some((downgrade) => downgrade.status === 'human_needed')) return 'human_needed';
   if (options.debugSessions.some((session) => session.status !== 'resolved' || !session.verification)) return 'human_needed';
   if (options.uatScenarios.some((scenario) =>
     ['awaiting_human', 'blocked', 'stale'].includes(scenario.status)) ||
@@ -191,6 +201,13 @@ export function replayGsdEventsV2(options: {
   const debugSessions = new Map<string, DebugSessionV2>();
   const uatScenarios = new Map<string, UatScenarioV2>();
   const releaseCandidates = new Map<string, ReleaseCandidateV2>();
+  const semanticClassifications = new Map<string, SemanticClassificationV1>();
+  const semanticDowngrades = new Map<string, SemanticDowngradeV1>();
+  const pathfinderResults = new Map<string, PathfinderResultV1>();
+  const planReviews = new Map<string, PlanReviewResultV1>();
+  const findingRoutes: FindingRouteV1[] = [];
+  let planApproval: PlanApprovalV1 | undefined;
+  let planStale = false;
   let repositoryContext: RepositoryContextV2 | undefined;
   let readiness: ReadinessResultV2 | undefined;
   let scenarioCoverage = store.seed.scenarioCoverage;
@@ -240,6 +257,21 @@ export function replayGsdEventsV2(options: {
     } else if (payload.type === 'readiness.evaluated') readiness = payload.result;
     else if (payload.type === 'readiness.stale' && readiness?.resultId === payload.resultId) {
       readiness = { ...readiness, status: 'stale', inputRevision: payload.inputRevision };
+    } else if (payload.type === 'semantic.classified') {
+      semanticClassifications.set(payload.classification.requirementId, payload.classification);
+    } else if (payload.type === 'semantic.downgrade_recorded') {
+      semanticDowngrades.set(payload.downgrade.requirementId, payload.downgrade);
+    } else if (payload.type === 'pathfinder.completed') {
+      pathfinderResults.set(payload.result.pathfinderId, payload.result);
+    } else if (payload.type === 'plan.reviewed') {
+      planReviews.set(payload.review.reviewId, payload.review);
+    } else if (payload.type === 'finding.routed') {
+      findingRoutes.push(payload.route);
+    } else if (payload.type === 'plan.approved') {
+      planApproval = payload.approval;
+      planStale = false;
+    } else if (payload.type === 'plan.stale' && planApproval?.revision === payload.approvedRevision) {
+      planStale = true;
     } else if (payload.type === 'finding.discovered') findings.set(payload.finding.findingId, payload.finding);
     else if (payload.type === 'finding.transitioned') {
       const existing = findings.get(payload.findingId);
@@ -366,13 +398,21 @@ export function replayGsdEventsV2(options: {
   const uatValues = [...uatScenarios.values()].sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
   const releaseValues = [...releaseCandidates.values()].sort((left, right) => left.candidateId.localeCompare(right.candidateId));
   const debugValues = [...debugSessions.values()].sort((left, right) => left.sessionId.localeCompare(right.sessionId));
+  const semanticValues = [...semanticClassifications.values()]
+    .sort((left, right) => left.requirementId.localeCompare(right.requirementId));
+  const downgradeValues = [...semanticDowngrades.values()]
+    .sort((left, right) => left.requirementId.localeCompare(right.requirementId));
+  const pathfinderValues = [...pathfinderResults.values()]
+    .sort((left, right) => left.pathfinderId.localeCompare(right.pathfinderId));
+  const reviewValues = [...planReviews.values()].sort((left, right) => left.reviewId.localeCompare(right.reviewId));
   const assurance = GsdAssuranceV2Schema.parse({
     version: 2,
     runId: store.runId,
     changeName: store.changeName,
     mode: store.seed.mode,
     status: assuranceStatusV2({ checks, findings: findingValues, debugSessions: debugValues,
-      uatScenarios: uatValues, releaseCandidates: releaseValues }),
+      uatScenarios: uatValues, releaseCandidates: releaseValues, planStale,
+      semanticDowngrades: downgradeValues }),
     updatedAt,
     checks,
     evidence,
@@ -386,6 +426,13 @@ export function replayGsdEventsV2(options: {
     debugSessions: debugValues,
     uatScenarios: uatValues,
     releaseCandidates: releaseValues,
+    semanticClassifications: semanticValues,
+    semanticDowngrades: downgradeValues,
+    pathfinderResults: pathfinderValues,
+    planReviews: reviewValues,
+    findingRoutes,
+    ...(planApproval ? { planApproval } : {}),
+    planStale,
   });
   const run = GsdRunV2Schema.parse({
     version: 2,
@@ -408,6 +455,8 @@ export function replayGsdEventsV2(options: {
     stateRevision: digestJson(store),
     ...(repositoryContext ? { repositoryContextId: repositoryContext.contextId } : {}),
     ...(readiness ? { readinessResultId: readiness.resultId } : {}),
+    ...(planApproval ? { planRevision: planApproval.revision } : {}),
+    planApprovalStatus: !planApproval ? 'missing' : planStale ? 'stale' : 'current',
   });
   return { run, assurance };
 }
