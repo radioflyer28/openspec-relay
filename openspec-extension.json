@@ -21,6 +21,15 @@
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
+        "id": "plan",
+        "name": "OpenSpec GSD Plan",
+        "description": "Refine, review, and approve an OpenSpec change for execution.",
+        "entry": "workflows/plan.md",
+        "artifactRequirements": ["proposal", "specs", "design", "tasks"],
+        "gateDependencies": ["gsd.assurance"],
+        "requiredHostCapabilities": ["structuredResults"]
+      },
+      {
         "id": "run",
         "name": "OpenSpec GSD Run",
         "description": "Execute an OpenSpec change with risk-aware assurance.",
