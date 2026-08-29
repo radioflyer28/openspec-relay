@@ -60,6 +60,14 @@ export {
   type DiscussionHandoffV1,
 } from './discussion.js';
 export {
+  computeSemanticPlanRevision,
+  createPlanApproval,
+  isPlanApprovalCurrent,
+  normalizeTaskCompletionMarkers,
+  PLANNING_EVENT_TYPES,
+  type SemanticPlanRevisionV1,
+} from './planning.js';
+export {
   ExecutionTierSchema,
   GsdConfigV2Schema,
   PortableReferenceV2Schema,

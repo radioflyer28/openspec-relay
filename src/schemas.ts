@@ -31,6 +31,53 @@ export const SemanticDowngradeV1Schema = z.object({
   sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
   status: z.enum(['accepted', 'human_needed']),
 }).strict();
+
+export const PlanApprovalV1Schema = z.object({
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+  approvedAt: z.string().datetime(),
+  independent: z.boolean(),
+  reviewerId: z.string().min(1).optional(),
+  semanticLevels: z.array(z.object({
+    requirementId: z.string().min(1),
+    level: SemanticLevelSchema,
+  }).strict()).default([]),
+  openDispositionIds: z.array(z.string().min(1)).default([]),
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+}).strict();
+
+export const PathfinderResultV1Schema = z.object({
+  pathfinderId: z.string().min(1),
+  question: z.string().min(1),
+  assumptions: z.array(z.string().min(1)).default([]),
+  experiments: z.array(z.string().min(1)).default([]),
+  observations: z.array(z.string().min(1)).default([]),
+  counterexamples: z.array(z.string().min(1)).default([]),
+  conclusion: z.string().min(1),
+  confidence: z.enum(['high', 'medium', 'low']),
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+  routing: z.enum(['planner', 'discussion', 'human_needed']),
+  sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
+export const PlanReviewResultV1Schema = z.object({
+  reviewId: z.string().min(1),
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+  status: z.enum(['pass', 'fail', 'human_needed', 'error']),
+  independent: z.boolean(),
+  reviewerId: z.string().min(1).optional(),
+  findingIds: z.array(z.string().min(1)).default([]),
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+  reviewedAt: z.string().datetime(),
+}).strict();
+
+export const FindingRouteV1Schema = z.object({
+  findingId: z.string().min(1),
+  route: z.enum(['executor', 'planner', 'discussion', 'pathfinder', 'verifier', 'human_needed']),
+  taskId: z.string().min(1).optional(),
+  planRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  reason: z.string().min(1),
+  attempt: z.number().int().nonnegative().default(0),
+}).strict();
 export const AssuranceStatusSchema = z.enum([
   'pending',
   'pass',
@@ -450,7 +497,7 @@ export const FindingTransitionV2Schema = z.object({
   to: FindingStateV2Schema,
   occurredAt: z.string().datetime(),
   actor: z.object({
-    kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host', 'analyzer', 'release_driver']),
+    kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host', 'analyzer', 'release_driver', 'planner', 'plan_reviewer', 'pathfinder']),
     id: z.string().min(1).optional(),
   }).strict(),
   reason: z.string().min(1),
@@ -593,7 +640,7 @@ export const AssuranceCheckV2Schema = AssuranceCheckV1Schema.extend({
 }).strict();
 
 export const GsdEventActorV2Schema = z.object({
-  kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host', 'analyzer', 'release_driver']),
+  kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host', 'analyzer', 'release_driver', 'planner', 'plan_reviewer', 'pathfinder']),
   id: z.string().min(1).optional(),
 }).strict();
 
@@ -620,6 +667,13 @@ export const GsdEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context.stale'), contextId: z.string().min(1), referenceIds: z.array(z.string().min(1)).min(1) }).strict(),
   z.object({ type: z.literal('readiness.evaluated'), result: ReadinessResultV2Schema }).strict(),
   z.object({ type: z.literal('readiness.stale'), resultId: z.string().min(1), inputRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ type: z.literal('semantic.classified'), classification: SemanticClassificationV1Schema }).strict(),
+  z.object({ type: z.literal('semantic.downgrade_recorded'), downgrade: SemanticDowngradeV1Schema }).strict(),
+  z.object({ type: z.literal('pathfinder.completed'), result: PathfinderResultV1Schema }).strict(),
+  z.object({ type: z.literal('plan.reviewed'), review: PlanReviewResultV1Schema }).strict(),
+  z.object({ type: z.literal('finding.routed'), route: FindingRouteV1Schema }).strict(),
+  z.object({ type: z.literal('plan.approved'), approval: PlanApprovalV1Schema }).strict(),
+  z.object({ type: z.literal('plan.stale'), approvedRevision: z.string().regex(/^[a-f0-9]{64}$/), currentRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   z.object({ type: z.literal('finding.discovered'), finding: FindingLifecycleRecordV2Schema }).strict(),
   z.object({ type: z.literal('finding.transitioned'), findingId: z.string().min(1), transition: FindingTransitionV2Schema }).strict(),
   z.object({ type: z.literal('finding.stale'), findingId: z.string().min(1), sourceRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
@@ -669,6 +723,8 @@ export const GsdRunV2Schema = GsdRunV1Schema.omit({ version: true, config: true 
   stateRevision: z.string().regex(/^[a-f0-9]{64}$/),
   repositoryContextId: z.string().min(1).optional(),
   readinessResultId: z.string().min(1).optional(),
+  planRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  planApprovalStatus: z.enum(['missing', 'current', 'stale']).default('missing'),
 }).strict();
 
 export const GsdAssuranceV2Schema = GsdAssuranceV1Schema.omit({
@@ -682,6 +738,13 @@ export const GsdAssuranceV2Schema = GsdAssuranceV1Schema.omit({
   debugSessions: z.array(DebugSessionV2Schema).default([]),
   uatScenarios: z.array(UatScenarioV2Schema).default([]),
   releaseCandidates: z.array(ReleaseCandidateV2Schema).default([]),
+  semanticClassifications: z.array(SemanticClassificationV1Schema).default([]),
+  semanticDowngrades: z.array(SemanticDowngradeV1Schema).default([]),
+  pathfinderResults: z.array(PathfinderResultV1Schema).default([]),
+  planReviews: z.array(PlanReviewResultV1Schema).default([]),
+  findingRoutes: z.array(FindingRouteV1Schema).default([]),
+  planApproval: PlanApprovalV1Schema.optional(),
+  planStale: z.boolean().default(false),
 }).strict();
 
 export const GsdEventStoreV2Schema = z.object({
@@ -708,6 +771,10 @@ export type PortableReferenceV2 = z.infer<typeof PortableReferenceV2Schema>;
 export type SemanticLevel = z.infer<typeof SemanticLevelSchema>;
 export type SemanticClassificationV1 = z.infer<typeof SemanticClassificationV1Schema>;
 export type SemanticDowngradeV1 = z.infer<typeof SemanticDowngradeV1Schema>;
+export type PlanApprovalV1 = z.infer<typeof PlanApprovalV1Schema>;
+export type PathfinderResultV1 = z.infer<typeof PathfinderResultV1Schema>;
+export type PlanReviewResultV1 = z.infer<typeof PlanReviewResultV1Schema>;
+export type FindingRouteV1 = z.infer<typeof FindingRouteV1Schema>;
 export type GsdConfigV2 = z.infer<typeof GsdConfigV2Schema>;
 export type ConfiguredReleaseCommandV2 = z.infer<typeof ConfiguredReleaseCommandV2Schema>;
 export type RepositoryContextClaimV2 = z.infer<typeof RepositoryContextClaimV2Schema>;
