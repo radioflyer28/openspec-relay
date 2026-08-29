@@ -12,6 +12,15 @@
   "contributes": {
     "workflows": [
       {
+        "id": "discuss",
+        "name": "OpenSpec GSD Discuss",
+        "description": "Reach shared understanding of material product intent before proposal or targeted replanning.",
+        "entry": "workflows/discuss.md",
+        "artifactRequirements": [],
+        "gateDependencies": [],
+        "requiredHostCapabilities": ["structuredResults"]
+      },
+      {
         "id": "run",
         "name": "OpenSpec GSD Run",
         "description": "Execute an OpenSpec change with risk-aware assurance.",

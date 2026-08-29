@@ -41,6 +41,8 @@
     "dist",
     "pi",
     "workflows",
+    "vendor",
+    "THIRD_PARTY_NOTICES.md",
     "openspec-extension.json",
     "README.md",
     "MAINTENANCE.md",
