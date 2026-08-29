@@ -9,6 +9,28 @@ export const RunModeSchema = z.enum(['quick', 'guarded', 'full']);
 export const ExecutionTierSchema = z.enum(['tier0', 'tier1', 'tier2']);
 export const TddPolicySchema = z.enum(['auto', 'always', 'off']);
 export const RiskSchema = z.enum(['low', 'medium', 'high', 'critical']);
+export const SemanticLevelSchema = z.enum(['simple', 'behavioral', 'modeling']);
+
+export const SemanticClassificationV1Schema = z.object({
+  requirementId: z.string().min(1),
+  level: SemanticLevelSchema,
+  rationale: z.string().min(1),
+  triggers: z.array(z.string().min(1)).default([]),
+  sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+  provenance: z.enum(['planner', 'plan_reviewer', 'tier0_self_review', 'deterministic_lower_bound'])
+    .default('deterministic_lower_bound'),
+}).strict();
+
+export const SemanticDowngradeV1Schema = z.object({
+  requirementId: z.string().min(1),
+  requiredLevel: SemanticLevelSchema,
+  achievedLevel: SemanticLevelSchema,
+  reason: z.string().min(1),
+  actor: z.string().min(1).optional(),
+  sourceRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  status: z.enum(['accepted', 'human_needed']),
+}).strict();
 export const AssuranceStatusSchema = z.enum([
   'pending',
   'pass',
@@ -683,6 +705,9 @@ export const GsdEventStoreV2Schema = z.object({
 }).strict();
 
 export type PortableReferenceV2 = z.infer<typeof PortableReferenceV2Schema>;
+export type SemanticLevel = z.infer<typeof SemanticLevelSchema>;
+export type SemanticClassificationV1 = z.infer<typeof SemanticClassificationV1Schema>;
+export type SemanticDowngradeV1 = z.infer<typeof SemanticDowngradeV1Schema>;
 export type GsdConfigV2 = z.infer<typeof GsdConfigV2Schema>;
 export type ConfiguredReleaseCommandV2 = z.infer<typeof ConfiguredReleaseCommandV2Schema>;
 export type RepositoryContextClaimV2 = z.infer<typeof RepositoryContextClaimV2Schema>;
