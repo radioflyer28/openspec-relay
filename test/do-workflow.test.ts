@@ -130,7 +130,8 @@ describe('approved do convergence', () => {
   it('routes verifier-discovered product-meaning omissions to targeted discussion', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await approve(root);
-    const roles: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'verifier'
+    let intentResolved = false;
+    const roles: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'verifier' && !intentResolved
       ? { status: 'fail', summary: 'product intent omission', evidenceRefs: [], findings: [{
         providerId: 'goal-verifier', ruleId: 'requirement-omission', category: 'product-intent',
         scope: { kind: 'requirement', identity: requirementId }, severity: 'error', blocking: true,
@@ -147,5 +148,27 @@ describe('approved do convergence', () => {
     });
     expect(result).toMatchObject({ status: 'human_needed', nextAction: '/opsx:discuss demo' });
     expect(result.assurance.findingRoutes.at(-1)).toMatchObject({ source: 'verifier', route: 'discussion' });
+    await fs.appendFile(`${changeDir}/design.md`, '\n## Confirmed intent\n\nThe targeted discussion settled reversible behavior.\n');
+    intentResolved = true;
+    const replanned = await planGsdChangeV1({ change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles });
+    expect(replanned.status).toBe('pass');
+    const resumed = await doGsdChangeV1({
+      change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
+      applyCapability: { apply: async () => ({ status: 'pass', summary: 'no pending repair' }) },
+    });
+    expect(resumed).toMatchObject({ status: 'pass', applyCalls: 0, run: { status: 'complete' } });
+  });
+
+  it('returns canonical apply ambiguity to planner triage without claiming completion', async () => {
+    const { root } = await createOpenSpecProject();
+    await approve(root);
+    const result = await doGsdChangeV1({
+      change: 'demo', projectRoot: root, changedFiles: [], dispatcher: passingRoles,
+      applyCapability: { apply: async () => ({
+        status: 'human_needed', summary: 'The task is ambiguous against the approved planner instructions.',
+      }) },
+    });
+    expect(result).toMatchObject({ status: 'human_needed', applyCalls: 1, run: { status: 'blocked' } });
+    expect(result.nextAction).toMatch(/planner triage/i);
   });
 });
