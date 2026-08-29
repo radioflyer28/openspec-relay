@@ -62,6 +62,31 @@ export function evaluateAssuranceV2(run: GsdRunV2, input: GsdAssuranceV2): {
           ? 'Required independent plan readiness is unresolved.' : 'Plan readiness is report-only and unresolved.',
       });
     }
+    if (check.kind === 'planning-assurance') {
+      const requirementIds = run.artifacts.flatMap((artifact) => artifact.ids)
+        .filter((id) => id.includes('#requirement:') && !id.includes('/scenario:'));
+      const classified = new Set(input.semanticClassifications.map((item) => item.requirementId));
+      const missing = requirementIds.filter((id) => !classified.has(id));
+      const unresolvedDowngrades = input.semanticDowngrades.filter((item) => item.status !== 'accepted');
+      const currentReview = input.planReviews.filter((item) => item.revision === input.planApproval?.revision).at(-1);
+      const status = run.planApprovalStatus !== 'current' || input.planStale || missing.length > 0 || !currentReview
+        ? 'fail' as const
+        : unresolvedDowngrades.length > 0 ? 'human_needed' as const
+          : !currentReview.independent || input.semanticDowngrades.length > 0 ? 'warn' as const : 'pass' as const;
+      const summary = run.planApprovalStatus !== 'current' || input.planStale
+        ? 'Semantic plan approval is absent or stale.'
+        : missing.length > 0 ? `Semantic classifications are missing for: ${missing.join(', ')}.`
+          : !currentReview ? 'No passing plan review is bound to the approved revision.'
+            : unresolvedDowngrades.length > 0 ? 'Required semantic assurance has unresolved human downgrades.'
+              : !currentReview.independent ? 'Plan is current with explicitly accepted Tier 0 self-review provenance.'
+                : input.semanticDowngrades.length > 0 ? 'Plan is current with audited accepted semantic downgrades.'
+                  : 'Semantic classifications, plan review, and revision-bound approval are current.';
+      return AssuranceCheckV2Schema.parse({ ...check, status, summary,
+        independent: Boolean(currentReview?.independent),
+        evidenceIds: currentReview?.evidenceRefs ?? [],
+        remediation: status === 'pass' || status === 'warn' ? []
+          : ['Resolve semantic obligations and run /opsx:plan for the current artifact revision.'] });
+    }
     if (check.kind === 'release-assurance') {
       const applicable = input.releaseCandidates.filter((item) => item.applicable);
       const status = !applicable.length ? 'skipped' : applicable.some((item) => item.status === 'error') ? 'error'

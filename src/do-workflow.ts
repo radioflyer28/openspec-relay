@@ -3,6 +3,7 @@ import { compileOpenSpecChange, type TaskMetadataV1 } from './artifacts.js';
 import { loadCanonicalGsdState } from './canonical-state.js';
 import { appendGsdEventV2, createGsdEventV2, readEventStoreV2 } from './events.js';
 import { dispatchRoleV2, type RoleDispatcherV1, type RoleResultV1 } from './execution-adapters.js';
+import { routeDispatchedFindingsV1 } from './finding-routing.js';
 import { computeSemanticPlanRevision, isPlanApprovalCurrent } from './planning.js';
 import { planGsdChangeV1 } from './plan-workflow.js';
 import { checkGsdRunV2 } from './runner-v2.js';
@@ -186,11 +187,13 @@ export async function doGsdChangeV1(options: {
     const reviewReceipt = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
       role: 'reviewer', readOnly: true, isolated: true, planning: roleContext,
     } });
+    let failedReceipt = reviewReceipt;
     let failed = reviewReceipt.result.status === 'pass' ? undefined : reviewReceipt.result;
     if (!failed) {
       const verificationReceipt = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
         role: 'verifier', readOnly: true, isolated: true, planning: roleContext,
       } });
+      failedReceipt = verificationReceipt;
       failed = verificationReceipt.result.status === 'pass' ? undefined : verificationReceipt.result;
     }
     if (!failed) {
@@ -203,13 +206,31 @@ export async function doGsdChangeV1(options: {
         summary: 'Canonical apply, independent code review, and goal verification passed.',
         ...projection, applyCalls, convergenceCycles };
     }
-    findingIds = stableFindingIds(failed);
-    repairTaskId = failed.findings?.flatMap((finding) => finding.taskIds ?? [])[0] ??
+    const routes = routeDispatchedFindingsV1({
+      receipt: failedReceipt,
+      planRevision: current.revision.revision,
+      attempt: convergenceCycles,
+    });
+    findingIds = routes.length ? routes.map((route) => route.findingId) : stableFindingIds(failed);
+    repairTaskId = routes.find((route) => route.taskId)?.taskId ??
       current.canonical.compiled.graph.nodes[0]?.taskId;
+    for (const route of routes) {
+      const routeStore = await readEventStoreV2(current.resolved.changeDir);
+      await appendGsdEventV2({ changeDir: current.resolved.changeDir, event: createGsdEventV2({
+        eventId: `do-route:${route.findingId}:${convergenceCycles}:${randomUUID()}`,
+        runId: routeStore.runId, changeName: routeStore.changeName,
+        occurredAt: options.now ?? new Date().toISOString(), sourceDigests: {},
+        actor: { kind: 'planner', id: 'gsd-do-triage' }, provenance: { origin: failedReceipt.dispatchId },
+        payload: { type: 'finding.routed', route },
+      }) });
+    }
     const replanned = await planGsdChangeV1({
       change: options.change, projectRoot: current.resolved.projectRoot, invocation: 'do_replan',
       dispatcher: options.dispatcher, findingIds,
-      plannerInstructions: [`Associate the stable findings with original task '${repairTaskId ?? 'unknown'}'.`],
+      plannerInstructions: [
+        `Associate the stable findings with original task '${repairTaskId ?? 'unknown'}'.`,
+        ...routes.map((route) => `Disposition ${route.findingId} as ${route.route}: ${route.reason}`),
+      ],
       changedFiles: options.changedFiles,
       now: options.now,
     });
@@ -218,6 +239,14 @@ export async function doGsdChangeV1(options: {
         run: replanned.run, assurance: replanned.assurance, applyCalls, convergenceCycles,
         nextAction: replanned.nextAction };
     }
+    const discussion = routes.find((route) => route.route === 'discussion');
+    if (discussion) return { status: 'human_needed', summary: discussion.reason,
+      run: replanned.run, assurance: replanned.assurance, applyCalls, convergenceCycles,
+      nextAction: `/opsx:discuss ${current.resolved.changeName}` };
+    const pathfinder = routes.find((route) => route.route === 'pathfinder');
+    if (pathfinder) return { status: 'human_needed', summary: pathfinder.reason,
+      run: replanned.run, assurance: replanned.assurance, applyCalls, convergenceCycles,
+      nextAction: `/opsx:plan ${current.resolved.changeName} with an isolated pathfinder` };
   }
   await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-exhausted');
   const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
