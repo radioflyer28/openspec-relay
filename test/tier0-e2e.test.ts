@@ -8,6 +8,7 @@ import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProj
 import { discoverFinding, transitionFinding } from '../src/findings.js';
 import { dispatchRoleV2, type DispatchedRoleResultV2 } from '../src/execution-adapters.js';
 import { checkGsdRunV2, startGsdRunV2 } from '../src/runner-v2.js';
+import { planGsdChangeV1 } from '../src/plan-workflow.js';
 import {
   observeDebugExperimentV2,
   planDebugExperimentV2,
@@ -129,6 +130,11 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'], now: '2026-08-11T20:41:00.000Z',
     });
     expect(remediated.assurance.readiness).toMatchObject({ status: 'pass' });
+    const approved = await planGsdChangeV1({
+      change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'],
+      allowSelfReview: true, now: '2026-08-11T20:41:30.000Z',
+    });
+    expect(approved).toMatchObject({ status: 'pass', review: { independent: false } });
 
     await recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'e2e:task:1.1:start', occurredAt: '2026-08-11T20:42:00.000Z',
@@ -297,7 +303,10 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       releaseCandidates: ready.assurance.releaseCandidates,
       unresolvedHumanActions: ready.assurance.unresolvedHumanActions,
       nextActions: ready.assurance.nextActions,
-    }, null, 2)).toMatchObject({ run: { status: 'complete' }, assurance: { status: 'pass' } });
+    }, null, 2)).toMatchObject({ run: { status: 'complete' }, assurance: { status: 'warn' } });
+    expect(ready.assurance.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'planning-assurance', status: 'warn', independent: false }),
+    ]));
     expect(ready.assurance.releaseCandidates).toEqual(expect.arrayContaining([
       expect.objectContaining({ surface: 'node_package', status: 'pass' }),
     ]));
