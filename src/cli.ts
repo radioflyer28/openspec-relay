@@ -14,6 +14,7 @@ import {
 } from './schemas.js';
 import { checkGsdRunV2, startGsdRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
+import { planGsdChangeV1 } from './plan-workflow.js';
 import {
   acceptGsdGateV2,
   observeDebugExperimentV2,
@@ -60,6 +61,23 @@ const program = new Command()
   .name('openspec-gsd')
   .description('Risk-aware execution and assurance for OpenSpec changes')
   .version(GSD_VERSION);
+
+program.command('plan')
+  .argument('<change>')
+  .option('--project <path>')
+  .option('--allow-self-review', 'Explicitly accept disclosed Tier 0 self-review for this invocation')
+  .option('--json')
+  .action(async (change, options) => {
+    const result = await planGsdChangeV1({
+      change,
+      projectRoot: options.project,
+      allowSelfReview: Boolean(options.allowSelfReview),
+    });
+    print(options.json ? result :
+      `OpenSpec GSD plan: ${result.status}; revision=${result.run.planRevision ?? 'unapproved'}; ` +
+      `review=${result.review.independent ? 'independent' : 'tier0-self-review'}. ${result.summary}`,
+    Boolean(options.json));
+  });
 
 program.command('run')
   .argument('<change>')

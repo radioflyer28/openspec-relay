@@ -40,6 +40,7 @@ export {
   type DispatchedRoleResultV2,
   type ExecutionOutcomeV1,
   type ExecutionRole,
+  type PlanningRoleContextV1,
   type RoleDispatcherV1,
   type RoleRequestV1,
   type RoleResultV1,
@@ -67,6 +68,12 @@ export {
   PLANNING_EVENT_TYPES,
   type SemanticPlanRevisionV1,
 } from './planning.js';
+export {
+  planGsdChangeV1,
+  type DisposablePathfinderWorkspaceV1,
+  type PlanGsdChangeOptionsV1,
+  type PlanGsdChangeResultV1,
+} from './plan-workflow.js';
 export {
   ExecutionTierSchema,
   GsdConfigV2Schema,
