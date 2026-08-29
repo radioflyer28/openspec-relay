@@ -1,10 +1,13 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateDiscussionContract } from './discussion-contract.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'openspec-extension.json'), 'utf8'));
 const outputRoot = path.join(root, 'pi');
+const grillingBody = await fs.readFile(path.join(root, 'vendor', 'grilling', 'SKILL.body.md'), 'utf8');
+const thirdPartyNotice = await fs.readFile(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8');
 
 await Promise.all([
   fs.rm(path.join(outputRoot, 'prompts'), { recursive: true, force: true }),
@@ -12,7 +15,15 @@ await Promise.all([
 ]);
 
 for (const workflow of manifest.contributes.workflows) {
-  const body = (await fs.readFile(path.join(root, workflow.entry), 'utf8')).trimEnd();
+  const supplement = (await fs.readFile(path.join(root, workflow.entry), 'utf8')).trimEnd();
+  if (workflow.id === 'discuss') validateDiscussionContract({
+    body: grillingBody,
+    supplement,
+    notice: thirdPartyNotice,
+  });
+  const body = workflow.id === 'discuss'
+    ? `${grillingBody.trimEnd()}\n\n${supplement}`
+    : supplement;
   const promptPath = path.join(outputRoot, 'prompts', `opsx-${workflow.id}.md`);
   const skillPath = path.join(outputRoot, 'skills', `openspec-${workflow.id}`, 'SKILL.md');
   const prompt = `---\ndescription: ${JSON.stringify(workflow.description)}\n---\n\n${body}\n`;

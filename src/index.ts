@@ -53,6 +53,13 @@ export {
 } from './tiers.js';
 export { loadGsdConfigV2 } from './config.js';
 export {
+  confirmDiscussionHandoff,
+  type DiscussionArtifactMappingV1,
+  type DiscussionDecisionV1,
+  type DiscussionHandoffConfirmationV1,
+  type DiscussionHandoffV1,
+} from './discussion.js';
+export {
   ExecutionTierSchema,
   GsdConfigV2Schema,
   PortableReferenceV2Schema,
