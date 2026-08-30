@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,6 +15,7 @@ afterEach(cleanupTemporaryRoots);
 const defaultRequirementId = 'spec:demo#requirement:demonstrate-behavior';
 const defaultScenarioId = `${defaultRequirementId}/scenario:works`;
 const defaultConfig = {
+  mode: 'quick' as const,
   taskOverrides: {
     '1.1': { requirementRefs: [defaultRequirementId], scenarioRefs: [defaultScenarioId], expectedVerification: ['targeted-tests', 'compatibility'] },
     '1.2': { requirementRefs: [defaultRequirementId], scenarioRefs: [defaultScenarioId], expectedVerification: ['targeted-tests', 'compatibility'] },
@@ -26,10 +28,30 @@ async function completeTask(changeDir: string, taskId: string): Promise<void> {
   await fs.writeFile(filename, content.replace(new RegExp(`- \\[ \\] ${taskId.replace('.', '\\.')}`), `- [x] ${taskId}`));
 }
 
-function passingRoles(requests: RoleRequestV1[] = []): RoleDispatcherV1 {
+let evidenceSequence = 0;
+function qualifiedRoleResult(role: string, scenarioId: string) {
+  const event = (checkId: string, origin: 'reviewer' | 'verifier', reference?: string) => {
+    evidenceSequence += 1;
+    const evidenceId = `macos:${role}:${checkId}:${evidenceSequence}`;
+    return { type: 'evidence.recorded' as const, evidence: {
+      evidenceId, phase: origin === 'reviewer' ? 'review' as const : 'verify' as const,
+      checkId, observedAt: '2026-08-29T12:00:00.000Z', sourceState: 'macos-qualification',
+      result: 'pass' as const, outputDigest: createHash('sha256').update(evidenceId).digest('hex'),
+      preExistingFailure: false, origin, ...(reference ? { reference } : {}),
+    } };
+  };
+  return { status: 'pass' as const, summary: `${role} passed`, evidenceRefs: [`evidence:${role}`],
+    evidence: role === 'verifier' ? [{ referenceId: `macos-verifier:${evidenceSequence + 1}`,
+      kind: 'generated' as const, externalId: 'macos-qualification', available: true }] : [],
+    events: role === 'reviewer' ? [event('repository-checks', 'reviewer'), event('targeted-tests', 'reviewer')]
+      : role === 'verifier' ? [event('scenario-coverage', 'verifier', scenarioId), event('goal-verification', 'verifier')]
+        : [] };
+}
+
+function passingRoles(requests: RoleRequestV1[] = [], scenarioId = defaultScenarioId): RoleDispatcherV1 {
   return { dispatch: async (request) => {
     requests.push(request);
-    return { status: 'pass', summary: `${request.role} passed`, evidenceRefs: [`evidence:${request.role}`] };
+    return qualifiedRoleResult(request.role, scenarioId);
   } };
 }
 
@@ -47,13 +69,13 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
     await fs.writeFile(path.join(changeDir, 'design.md'), '## Decisions\n\nUse the existing label-rendering convention.\n');
     const requirementId = 'spec:demo#requirement:show-account-label';
     const scenarioId = `${requirementId}/scenario:label-is-visible`;
-    const config = { taskOverrides: {
+    const config = { mode: 'quick' as const, taskOverrides: {
       '1.1': { requirementRefs: [requirementId], scenarioRefs: [scenarioId], expectedVerification: ['targeted-tests'] },
       '1.2': { requirementRefs: [requirementId], scenarioRefs: [scenarioId], expectedVerification: ['targeted-tests'] },
     } };
     const requests: RoleRequestV1[] = [];
     const planned = await planGsdChangeV1({
-      change: 'level-one', projectRoot: root, config, changedFiles: [], dispatcher: passingRoles(requests),
+      change: 'level-one', projectRoot: root, config, changedFiles: [], dispatcher: passingRoles(requests, scenarioId),
     });
     expect(planned, JSON.stringify(planned.assurance.readiness, null, 2))
       .toMatchObject({ status: 'pass', review: { independent: true } });
@@ -65,7 +87,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
     expect(design).not.toMatch(/proof obligation|state model|formal|FRET|PVS/i);
 
     const completed = await doGsdChangeV1({
-      change: 'level-one', projectRoot: root, changedFiles: [], dispatcher: passingRoles(),
+      change: 'level-one', projectRoot: root, changedFiles: [], dispatcher: passingRoles([], scenarioId),
       applyCapability: { apply: async (request) => {
         await completeTask(changeDir, request.taskId);
         return { status: 'pass', summary: 'canonical apply completed the task' };
@@ -111,7 +133,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
           summary: 'Cancellation ordering is incomplete.', taskIds: ['1.1'], requirementIds: [defaultRequirementId],
         }],
       };
-      return { status: 'pass', summary: `${request.role} passed`, evidenceRefs: [`evidence:${request.role}`] };
+      return qualifiedRoleResult(request.role, defaultScenarioId);
     } };
     const applyRequests: CanonicalApplyRequestV1[] = [];
     const completed = await doGsdChangeV1({
@@ -119,7 +141,9 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
       applyCapability: { apply: async (request) => {
         applyRequests.push(request);
         await completeTask(changeDir, request.taskId);
-        return { status: 'pass', summary: 'canonical apply completed the task' };
+        return { status: 'pass', summary: 'canonical apply completed the task',
+          evidence: request.action === 'repair' ? [{ referenceId: `macos-repair:${request.taskId}`,
+            kind: 'generated', externalId: 'macos-behavioral-repair', available: true }] : undefined };
       } },
     });
     expect(completed).toMatchObject({ status: 'pass', convergenceCycles: 2, applyCalls: 3 });
@@ -149,6 +173,11 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
       '## Assumptions', 'State updates are atomic.', '',
       '## Proof obligations', 'Search for a transition counterexample; this is not a proof claim.', '',
     ].join('\n'));
+    await fs.writeFile(path.join(changeDir, 'tasks.md'), [
+      '## 1. Work', '',
+      '- [ ] 1.1 Implement the guarded ownership transition.',
+      '- [ ] 1.2 Verify the ownership invariant under competing authorization changes.', '',
+    ].join('\n'));
     const lifecycle: string[] = [];
     const pathfinderRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-pathfinder-'));
     const dispatcher: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'pathfinder'
@@ -158,7 +187,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
         counterexamples: ['A stale authorization read can race with ownership assignment.'],
         conclusion: 'Add a compare-and-set precondition to the planned transition.', confidence: 'high', routing: 'planner',
       } }
-      : { status: 'pass', summary: `${request.role} passed`, evidenceRefs: [`evidence:${request.role}`] } };
+      : qualifiedRoleResult(request.role, defaultScenarioId) };
     const planned = await planGsdChangeV1({
       change: 'modeling', projectRoot: root, config: defaultConfig, changedFiles: [], dispatcher,
       pathfinderQuestions: ['Can authorization race with ownership assignment?'],
@@ -190,7 +219,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
         summary: 'The proposal does not say whether the action is reversible.',
         requirementIds: [defaultRequirementId], taskIds: ['1.1'],
       }] }
-      : { status: 'pass', summary: `${request.role} passed`, evidenceRefs: [`evidence:${request.role}`] } };
+      : qualifiedRoleResult(request.role, defaultScenarioId) };
     const initialPlan = await planGsdChangeV1({
       change: 'intent-update', projectRoot: root, config: defaultConfig, changedFiles: [], dispatcher: roles,
     });

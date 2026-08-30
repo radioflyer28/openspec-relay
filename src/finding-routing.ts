@@ -1,18 +1,13 @@
-import { createHash } from 'node:crypto';
 import {
   assertDispatchedRoleResultV2,
   type DispatchedRoleResultV2,
   type ReportedFindingV2,
 } from './execution-adapters.js';
+import { createFindingId } from './findings.js';
 import { FindingRouteV1Schema, type FindingRouteV1 } from './schemas.js';
 
 function identity(finding: ReportedFindingV2): string {
-  return `finding:${createHash('sha256').update(JSON.stringify({
-    providerId: finding.providerId,
-    ruleId: finding.ruleId,
-    category: finding.category,
-    scope: finding.scope,
-  })).digest('hex').slice(0, 24)}`;
+  return createFindingId(finding);
 }
 
 function target(finding: ReportedFindingV2): FindingRouteV1['route'] {

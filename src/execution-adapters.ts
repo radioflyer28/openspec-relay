@@ -5,6 +5,7 @@ import {
   type FindingLifecycleRecordV2,
   type GsdEventPayloadV1,
   type PortableReferenceV2,
+  type SemanticClassificationV1,
 } from './schemas.js';
 
 export type ExecutionRole = 'planner' | 'plan_reviewer' | 'pathfinder' | 'executor' | 'reviewer' | 'verifier';
@@ -38,6 +39,7 @@ export interface RoleResultV1 {
   evidence?: PortableReferenceV2[];
   findings?: ReportedFindingV2[];
   events?: GsdEventPayloadV1[];
+  semanticClassifications?: SemanticClassificationV1[];
   pathfinder?: {
     assumptions: string[];
     experiments: string[];
