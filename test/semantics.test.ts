@@ -52,6 +52,19 @@ describe('risk-proportional behavioral semantics', () => {
     expect(classifications.every((item) => item.rationale.length > 0)).toBe(true);
   });
 
+  it('does not elevate an ordinary outcome only because its OpenSpec scenario uses WHEN and THEN', () => {
+    const [classification] = classifySemanticRequirements([{
+      id: 'simple-with-scenario',
+      title: 'Show an account label',
+      body: 'The page shall show the account label.',
+      scenarios: [{
+        title: 'Label is visible',
+        body: '- **WHEN** the page is displayed\n- **THEN** the account label is visible',
+      }],
+    }]);
+    expect(classification).toMatchObject({ level: 'simple', triggers: [] });
+  });
+
   it.each([
     ['modes', 'While the service is in maintenance mode, it shall reject writes.', 'behavioral'],
     ['ordering', 'The worker shall persist the record before publishing the event.', 'behavioral'],
