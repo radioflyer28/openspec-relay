@@ -36,7 +36,8 @@
         "entry": "workflows/do.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
         "gateDependencies": ["gsd.assurance"],
-        "requiredHostCapabilities": ["structuredResults"]
+        "requiredHostCapabilities": ["structuredResults"],
+        "replaces": ["run"]
       },
       {
         "id": "check",
@@ -54,7 +55,8 @@
         "entry": "workflows/status.md",
         "artifactRequirements": ["tasks"],
         "gateDependencies": [],
-        "requiredHostCapabilities": ["structuredResults"]
+        "requiredHostCapabilities": ["structuredResults"],
+        "replaces": ["run-status"]
       },
       {
         "id": "debug",
