@@ -71,6 +71,31 @@ describe('actual packed companion candidate', () => {
     execFileSync(process.execPath, [coreCli, 'init', '--tools', 'codex', '--force', '--no-animation'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
+    const legacyRunSkill = path.join(
+      projectRoot, '.agents', 'skills', 'openspec-run', 'SKILL.md',
+    );
+    const legacyStatusSkill = path.join(
+      projectRoot, '.agents', 'skills', 'openspec-run-status', 'SKILL.md',
+    );
+    const similarlyNamedUserSkill = path.join(
+      projectRoot, '.agents', 'skills', 'openspec-run-notes', 'SKILL.md',
+    );
+    await Promise.all([
+      fs.mkdir(path.dirname(legacyRunSkill), { recursive: true }),
+      fs.mkdir(path.dirname(legacyStatusSkill), { recursive: true }),
+      fs.mkdir(path.dirname(similarlyNamedUserSkill), { recursive: true }),
+    ]);
+    await Promise.all([
+      fs.writeFile(
+        legacyRunSkill,
+        'legacy run\n\n<!-- openspec-extension:gsd@0.1.0/run/codex/skill -->\n',
+      ),
+      fs.writeFile(
+        legacyStatusSkill,
+        'legacy status\n\n<!-- openspec-extension:gsd@0.1.0/run-status/codex/skill -->\n',
+      ),
+      fs.writeFile(similarlyNamedUserSkill, 'user-owned run notes\n'),
+    ]);
     const linked = execFileSync(process.execPath, [coreCli, 'extension', 'link', installedCompanion], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
@@ -83,6 +108,11 @@ describe('actual packed companion candidate', () => {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(doctor).toMatch(/manifest=valid; compatibility=compatible/);
+
+    await expect(fs.access(legacyRunSkill)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(legacyStatusSkill)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.readFile(similarlyNamedUserSkill, 'utf8'))
+      .resolves.toBe('user-owned run notes\n');
 
     for (const workflow of ['discuss', 'plan', 'do', 'check', 'status', 'debug', 'uat']) {
       const skill = await fs.readFile(path.join(

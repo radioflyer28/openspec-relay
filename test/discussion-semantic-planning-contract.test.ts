@@ -10,10 +10,14 @@ afterEach(cleanupTemporaryRoots);
 describe('discussion, semantic planning, and execution convergence contract', () => {
   it('contributes the new lifecycle without retaining legacy public names', async () => {
     const manifest = JSON.parse(await fs.readFile(path.join(process.cwd(), 'openspec-extension.json'), 'utf8')) as {
-      contributes: { workflows: Array<{ id: string }> };
+      contributes: { workflows: Array<{ id: string; replaces?: string[] }> };
     };
     expect(manifest.contributes.workflows.map((workflow) => workflow.id))
       .toEqual(['discuss', 'plan', 'do', 'check', 'status', 'debug', 'uat']);
+    expect(manifest.contributes.workflows.find((workflow) => workflow.id === 'do')?.replaces)
+      .toEqual(['run']);
+    expect(manifest.contributes.workflows.find((workflow) => workflow.id === 'status')?.replaces)
+      .toEqual(['run-status']);
   });
 
   it('compiles complete requirement and scenario bodies for semantic planning', async () => {
