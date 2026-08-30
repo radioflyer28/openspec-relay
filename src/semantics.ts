@@ -31,7 +31,8 @@ function deterministicMinimum(requirement: SemanticRequirementInputV1): {
   triggers: string[];
   rationale: string;
 } {
-  const text = [requirement.title, requirement.body, ...requirement.scenarios.map((scenario) => scenario.body)]
+  const requirementText = [requirement.title, requirement.body].join('\n').toLowerCase();
+  const text = [requirementText, ...requirement.scenarios.map((scenario) => scenario.body)]
     .join('\n').toLowerCase();
   const modelingTriggers = [
     ['concurrency', /concurr|race|interleav|simultaneous/],
@@ -46,15 +47,18 @@ function deterministicMinimum(requirement: SemanticRequirementInputV1): {
     rationale: `Modeling is required because the behavior combines ${modeling.join(' and ')} obligations.`,
   };
   const behavioralTriggers = [
-    ['trigger', /\bwhen\b|\bafter\b|\bupon\b/],
-    ['ordering', /\bbefore\b|\bafter\b|\border/],
-    ['timing', /deadline|timeout|within \d|latency/],
-    ['cancellation', /cancel/],
-    ['retry-recovery', /retr|recover|transient failure|partial failure/],
-    ['state-mode', /\bstate\b|\bmode\b|transition/],
-    ['prohibition', /shall not|must not|never/],
+    // OpenSpec scenarios normally use WHEN/THEN as structural labels. A bare
+    // scenario wrapper must not elevate an otherwise ordinary outcome; the
+    // requirement itself must make trigger semantics material.
+    ['trigger', /\bwhen\b|\bafter\b|\bupon\b/, requirementText],
+    ['ordering', /\bbefore\b|\bafter\b|\border/, text],
+    ['timing', /deadline|timeout|within \d|latency/, text],
+    ['cancellation', /cancel/, text],
+    ['retry-recovery', /retr|recover|transient failure|partial failure/, text],
+    ['state-mode', /\bstate\b|\bmode\b|transition/, text],
+    ['prohibition', /shall not|must not|never/, text],
   ] as const;
-  const behavioral = behavioralTriggers.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
+  const behavioral = behavioralTriggers.filter(([, pattern, source]) => pattern.test(source)).map(([name]) => name);
   if (behavioral.length > 0 || modeling.length > 0) return {
     level: 'behavioral',
     triggers: [...modeling, ...behavioral],

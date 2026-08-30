@@ -27,7 +27,7 @@ describe('discussion, semantic planning, and execution convergence contract', ()
     };
     expect(compiled.requirements).toEqual([
       expect.objectContaining({
-        body: 'The system SHALL demonstrate behavior.',
+        body: 'The system SHALL demonstrate behavior when invoked.',
         scenarios: [expect.objectContaining({ body: expect.stringContaining('**WHEN** invoked') })],
       }),
     ]);
