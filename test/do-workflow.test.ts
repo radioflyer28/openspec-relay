@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { doGsdChangeV1, type CanonicalApplyRequestV1 } from '../src/do-workflow.js';
@@ -10,6 +11,7 @@ afterEach(cleanupTemporaryRoots);
 const requirementId = 'spec:demo#requirement:demonstrate-behavior';
 const scenarioId = `${requirementId}/scenario:works`;
 const config = {
+  mode: 'quick' as const,
   taskOverrides: {
     '1.1': { requirementRefs: [requirementId], scenarioRefs: [scenarioId], expectedVerification: ['targeted-tests', 'compatibility'] },
     '1.2': { requirementRefs: [requirementId], scenarioRefs: [scenarioId], expectedVerification: ['targeted-tests', 'compatibility'] },
@@ -29,11 +31,64 @@ async function completeTask(changeDir: string, taskId: string) {
   await fs.writeFile(filename, content.replace(new RegExp(`- \\[ \\] ${taskId.replace('.', '\\.')}`), `- [x] ${taskId}`));
 }
 
-const passingRoles: RoleDispatcherV1 = { dispatch: async (request) => ({
-  status: 'pass', summary: `${request.role} passed`, evidenceRefs: [`evidence:${request.role}`],
-}) };
+function applyEvidence(request: CanonicalApplyRequestV1) {
+  return request.action === 'repair' ? [{
+    referenceId: `apply:${request.taskId}:${request.findingIds.join(',')}`,
+    kind: 'generated' as const,
+    externalId: `${request.changeName}:${request.taskId}:repair`,
+    available: true,
+  }] : undefined;
+}
+
+let evidenceSequence = 0;
+function passingRoleResult(role: string) {
+  const makeEvidence = (checkId: string, phase: 'review' | 'verify', origin: 'reviewer' | 'verifier', reference?: string) => {
+    evidenceSequence += 1;
+    const evidenceId = `${role}:${checkId}:${evidenceSequence}`;
+    return { type: 'evidence.recorded' as const, evidence: {
+      evidenceId, phase, checkId, observedAt: '2026-08-29T12:00:00.000Z', sourceState: 'dispatched-role',
+      result: 'pass' as const, outputDigest: createHash('sha256').update(evidenceId).digest('hex'),
+      preExistingFailure: false, origin, ...(reference ? { reference } : {}),
+    } };
+  };
+  return {
+    status: 'pass' as const,
+    summary: `${role} passed`,
+    evidenceRefs: [`evidence:${role}`],
+    evidence: role === 'verifier' ? [{
+      referenceId: `verification:${evidenceSequence + 1}`, kind: 'generated' as const,
+      externalId: `${role}-result`, available: true,
+    }] : [],
+    events: role === 'reviewer' ? [
+      makeEvidence('repository-checks', 'review', 'reviewer'),
+      makeEvidence('targeted-tests', 'review', 'reviewer'),
+    ] : role === 'verifier' ? [
+      makeEvidence('scenario-coverage', 'verify', 'verifier', scenarioId),
+      makeEvidence('goal-verification', 'verify', 'verifier'),
+    ] : [],
+  };
+}
+
+const passingRoles: RoleDispatcherV1 = { dispatch: async (request) => passingRoleResult(request.role) };
 
 describe('approved do convergence', () => {
+  it('does not report completion when dispatched roles provide no aggregate assurance evidence', async () => {
+    const { root, changeDir } = await createOpenSpecProject('missing-evidence');
+    await approve(root, 'missing-evidence');
+    const noEvidenceRoles: RoleDispatcherV1 = { dispatch: async (request) => ({
+      status: 'pass', summary: `${request.role} claimed pass`, evidenceRefs: [],
+    }) };
+    const result = await doGsdChangeV1({
+      change: 'missing-evidence', projectRoot: root, changedFiles: [], dispatcher: noEvidenceRoles,
+      applyCapability: { apply: async (request) => {
+        await completeTask(changeDir, request.taskId);
+        return { status: 'pass', summary: 'canonical apply completed without evidence' };
+      } },
+    });
+    expect(result).toMatchObject({ status: 'fail', run: { status: 'blocked' }, assurance: { status: 'fail' } });
+    expect(result.summary).toMatch(/aggregate assurance/i);
+  });
+
   it('refuses absent approval before invoking canonical apply', async () => {
     const { root } = await createOpenSpecProject();
     let calls = 0;
@@ -94,7 +149,7 @@ describe('approved do convergence', () => {
           scope: { kind: 'task', identity: '1.1' }, severity: 'error', blocking: true,
           summary: 'Task behavior is incomplete.', taskIds: ['1.1'] }],
       };
-      return { status: 'pass', summary: `${request.role} pass`, evidenceRefs: [] };
+      return passingRoleResult(request.role);
     } };
     const requests: CanonicalApplyRequestV1[] = [];
     const result = await doGsdChangeV1({
@@ -102,7 +157,7 @@ describe('approved do convergence', () => {
       applyCapability: { apply: async (request) => {
         requests.push(request);
         await completeTask(changeDir, request.taskId);
-        return { status: 'pass', summary: 'applied' };
+        return { status: 'pass', summary: 'applied', evidence: applyEvidence(request) };
       } },
     });
     expect(result).toMatchObject({ status: 'pass', convergenceCycles: 2, applyCalls: 3 });
@@ -110,12 +165,39 @@ describe('approved do convergence', () => {
     expect(requests.at(-1)?.findingIds).toHaveLength(1);
   });
 
+  it('routes a blocking reviewer finding even when the reviewer aggregate status says pass', async () => {
+    const { root, changeDir } = await createOpenSpecProject('contradictory-review');
+    await approve(root, 'contradictory-review');
+    let reviews = 0;
+    const roles: RoleDispatcherV1 = { dispatch: async (request) => {
+      if (request.role === 'reviewer' && ++reviews === 1) return {
+        status: 'pass', summary: 'pass with a blocking finding', evidenceRefs: [],
+        findings: [{ providerId: 'reviewer', ruleId: 'blocking-pass', category: 'code',
+          scope: { kind: 'task', identity: '1.1' }, severity: 'error', blocking: true,
+          summary: 'Task behavior is incomplete.', taskIds: ['1.1'] }],
+      };
+      return passingRoleResult(request.role);
+    } };
+    const requests: CanonicalApplyRequestV1[] = [];
+    const result = await doGsdChangeV1({
+      change: 'contradictory-review', projectRoot: root, changedFiles: [], dispatcher: roles,
+      applyCapability: { apply: async (request) => {
+        requests.push(request);
+        await completeTask(changeDir, request.taskId);
+        return { status: 'pass', summary: 'applied', evidence: applyEvidence(request) };
+      } },
+    });
+    expect(requests.at(-1)).toMatchObject({ taskId: '1.1', action: 'repair' });
+    expect(requests.at(-1)?.findingIds).toHaveLength(1);
+    expect(result.convergenceCycles).toBe(2);
+  });
+
   it('bounds unchanged verification failures and stops for human direction', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await approve(root);
     const roles: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'verifier'
       ? { status: 'fail', summary: 'same goal gap', evidenceRefs: [] }
-      : { status: 'pass', summary: 'pass', evidenceRefs: [] } };
+      : passingRoleResult(request.role) };
     const result = await doGsdChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {
@@ -138,7 +220,7 @@ describe('approved do convergence', () => {
         summary: 'The implemented product meaning contradicts an omitted requirement decision.',
         requirementIds: [requirementId], taskIds: ['1.1'],
       }] }
-      : { status: 'pass', summary: 'pass', evidenceRefs: [] } };
+      : passingRoleResult(request.role) };
     const result = await doGsdChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {

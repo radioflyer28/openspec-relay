@@ -41,7 +41,7 @@ function deterministicMinimum(requirement: SemanticRequirementInputV1): {
     ['irreversible-transition', /irreversib|cannot be undone|terminal state/],
   ] as const;
   const modeling = modelingTriggers.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
-  if (modeling.length >= 2 || /high[- ]consequence invariant/.test(text)) return {
+  if (modeling.length > 0 || /high[- ]consequence invariant/.test(text)) return {
     level: 'modeling',
     triggers: modeling,
     rationale: `Modeling is required because the behavior combines ${modeling.join(' and ')} obligations.`,

@@ -1,6 +1,10 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { dispatchRoleV2, type RoleDispatcherV1, type RoleRequestV1 } from '../src/execution-adapters.js';
+import { compileOpenSpecChange } from '../src/artifacts.js';
 import { planGsdChangeV1 } from '../src/plan-workflow.js';
+import { classifySemanticRequirements } from '../src/semantics.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -177,5 +181,50 @@ describe('reusable OpenSpec GSD planning', () => {
     await expect(dispatchRoleV2({ dispatcher, request: {
       role: 'pathfinder', readOnly: false, isolated: true,
     } })).rejects.toThrow(/read-only contract/);
+  });
+
+  it('classifies authorization state as modeling and refuses malformed controlled semantics', async () => {
+    const authorization = await createOpenSpecProject('authorization-state');
+    await fs.writeFile(path.join(authorization.changeDir, 'specs', 'demo', 'spec.md'), [
+      '## ADDED Requirements', '',
+      '### Requirement: Demonstrate behavior',
+      'The policy engine SHALL preserve role permissions after session refresh.', '',
+      '#### Scenario: Works', '- **WHEN** the session refreshes', '- **THEN** role permissions are preserved', '',
+    ].join('\n'));
+    const modeled = await planGsdChangeV1({
+      change: 'authorization-state', projectRoot: authorization.root, config, changedFiles: [],
+      dispatcher: passingDispatcher([]),
+    });
+    expect(modeled.assurance.semanticClassifications[0]).toMatchObject({ level: 'modeling' });
+    expect(modeled).toMatchObject({ status: 'fail', run: { planApprovalStatus: 'missing' } });
+
+    const malformed = await createOpenSpecProject('malformed-semantics');
+    await fs.writeFile(path.join(malformed.changeDir, 'specs', 'demo', 'spec.md'), [
+      '## ADDED Requirements', '',
+      '### Requirement: Demonstrate behavior',
+      'Cancellation requested before publication.', '',
+      '#### Scenario: Works', '- **WHEN** cancellation is requested', '- **THEN** publication stops', '',
+    ].join('\n'));
+    const rejected = await planGsdChangeV1({
+      change: 'malformed-semantics', projectRoot: malformed.root, config, changedFiles: [],
+      dispatcher: passingDispatcher([]),
+    });
+    expect(rejected).toMatchObject({ status: 'fail', run: { planApprovalStatus: 'missing' } });
+    expect(rejected.summary).toMatch(/semantic structure/i);
+  });
+
+  it('reconciles production planner classifications without allowing them to erase the deterministic minimum', async () => {
+    const { root, changeDir } = await createOpenSpecProject('planner-lower-bound');
+    const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: config.taskOverrides });
+    const minimum = classifySemanticRequirements(compiled.requirements)[0];
+    expect(minimum.level).toBe('behavioral');
+    const dispatcher: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'planner'
+      ? { status: 'pass', summary: 'planner attempted a lower level', evidenceRefs: [], semanticClassifications: [{
+        ...minimum, level: 'simple', rationale: 'The planner claimed this was ordinary.', provenance: 'planner',
+      }] }
+      : { status: 'pass', summary: 'review passed', evidenceRefs: [] } };
+    await expect(planGsdChangeV1({
+      change: 'planner-lower-bound', projectRoot: root, config, changedFiles: [], dispatcher,
+    })).rejects.toThrow(/lower bound/i);
   });
 });

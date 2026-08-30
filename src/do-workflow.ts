@@ -9,6 +9,11 @@ import { planGsdChangeV1 } from './plan-workflow.js';
 import { checkGsdRunV2 } from './runner-v2.js';
 import type { GsdAssuranceV2, GsdRunV2, PortableReferenceV2, SemanticClassificationV1 } from './schemas.js';
 import { resolveChangeDirectory } from './state.js';
+import {
+  recordDispatchedRoleResultV2,
+  transitionFindingV2,
+  verifyFindingFromDispatchedResultV2,
+} from './v2-operations.js';
 
 export interface CanonicalApplyRequestV1 {
   changeName: string;
@@ -127,7 +132,7 @@ export async function doGsdChangeV1(options: {
   changedFiles?: string[];
   now?: string;
 }): Promise<DoGsdChangeResultV1> {
-  let current;
+  let current: Awaited<ReturnType<typeof currentApproved>>;
   try {
     current = await currentApproved(options);
   } catch (error) {
@@ -145,6 +150,8 @@ export async function doGsdChangeV1(options: {
   while (convergenceCycles < 2) {
     convergenceCycles += 1;
     current = await currentApproved(options);
+    const cycleFindingIds = [...findingIds];
+    const cycleRepairEvidence: PortableReferenceV2[] = [];
     const pending = current.canonical.compiled.graph.nodes.filter((task) => task.status !== 'complete');
     const selected = repairTaskId
       ? current.canonical.compiled.graph.nodes.filter((task) => task.taskId === repairTaskId)
@@ -157,6 +164,7 @@ export async function doGsdChangeV1(options: {
       }), changeName: current.resolved.changeName };
       const result = await options.applyCapability.apply(Object.freeze(request));
       applyCalls += 1;
+      if (request.action === 'repair') cycleRepairEvidence.push(...(result.evidence ?? []));
       if (result.status !== 'pass') {
         await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-apply');
         const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
@@ -172,9 +180,31 @@ export async function doGsdChangeV1(options: {
           nextAction: 'Use the canonical apply capability to update the authoritative task checkbox.' };
       }
     }
+    for (const findingId of cycleFindingIds) await transitionFindingV2({
+      change: options.change, projectRoot: current.resolved.projectRoot, findingId, action: 'repair',
+      actorId: 'gsd-do-executor', reason: 'Canonical apply completed the planner-dispositioned repair.',
+      evidence: cycleRepairEvidence,
+      now: options.now,
+    });
     repairTaskId = undefined;
     findingIds = [];
     current = await currentApproved(options);
+    const revisedPlanFindingIds = current.canonical.projection.assurance.findingRoutes
+      .filter((route) => route.planRevision !== current.revision.revision)
+      .map((route) => route.findingId)
+      .filter((findingId) => current.canonical.projection.assurance.findings.some((finding) =>
+        finding.findingId === findingId && finding.state === 'open'));
+    for (const findingId of revisedPlanFindingIds) await transitionFindingV2({
+      change: options.change, projectRoot: current.resolved.projectRoot, findingId, action: 'repair',
+      actorId: 'gsd-do-planner-disposition',
+      reason: 'A newly approved semantic plan revision incorporates the routed finding disposition.',
+      evidence: [{
+        referenceId: `plan:${current.revision.revision}`, kind: 'artifact',
+        path: `${current.resolved.changeRef}/design.md`, available: true,
+      }],
+      now: options.now,
+    });
+    const verificationFindingIds = [...new Set([...cycleFindingIds, ...revisedPlanFindingIds])];
     const roleContext = {
       changeName: current.resolved.changeName, planRevision: current.revision.revision,
       invocation: 'do_replan' as const,
@@ -183,28 +213,50 @@ export async function doGsdChangeV1(options: {
       semanticObligations: current.canonical.projection.assurance.semanticClassifications
         .map((item) => `${item.requirementId}:${item.level}`),
       evidenceRequirements: ['independent observable evidence; executor self-report is insufficient'],
+      ...(verificationFindingIds.length ? { findingIds: verificationFindingIds } : {}),
     };
     const reviewReceipt = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
       role: 'reviewer', readOnly: true, isolated: true, planning: roleContext,
     } });
+    await recordDispatchedRoleResultV2({
+      change: options.change, projectRoot: current.resolved.projectRoot, receipt: reviewReceipt, now: options.now,
+    });
     let failedReceipt = reviewReceipt;
-    let failed = reviewReceipt.result.status === 'pass' ? undefined : reviewReceipt.result;
+    let failed = reviewReceipt.result.status !== 'pass' || reviewReceipt.result.findings?.some((item) => item.blocking)
+      ? reviewReceipt.result : undefined;
     if (!failed) {
       const verificationReceipt = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
         role: 'verifier', readOnly: true, isolated: true, planning: roleContext,
       } });
+      await recordDispatchedRoleResultV2({
+        change: options.change, projectRoot: current.resolved.projectRoot, receipt: verificationReceipt, now: options.now,
+      });
+      if (verificationReceipt.result.status === 'pass') for (const findingId of verificationFindingIds) {
+        await verifyFindingFromDispatchedResultV2({
+          change: options.change, projectRoot: current.resolved.projectRoot, findingId,
+          receipt: verificationReceipt, reason: 'The independent verifier confirmed the planner disposition.',
+          now: options.now,
+        });
+      }
       failedReceipt = verificationReceipt;
-      failed = verificationReceipt.result.status === 'pass' ? undefined : verificationReceipt.result;
+      failed = verificationReceipt.result.status !== 'pass' || verificationReceipt.result.findings?.some((item) => item.blocking)
+        ? verificationReceipt.result : undefined;
     }
     if (!failed) {
       await setRunStatus(current.resolved.changeDir, 'checking', 'gsd-do');
       const checked = await checkGsdRunV2({ change: options.change, projectRoot: current.resolved.projectRoot,
         changedFiles: options.changedFiles, now: options.now });
-      await setRunStatus(current.resolved.changeDir, 'complete', 'gsd-do');
-      const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
-      return { status: checked.assurance.status === 'error' ? 'error' : 'pass',
-        summary: 'Canonical apply, independent code review, and goal verification passed.',
-        ...projection, applyCalls, convergenceCycles };
+      if (checked.assurance.status === 'pass' || checked.assurance.status === 'warn') return {
+        status: 'pass', summary: 'Canonical apply, independent code review, goal verification, and aggregate assurance passed.',
+        ...checked, applyCalls, convergenceCycles,
+      };
+      const status = checked.assurance.status === 'error' ? 'error'
+        : checked.assurance.status === 'human_needed' || checked.assurance.status === 'pending' ? 'human_needed' : 'fail';
+      return { status, summary: `Aggregate assurance is ${checked.assurance.status}; execution is not complete.`,
+        ...checked, applyCalls, convergenceCycles,
+        nextAction: checked.assurance.checks.flatMap((item) => item.remediation).at(0) ??
+          checked.assurance.unresolvedHumanActions.at(0) ??
+          'Resolve the failing assurance checks and resume /opsx:do.' };
     }
     const routes = routeDispatchedFindingsV1({
       receipt: failedReceipt,
