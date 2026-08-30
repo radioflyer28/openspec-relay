@@ -35,8 +35,8 @@ function deterministicMinimum(requirement: SemanticRequirementInputV1): {
   const text = [requirementText, ...requirement.scenarios.map((scenario) => scenario.body)]
     .join('\n').toLowerCase();
   const modelingTriggers = [
-    ['concurrency', /concurr|race|interleav|simultaneous/],
-    ['authorization-state', /authori[sz]|authenticated|owner|permission/],
+    ['concurrency', /\b(?:concurr\w*|simultaneous)\s+(?:write|update|mutation|transition|operation)s?\b|\brace\b|\binterleav/],
+    ['authorization-state', /\bauthori[sz](?:ation)?\s+state\b|\b(?:role\s+)?permissions?\b[\s\S]{0,40}\b(?:change|transition|refresh|preserv|persist|grant|revoke)\w*\b|\b(?:preserv|persist|grant|revoke)\w*\b[\s\S]{0,40}\b(?:role\s+)?permissions?\b|\b(?:unauthenticated|authenticated)\b[\s\S]{0,40}\bowner\b|\bownership\s+(?:state|transition|change)\b/],
     ['invariant', /invariant|must never|shall never|exactly once/],
     ['irreversible-transition', /irreversib|cannot be undone|terminal state/],
   ] as const;

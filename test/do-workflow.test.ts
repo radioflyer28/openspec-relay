@@ -184,12 +184,14 @@ describe('approved do convergence', () => {
       applyCapability: { apply: async (request) => {
         requests.push(request);
         await completeTask(changeDir, request.taskId);
-        return { status: 'pass', summary: 'applied', evidence: applyEvidence(request) };
+        return { status: 'pass', summary: 'applied' };
       } },
     });
     expect(requests.at(-1)).toMatchObject({ taskId: '1.1', action: 'repair' });
     expect(requests.at(-1)?.findingIds).toHaveLength(1);
     expect(result.convergenceCycles).toBe(2);
+    expect(result).toMatchObject({ status: 'error', run: { status: 'blocked' } });
+    expect(result.summary).toMatch(/repair evidence/i);
   });
 
   it('bounds unchanged verification failures and stops for human direction', async () => {
