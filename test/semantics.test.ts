@@ -66,6 +66,15 @@ describe('risk-proportional behavioral semantics', () => {
   });
 
   it.each([
+    'The page shall show the account owner name.',
+    'The settings page shall show the current permission label.',
+    'The log shall show concurrent request count.',
+  ])('does not treat benign display vocabulary as a modeling obligation: %s', (body) => {
+    expect(classifySemanticRequirements([{ id: 'display', title: 'Display value', body, scenarios: [] }])[0])
+      .toMatchObject({ level: 'simple', triggers: [] });
+  });
+
+  it.each([
     ['modes', 'While the service is in maintenance mode, it shall reject writes.', 'behavioral'],
     ['ordering', 'The worker shall persist the record before publishing the event.', 'behavioral'],
     ['cancellation', 'When cancellation is requested, the worker shall stop.', 'behavioral'],

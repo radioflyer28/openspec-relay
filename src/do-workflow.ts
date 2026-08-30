@@ -180,6 +180,14 @@ export async function doGsdChangeV1(options: {
           nextAction: 'Use the canonical apply capability to update the authoritative task checkbox.' };
       }
     }
+    if (cycleFindingIds.length > 0 && cycleRepairEvidence.length === 0) {
+      await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-repair-evidence');
+      const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
+      return { status: 'error',
+        summary: 'Canonical apply reported a passing repair without linked repair evidence.',
+        ...projection, applyCalls, convergenceCycles,
+        nextAction: 'Rerun the planner-dispositioned canonical apply repair with observable implementation or check evidence.' };
+    }
     for (const findingId of cycleFindingIds) await transitionFindingV2({
       change: options.change, projectRoot: current.resolved.projectRoot, findingId, action: 'repair',
       actorId: 'gsd-do-executor', reason: 'Canonical apply completed the planner-dispositioned repair.',
