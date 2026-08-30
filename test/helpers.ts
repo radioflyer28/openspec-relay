@@ -27,7 +27,7 @@ export async function createOpenSpecProject(name = 'demo'): Promise<{
     '## ADDED Requirements',
     '',
     '### Requirement: Demonstrate behavior',
-    'The system SHALL demonstrate behavior.',
+    'The system SHALL demonstrate behavior when invoked.',
     '',
     '#### Scenario: Works',
     '- **WHEN** invoked',
