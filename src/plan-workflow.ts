@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import type { HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
 import { compileOpenSpecChange } from './artifacts.js';
 import { loadGsdConfigV2 } from './config.js';
@@ -25,7 +27,12 @@ import {
   type PathfinderResultV1,
   type PlanReviewResultV1,
 } from './schemas.js';
-import { classifySemanticRequirements } from './semantics.js';
+import {
+  classifySemanticRequirements,
+  reconcileSemanticClassification,
+  resolveSemanticClassification,
+  validateSemanticStructure,
+} from './semantics.js';
 import { resolveChangeDirectory } from './state.js';
 
 export interface DisposablePathfinderWorkspaceV1 {
@@ -102,6 +109,34 @@ function planningContext(options: {
     ...(options.pathfinderQuestion ? { pathfinderQuestion: options.pathfinderQuestion } : {}),
     ...(options.disposableExperimentWorkspace ? { disposableExperimentWorkspace: true } : {}),
   };
+}
+
+function mergePlannerClassifications(options: {
+  requirements: Awaited<ReturnType<typeof compileOpenSpecChange>>['requirements'];
+  deterministic: ReturnType<typeof classifySemanticRequirements>;
+  supplemental?: ReturnType<typeof classifySemanticRequirements>;
+}) {
+  if (!options.supplemental?.length) return options.deterministic;
+  const byId = new Map(options.supplemental.map((item) => [item.requirementId, item]));
+  return options.requirements.map((requirement) => resolveSemanticClassification({
+    requirement,
+    planner: byId.get(requirement.id),
+    independentReview: true,
+  }));
+}
+
+function mergeReviewerClassifications(options: {
+  current: ReturnType<typeof classifySemanticRequirements>;
+  supplemental?: ReturnType<typeof classifySemanticRequirements>;
+}) {
+  if (!options.supplemental?.length) return options.current;
+  const byId = new Map(options.supplemental.map((item) => [item.requirementId, item]));
+  return options.current.map((classification) => {
+    const reviewer = byId.get(classification.requirementId);
+    return reviewer ? reconcileSemanticClassification(classification, {
+      ...reviewer, provenance: 'plan_reviewer',
+    }) : classification;
+  });
 }
 
 async function appendPlanningEvent(options: {
@@ -185,7 +220,11 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     }
     compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: loadedConfig.taskOverrides });
     semanticRevision = await computeSemanticPlanRevision({ changeDir: resolved.changeDir, compiled });
-    classifications = classifySemanticRequirements(compiled.requirements);
+    classifications = mergePlannerClassifications({
+      requirements: compiled.requirements,
+      deterministic: classifySemanticRequirements(compiled.requirements),
+      supplemental: planner.result.semanticClassifications,
+    });
   }
 
   const hostCapabilities = options.hostCapabilities ?? (options.dispatcher ? {
@@ -203,11 +242,6 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     adapters: options.dispatcher ? { dispatcher: true } : undefined,
     changedFiles: options.changedFiles,
     now,
-  });
-
-  for (const classification of classifications) await appendPlanningEvent({
-    changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'gsd-plan',
-    payload: { type: 'semantic.classified', classification },
   });
 
   const pathfinderResults: PathfinderResultV1[] = [];
@@ -271,6 +305,10 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       }),
     } });
     const findingIds = reviewFindingIds(receipt.result);
+    classifications = mergeReviewerClassifications({
+      current: classifications,
+      supplemental: receipt.result.semanticClassifications,
+    });
     review = PlanReviewResultV1Schema.parse({
       reviewId: stableId('plan-review', { revision: semanticRevision.revision, cycle: cycles, receipt: receipt.dispatchId }),
       revision: semanticRevision.revision,
@@ -299,7 +337,11 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     if (repair.result.status !== 'pass') break;
     compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: loadedConfig.taskOverrides });
     semanticRevision = await computeSemanticPlanRevision({ changeDir: resolved.changeDir, compiled });
-    classifications = classifySemanticRequirements(compiled.requirements);
+    classifications = mergePlannerClassifications({
+      requirements: compiled.requirements,
+      deterministic: classifySemanticRequirements(compiled.requirements),
+      supplemental: repair.result.semanticClassifications,
+    });
     started = await startGsdRunV2({ change: options.change, projectRoot: resolved.projectRoot,
       changedFiles: options.changedFiles, now });
   }
@@ -309,8 +351,28 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     origin: 'tier0-self-review', payload: { type: 'plan.reviewed', review },
   });
 
+  for (const classification of classifications) await appendPlanningEvent({
+    changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'gsd-plan',
+    payload: { type: 'semantic.classified', classification },
+  });
+
+  const [design, tasks] = await Promise.all([
+    fs.readFile(path.join(resolved.changeDir, 'design.md'), 'utf8').catch(() => ''),
+    fs.readFile(path.join(resolved.changeDir, 'tasks.md'), 'utf8').catch(() => ''),
+  ]);
+  const semanticDiagnostics = classifications.flatMap((classification) => {
+    const requirement = compiled.requirements.find((item) => item.id === classification.requirementId);
+    if (!requirement) return [`${classification.requirementId} is missing from the compiled OpenSpec requirements.`];
+    return validateSemanticStructure({
+      requirementId: classification.requirementId,
+      level: classification.level,
+      body: requirement.body,
+      design,
+      tasks,
+    }).diagnostics;
+  });
   const readinessPass = started.assurance.readiness?.status === 'pass';
-  const canApprove = readinessPass && review.status === 'pass';
+  const canApprove = readinessPass && review.status === 'pass' && semanticDiagnostics.length === 0;
   if (canApprove) {
     const approval = createPlanApproval({
       revision: semanticRevision.revision,
@@ -337,6 +399,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     summary: canApprove
       ? `${review.independent ? 'Independent' : 'Tier 0 self-'} review approved the current semantic plan revision.`
       : !readinessPass ? 'Deterministic readiness blockers must be resolved before plan approval.'
+        : semanticDiagnostics.length > 0 ? `Semantic structure must be repaired before plan approval: ${semanticDiagnostics.join(' ')}`
         : 'Plan review did not converge within two cycles.',
     ...projection,
     review,
