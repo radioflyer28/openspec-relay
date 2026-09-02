@@ -64,6 +64,7 @@
     "@fission-ai/openspec": ">=1.11.0-relay.1 <2.0.0"
   },
   "dependencies": {
+    "@fission-ai/openspec": "https://github.com/radioflyer28/OpenSpec/releases/download/v1.11.0-relay.1/fission-ai-openspec-1.11.0-relay.1.tgz",
     "commander": "14.0.3",
     "semver": "^7.8.5",
     "zod": "4.4.3"
@@ -71,7 +72,6 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.4",
     "@earendil-works/pi-coding-agent": "0.84.4",
-    "@fission-ai/openspec": "file:../OpenSpec",
     "@types/node": "20.19.43",
     "@types/semver": "^7.8.0",
     "eslint": "10.7.0",

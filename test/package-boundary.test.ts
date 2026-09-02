@@ -56,7 +56,9 @@ describe('published package boundary', () => {
     ]));
     expect(pkg.peerDependencies['@fission-ai/openspec'])
       .toBe('>=1.11.0-relay.1 <2.0.0');
-    expect(pkg.dependencies?.['@fission-ai/openspec']).toBeUndefined();
-    expect(pkg.devDependencies['@fission-ai/openspec']).toBe('file:../OpenSpec');
+    expect(pkg.dependencies?.['@fission-ai/openspec']).toBe(
+      'https://github.com/radioflyer28/OpenSpec/releases/download/v1.11.0-relay.1/fission-ai-openspec-1.11.0-relay.1.tgz',
+    );
+    expect(pkg.devDependencies['@fission-ai/openspec']).toBeUndefined();
   });
 });
