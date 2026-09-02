@@ -20,6 +20,7 @@ describe('OpenSpec Relay public identity', () => {
     });
     expect(Object.keys(pkg.bin)).toEqual(['openspec-relay']);
     expect(RELAY_VERSION).toBe(pkg.version);
+    expect(pkg.engines).toEqual({ node: '>=22.19.0' });
     expect(manifest.id).toBe('relay');
     expect(manifest.contributes.gates.map((gate: { id: string }) => gate.id)).toContain('relay.assurance');
     expect(pi).toContain("name: 'openspec_relay_workflow'");
