@@ -100,6 +100,59 @@ bypass an active gate. A previous companion may not understand newer private
 events; retain the authoritative OpenSpec artifacts and follow the generated
 record regeneration procedure above rather than downgrading records.
 
+## Pre-1.0 GSD-to-Relay cleanup
+
+Use this only after committing or copying the project. The rename intentionally
+has no automatic state migration because no durable GSD-named execution records
+were deployed before the Relay identity was selected.
+
+```bash
+# Inspect before changing installation metadata.
+find openspec/changes -type d -name .openspec-gsd -print
+rg -n 'gsd\.assurance|^[[:space:]]+gsd:' openspec/extensions.lock.yaml \
+  openspec/changes 2>/dev/null || true
+openspec extension list
+
+# If the inspection finds an active gate, finish or explicitly override it first.
+openspec extension disable gsd
+
+# Build/link the new checkout and reconcile generated host workflows.
+pnpm --dir /absolute/path/to/openspec-relay build
+openspec extension link /absolute/path/to/openspec-relay
+openspec extension enable relay
+openspec extension doctor relay
+openspec update
+```
+
+The current generic core has no extension-remove command. After confirming that
+`gsd` is disabled and has no gate obligation, remove only its mapping from
+`openspec/extensions.lock.yaml`; do not replace or regenerate the rest of the
+lockfile by hand. If the initial inspection found disposable `.openspec-gsd`
+directories, review their contents and remove only those exact directories in a
+copied project. A new run must create `.openspec-relay`, must record
+`relay.assurance`, and must not recreate the old directory or gate.
+
+Because the reconciliation digest covers the lockfile, run these commands once
+more after removing the old mapping:
+
+```bash
+openspec extension link /absolute/path/to/openspec-relay
+openspec extension doctor relay
+openspec extension list
+```
+
+The exact rollback pair for this rename is patched core commit `6f264be` and
+companion commit `b83044c`. Retain locally packed artifacts and their recorded
+checksums before replacing the system install. The qualified rollback artifacts
+are `fission-ai-openspec-1.11.0-gsd.1.tgz` (SHA-256
+`8828da075226b09562aa99e7dff97bbadda06b88d988525b3c60abbb96157460`) and
+`openspec-gsd-0.1.0.tgz` (SHA-256
+`874d71f1330d1761b23eeb88e557b62ff13b9687b3bd20165e5c47789e76f518`).
+Rollback restores both exact
+revisions, relinks the `gsd` extension, runs doctor/update, and removes the Relay
+lock entry only after verifying that no active `relay.assurance` obligation is
+being bypassed.
+
 ## Transition to official OpenSpec
 
 When official OpenSpec releases the generic API, verify its documented API

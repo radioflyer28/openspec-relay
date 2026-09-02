@@ -19,7 +19,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - name: Checkout Guardrails
+      - name: Checkout OpenSpec Relay
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: openspec-relay
@@ -51,11 +51,11 @@ jobs:
         working-directory: OpenSpec
         run: pnpm install --frozen-lockfile && pnpm build
 
-      - name: Install Guardrails dependencies
+      - name: Install Relay dependencies
         working-directory: openspec-relay
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build Guardrails
+      - name: Build Relay
         working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
@@ -63,15 +63,15 @@ jobs:
           OPENSPEC_TELEMETRY: '0'
         run: pnpm build
 
-      - name: Type-check Guardrails
+      - name: Type-check Relay
         working-directory: openspec-relay
         run: pnpm typecheck
 
-      - name: Lint Guardrails
+      - name: Lint Relay
         working-directory: openspec-relay
         run: pnpm lint
 
-      - name: Test Guardrails
+      - name: Test Relay
         working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout Guardrails
+      - name: Checkout OpenSpec Relay
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: openspec-relay
@@ -149,7 +149,7 @@ jobs:
         working-directory: OpenSpec
         run: pnpm install --frozen-lockfile && pnpm build
 
-      - name: Verify Guardrails against patched upstream
+      - name: Verify Relay against patched upstream
         working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec

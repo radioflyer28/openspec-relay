@@ -25,11 +25,12 @@ Public source: <https://github.com/radioflyer28/openspec-relay>
 
 Until the generic extension API is released by official OpenSpec, use the
 maintained fork prerelease locally, verify its identity, and then link or
-link a private OpenSpec Relay checkout or unpacked local artifact into the project:
+link an OpenSpec Relay checkout or unpacked local artifact into the project:
 
 ```bash
 npm install --global github:radioflyer28/OpenSpec#v1.11.0-relay.1
 openspec --version # 1.11.0-relay.1
+git clone https://github.com/radioflyer28/openspec-relay.git
 openspec extension link /absolute/path/to/openspec-relay
 openspec extension doctor relay
 ```
@@ -49,12 +50,14 @@ openspec extension doctor relay
 
 ### Pi 0.84.x
 
-The companion is also a Pi package. A private system-level installation uses
-the local checkout directly and does not publish to a registry:
+The companion is also a Pi package. Install it from a local checkout or its
+public GitHub source; neither route requires publishing to a package registry:
 
 ```bash
 pnpm build
 pi install /absolute/path/to/openspec-relay
+# After the public repository rename is complete, a clean host may instead use:
+# pi install https://github.com/radioflyer28/openspec-relay
 pi list
 ```
 
@@ -270,6 +273,17 @@ platform capability is unavailable, OpenSpec Relay records `human_needed`.
 4. Finish or explicitly override any active change gate obligations before
    disabling or removing an older package. Disabling an extension does not erase
    existing obligations.
+
+This is a pre-1.0 clean identity break. Before replacing a development install,
+verify that no active change contains `.openspec-gsd` and that no unresolved
+`gsd.assurance` obligation exists. Disable the old `gsd` extension, link and
+enable `relay`, and deliberately remove the obsolete disabled `gsd` entry from
+`openspec/extensions.lock.yaml` only after that inspection, then relink Relay to
+refresh reconciliation metadata. Old generated
+records are not migrated: on a disposable development project, review and remove
+them, then run a fresh Relay workflow so only `.openspec-relay` and
+`relay.assurance` are created. The command-by-command procedure and rollback
+pair are in [`MAINTENANCE.md`](./MAINTENANCE.md).
 
 OpenSpec and OpenSpec Relay are packaged and versioned independently. This private
 increment qualifies both units on macOS through conformance, cross-repository,

@@ -1,5 +1,15 @@
 # Third-party notices
 
+## GSD workflow inspiration
+
+OpenSpec Relay adapts selected role separation, planning, execution, review,
+repair, verification, and scientific-debugging ideas from GSD. It does not
+install GSD or adopt its phase, milestone, roadmap, or persistent project-state
+model. No GSD source code is vendored by this package.
+
+- Current project source: <https://github.com/open-gsd/gsd-core>
+- Earlier project lineage reviewed during Relay design: <https://github.com/gsd-build/get-shit-done>
+
 ## Matt Pocock `grilling` skill
 
 - Source: <https://github.com/mattpocock/skills/blob/85f83d3fde1d3a90d5c9a657f6998c79a6c37308/skills/productivity/grilling/SKILL.md>
