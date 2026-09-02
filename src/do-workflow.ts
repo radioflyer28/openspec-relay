@@ -129,6 +129,9 @@ export async function doGsdChangeV1(options: {
   projectRoot?: string;
   applyCapability: CanonicalApplyCapabilityV1;
   dispatcher: RoleDispatcherV1;
+  /** Defaults to true for legacy hosts. Pi sets this false because its child
+   * dispatcher is deliberately assurance-only; the parent owns planning. */
+  allowWritablePlannerDispatch?: boolean;
   changedFiles?: string[];
   now?: string;
 }): Promise<DoGsdChangeResultV1> {
@@ -286,7 +289,8 @@ export async function doGsdChangeV1(options: {
     }
     const replanned = await planGsdChangeV1({
       change: options.change, projectRoot: current.resolved.projectRoot, invocation: 'do_replan',
-      dispatcher: options.dispatcher, findingIds,
+      ...(options.allowWritablePlannerDispatch === false ? {} : { dispatcher: options.dispatcher }),
+      assuranceDispatcher: options.dispatcher, findingIds,
       plannerInstructions: [
         `Associate the stable findings with original task '${repairTaskId ?? 'unknown'}'.`,
         ...routes.map((route) => `Disposition ${route.findingId} as ${route.route}: ${route.reason}`),

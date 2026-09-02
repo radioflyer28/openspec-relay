@@ -47,7 +47,7 @@ describe('Pi package resources', () => {
     }
   });
 
-  it('bundles a Pi runtime shim for the OpenSpec GSD CLI', async () => {
+  it('bundles the single typed Pi workflow adapter and CLI fallback shim', async () => {
     const root = process.cwd();
     const runtimeExtension = await fs.readFile(
       path.join(root, 'pi', 'extensions', 'openspec-gsd.ts'),
@@ -55,6 +55,9 @@ describe('Pi package resources', () => {
     );
     const executable = await fs.readFile(path.join(root, 'pi', 'bin', 'openspec-gsd'), 'utf8');
     expect(runtimeExtension).toContain("new URL('../bin/', import.meta.url)");
+    expect(runtimeExtension).toContain("name: 'openspec_gsd_workflow'");
+    expect(runtimeExtension).toContain('pi.registerTool(workflowTool)');
+    expect(runtimeExtension).toContain("../../dist/pi/workflow.js");
     expect(executable).toContain("import('../../dist/cli.js')");
   });
 });

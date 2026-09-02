@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
+import { runReadonlyAnalysisSchedule } from './analysis-scheduler.js';
 import { compileOpenSpecChange } from './artifacts.js';
 import { loadGsdConfigV2 } from './config.js';
 import {
@@ -24,6 +25,7 @@ import {
   type GsdAssuranceV2,
   type GsdConfigV2,
   type GsdRunV2,
+  type HostAdapterProvenanceV1,
   type PathfinderResultV1,
   type PlanReviewResultV1,
 } from './schemas.js';
@@ -46,6 +48,9 @@ export interface PlanGsdChangeOptionsV1 {
   invocation?: 'initial_plan' | 'do_replan';
   config?: Partial<GsdConfigV2>;
   hostCapabilities?: HostCapabilitiesV1;
+  /** Read-only assurance authority supplied by hosts that intentionally do not
+   * grant this workflow a writable planner child. */
+  assuranceDispatcher?: RoleDispatcherV1;
   dispatcher?: RoleDispatcherV1;
   pathfinderQuestions?: string[];
   pathfinderWorkspaces?: DisposablePathfinderWorkspaceV1;
@@ -53,6 +58,9 @@ export interface PlanGsdChangeOptionsV1 {
   findingIds?: string[];
   allowSelfReview?: boolean;
   changedFiles?: string[];
+  readOnlyConcurrency?: number;
+  signal?: AbortSignal;
+  hostAdapter?: HostAdapterProvenanceV1;
   now?: string;
 }
 
@@ -195,6 +203,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     'Do not silently change observable product intent; route material ambiguity to discussion.',
     ...(options.plannerInstructions ?? []),
   ];
+  const assuranceDispatcher = options.assuranceDispatcher ?? options.dispatcher;
 
   if (options.dispatcher) {
     const planner = await dispatchRoleV2({
@@ -227,55 +236,83 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     });
   }
 
-  const hostCapabilities = options.hostCapabilities ?? (options.dispatcher ? {
+  const hostCapabilities = options.hostCapabilities ?? (assuranceDispatcher ? {
     ...DEFAULT_HOST_CAPABILITIES, agentDispatch: true,
   } : DEFAULT_HOST_CAPABILITIES);
   let started = await startGsdRunV2({
     change: options.change,
     projectRoot: resolved.projectRoot,
-    config: options.dispatcher ? {
+    config: assuranceDispatcher ? {
       ...options.config,
       requestedTier: options.config?.requestedTier ?? 'tier1',
       allowAgentDispatch: true,
     } : options.config,
     hostCapabilities,
-    adapters: options.dispatcher ? { dispatcher: true } : undefined,
+    adapters: assuranceDispatcher ? { dispatcher: true } : undefined,
     changedFiles: options.changedFiles,
     now,
   });
+  if (options.hostAdapter) await appendPlanningEvent({
+    changeDir: resolved.changeDir,
+    now,
+    actor: { kind: 'host', id: options.hostAdapter.adapterId },
+    origin: options.hostAdapter.adapterId,
+    payload: { type: 'host.adapter_qualified', adapter: options.hostAdapter },
+  });
 
   const pathfinderResults: PathfinderResultV1[] = [];
-  for (const question of options.pathfinderQuestions ?? []) {
-    if (!options.dispatcher || !options.pathfinderWorkspaces) {
+  const pathfinderQuestions = [...new Set(options.pathfinderQuestions ?? [])];
+  if (pathfinderQuestions.length > 0 && (!assuranceDispatcher || !options.pathfinderWorkspaces)) {
       const review = selfReview({ revision: semanticRevision.revision, now, allowed: false });
       return { status: 'human_needed', summary: 'A planning pathfinder requires fresh-context dispatch and a disposable experiment workspace.',
         ...started, review, pathfinderResults, cycles: 0,
         nextAction: 'Enable a pathfinder-capable host or resolve the planning uncertainty with human input.' };
+  }
+  const scheduledPathfinders = await runReadonlyAnalysisSchedule({
+    concurrency: options.readOnlyConcurrency ?? 1,
+    parallel: (options.readOnlyConcurrency ?? 1) > 1,
+    signal: options.signal,
+    requests: pathfinderQuestions.map((question) => {
+      const pathfinderId = stableId('pathfinder', { question, revision: semanticRevision.revision });
+      return { id: pathfinderId, prerequisites: [], run: async () => {
+        const workspace = await options.pathfinderWorkspaces!.create(pathfinderId);
+        try {
+          const receipt = await dispatchRoleV2({ dispatcher: assuranceDispatcher!, request: {
+            role: 'pathfinder', readOnly: true, isolated: true, workspace,
+            planning: planningContext({
+              changeName: resolved.changeName, revision: semanticRevision.revision, invocation,
+              artifactRefs: compiled.artifacts.map((item) => item.path), plannerInstructions: baseInstructions,
+              classifications, pathfinderQuestion: question, disposableExperimentWorkspace: true,
+            }),
+          } });
+          if (!receipt.result.pathfinder) throw new Error('Pathfinder dispatch omitted its structured planning result.');
+          return { origin: receipt.dispatchId, result: PathfinderResultV1Schema.parse({
+            pathfinderId, question, ...receipt.result.pathfinder,
+            evidenceRefs: receipt.result.evidenceRefs,
+            sourceRevision: semanticRevision.revision,
+          }) };
+        } finally {
+          await options.pathfinderWorkspaces!.cleanup(pathfinderId, workspace);
+        }
+      } };
+    }),
+  });
+  for (const scheduled of scheduledPathfinders) {
+    if (scheduled.status !== 'pass' || !scheduled.value) {
+      const review = selfReview({ revision: semanticRevision.revision, now, allowed: false });
+      return { status: scheduled.status === 'cancelled' ? 'human_needed' : 'error',
+        summary: `Pathfinder ${scheduled.status}: ${scheduled.summary}`,
+        ...started, review, pathfinderResults, cycles: 0,
+        nextAction: 'Resolve the isolated analysis failure or use Tier 0 with explicit human direction.' };
     }
-    const pathfinderId = stableId('pathfinder', { question, revision: semanticRevision.revision });
-    const workspace = await options.pathfinderWorkspaces.create(pathfinderId);
-    try {
-      const receipt = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
-        role: 'pathfinder', readOnly: true, isolated: true, workspace,
-        planning: planningContext({
-          changeName: resolved.changeName, revision: semanticRevision.revision, invocation,
-          artifactRefs: compiled.artifacts.map((item) => item.path), plannerInstructions: baseInstructions,
-          classifications, pathfinderQuestion: question, disposableExperimentWorkspace: true,
-        }),
-      } });
-      if (!receipt.result.pathfinder) throw new Error('Pathfinder dispatch omitted its structured planning result.');
-      const result = PathfinderResultV1Schema.parse({
-        pathfinderId, question, ...receipt.result.pathfinder,
-        evidenceRefs: receipt.result.evidenceRefs,
-        sourceRevision: semanticRevision.revision,
-      });
-      pathfinderResults.push(result);
+    const { result, origin } = scheduled.value;
+    pathfinderResults.push(result);
       await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'pathfinder' },
-        origin: receipt.dispatchId, payload: { type: 'pathfinder.completed', result } });
+        origin, payload: { type: 'pathfinder.completed', result } });
       if (result.routing !== 'planner') {
         await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'gsd-plan',
           payload: { type: 'finding.routed', route: {
-            findingId: stableId('pathfinder-route', { pathfinderId, routing: result.routing }),
+            findingId: stableId('pathfinder-route', { pathfinderId: result.pathfinderId, routing: result.routing }),
             route: result.routing, planRevision: semanticRevision.revision,
             reason: result.conclusion, attempt: 0,
           } } });
@@ -286,17 +323,14 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
           ...projection, review, pathfinderResults, cycles: 0,
           nextAction: result.routing === 'discussion' ? `/opsx:discuss ${resolved.changeName}` : 'Provide human direction.' };
       }
-    } finally {
-      await options.pathfinderWorkspaces.cleanup(pathfinderId, workspace);
-    }
   }
 
   let review = selfReview({ revision: semanticRevision.revision, now, allowed: Boolean(options.allowSelfReview) });
   let priorBlocking = '';
   let cycles = 0;
-  while (options.dispatcher && cycles < 2) {
+  while (assuranceDispatcher && cycles < 2) {
     cycles += 1;
-    const receipt = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
+    const receipt = await dispatchRoleV2({ dispatcher: assuranceDispatcher, request: {
       role: 'plan_reviewer', readOnly: true, isolated: true,
       planning: planningContext({
         changeName: resolved.changeName, revision: semanticRevision.revision, invocation,
@@ -325,6 +359,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     const signature = findingIds.join('|') || receipt.result.summary;
     if (signature === priorBlocking || cycles === 2) break;
     priorBlocking = signature;
+    if (!options.dispatcher) break;
     const repair = await dispatchRoleV2({ dispatcher: options.dispatcher, request: {
       role: 'planner', readOnly: false, isolated: true,
       planning: planningContext({
@@ -346,7 +381,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       changedFiles: options.changedFiles, now });
   }
 
-  if (!options.dispatcher) await appendPlanningEvent({
+  if (!assuranceDispatcher) await appendPlanningEvent({
     changeDir: resolved.changeDir, now, actor: { kind: 'plan_reviewer', id: 'tier0-self-review' },
     origin: 'tier0-self-review', payload: { type: 'plan.reviewed', review },
   });
@@ -393,7 +428,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
   const store = await readEventStoreV2(resolved.changeDir);
   const projection = await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store, compiled });
   const status = canApprove ? 'pass' : review.status === 'error' ? 'error'
-    : review.status === 'human_needed' || (!options.dispatcher && !options.allowSelfReview) ? 'human_needed' : 'fail';
+    : review.status === 'human_needed' || (!assuranceDispatcher && !options.allowSelfReview) ? 'human_needed' : 'fail';
   return {
     status,
     summary: canApprove

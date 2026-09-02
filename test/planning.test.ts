@@ -24,6 +24,17 @@ const passingDispatcher = (requests: RoleRequestV1[]): RoleDispatcherV1 => ({ di
 } });
 
 describe('reusable OpenSpec GSD planning', () => {
+  it('accepts a read-only assurance dispatcher without granting writable planner authority', async () => {
+    const { root } = await createOpenSpecProject();
+    const requests: RoleRequestV1[] = [];
+    const result = await planGsdChangeV1({
+      change: 'demo', projectRoot: root, config, changedFiles: [],
+      assuranceDispatcher: passingDispatcher(requests),
+    });
+    expect(result.status).toBe('pass');
+    expect(requests.map((item) => item.role)).toEqual(['plan_reviewer']);
+  });
+
   it('dispatches a writable planner and fresh read-only reviewer, then approves the semantic revision', async () => {
     const { root } = await createOpenSpecProject();
     const requests: RoleRequestV1[] = [];
@@ -115,6 +126,34 @@ describe('reusable OpenSpec GSD planning', () => {
       planning: { disposableExperimentWorkspace: true },
     });
     expect(lifecycle.map((item) => item.split(':')[0])).toEqual(['create', 'cleanup']);
+  });
+
+  it('bounds independent pathfinders without scheduling a writable planner', async () => {
+    const { root } = await createOpenSpecProject();
+    let active = 0;
+    let maximum = 0;
+    const roles: string[] = [];
+    const assuranceDispatcher: RoleDispatcherV1 = { dispatch: async (request) => {
+      roles.push(request.role);
+      if (request.role !== 'pathfinder') return { status: 'pass', summary: 'review passed', evidenceRefs: ['review'] };
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return { status: 'pass', summary: 'pathfinder passed', evidenceRefs: ['pathfinder'], pathfinder: {
+        assumptions: [], experiments: [], observations: [], counterexamples: [],
+        conclusion: 'Evidence is sufficient.', confidence: 'high', routing: 'planner',
+      } };
+    } };
+    const result = await planGsdChangeV1({
+      change: 'demo', projectRoot: root, config, changedFiles: [], assuranceDispatcher,
+      pathfinderQuestions: ['one', 'two', 'three'], readOnlyConcurrency: 2,
+      pathfinderWorkspaces: { create: async (id) => `/tmp/${id}`, cleanup: async () => undefined },
+    });
+    expect(result.status).toBe('pass');
+    expect(maximum).toBe(2);
+    expect(roles).not.toContain('planner');
+    expect(result.pathfinderResults.map((item) => item.question)).toEqual(['one', 'two', 'three']);
   });
 
   it('routes material pathfinder conclusions back to targeted discussion', async () => {
