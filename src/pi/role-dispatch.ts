@@ -73,6 +73,9 @@ function compileRolePrompt(
   childSessionId: string,
 ): string {
   const planning = request.planning!;
+  const resultShape = request.role === 'pathfinder'
+    ? 'result must also contain pathfinder={assumptions:string[],experiments:string[],observations:string[],counterexamples:string[],conclusion:string,confidence:"high"|"medium"|"low",routing:"planner"|"discussion"|"human"}.'
+    : 'result may also contain structured findings or semantic classifications when applicable.';
   return [
     `Role: ${request.role}`,
     `Change: ${planning.changeName}`,
@@ -83,6 +86,9 @@ function compileRolePrompt(
     ...(planning.pathfinderQuestion ? [`Focused pathfinder question: ${planning.pathfinderQuestion}`] : []),
     'Use only the provided read-only tools. Do not modify the project or planning artifacts.',
     `Finish with exactly one ${RESULT_START}{JSON}${RESULT_END} envelope.`,
+    'The JSON must contain dispatchId, parentSessionId, childSessionId, role, changeName, planRevision, ' +
+      'and result={status:"pass"|"fail"|"error",summary:string,evidenceRefs:string[]}.',
+    resultShape,
     `Echo dispatchId=${envelope.dispatchId}, parentSessionId=${envelope.parentSessionId}, ` +
       `childSessionId=${childSessionId}, role=${envelope.role}, ` +
       `changeName=${envelope.changeName}, and planRevision=${envelope.planRevision}.`,
