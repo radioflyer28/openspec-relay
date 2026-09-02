@@ -219,7 +219,8 @@ export async function doGsdChangeV1(options: {
     const roleContext = {
       changeName: current.resolved.changeName, planRevision: current.revision.revision,
       invocation: 'do_replan' as const,
-      artifactRefs: current.canonical.compiled.artifacts.map((item) => item.path),
+      artifactRefs: current.canonical.compiled.artifacts.map((item) =>
+        `${current.resolved.changeRef}/${item.path}`),
       plannerInstructions: ['Evaluate implementation against the approved planner instructions and authoritative OpenSpec artifacts.'],
       semanticObligations: current.canonical.projection.assurance.semanticClassifications
         .map((item) => `${item.requirementId}:${item.level}`),

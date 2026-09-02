@@ -36,9 +36,11 @@ export type PiHostCapabilityProfileV1 = z.infer<typeof PiHostCapabilityProfileV1
 
 export interface PiReadOnlyProbeV1 {
   toolNames: string[];
-  supportsCancellation: boolean;
-  supportsTimeout: boolean;
-  supportsStructuredResults: boolean;
+  exercise(): Promise<{
+    cancellation: boolean;
+    timeout: boolean;
+    structuredResults: boolean;
+  }>;
   dispose(): Promise<void>;
 }
 
@@ -138,10 +140,11 @@ export async function qualifyPiHostAdapter(options: {
     if (JSON.stringify(actualTools) !== JSON.stringify(PI_READ_ONLY_TOOLS)) {
       throw new Error(`Read-only tool inventory mismatch: received ${actualTools.join(', ') || 'none'}.`);
     }
+    const observed = await probe.exercise();
     const missingContracts = [
-      ...(!probe.supportsCancellation ? ['cancellation'] : []),
-      ...(!probe.supportsTimeout ? ['timeout'] : []),
-      ...(!probe.supportsStructuredResults ? ['structured results'] : []),
+      ...(!observed.cancellation ? ['cancellation'] : []),
+      ...(!observed.timeout ? ['timeout'] : []),
+      ...(!observed.structuredResults ? ['structured results'] : []),
     ];
     if (missingContracts.length) throw new Error(`Read-only probe lacks ${missingContracts.join(', ')}.`);
   } catch (error) {
