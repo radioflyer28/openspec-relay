@@ -212,6 +212,18 @@ describe('reusable OpenSpec GSD planning', () => {
     expect(reviews).toBe(2);
   });
 
+  it('preserves a terminal assurance-dispatch diagnostic for remediation', async () => {
+    const { root } = await createOpenSpecProject();
+    const result = await planGsdChangeV1({
+      change: 'demo', projectRoot: root, config, changedFiles: [],
+      assuranceDispatcher: { dispatch: async () => ({
+        status: 'error', summary: 'Pi role result rejected: findings[0].scope is missing.', evidenceRefs: [],
+      }) },
+    });
+    expect(result).toMatchObject({ status: 'error' });
+    expect(result.summary).toContain('findings[0].scope is missing');
+  });
+
   it('rejects writable plan-reviewer and pathfinder contracts before dispatch', async () => {
     const dispatcher = passingDispatcher([]);
     await expect(dispatchRoleV2({ dispatcher, request: {
