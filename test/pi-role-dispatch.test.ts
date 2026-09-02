@@ -100,6 +100,7 @@ describe('Pi role dispatcher', () => {
       status: 'pass', summary: 'Independent review passed.', evidenceRefs: ['proposal.md'],
     });
     expect(prompt).toContain('childSessionId=child-session');
+    expect(prompt).toContain('result={status:"pass"|"fail"|"error"');
   });
 
   it.each([
