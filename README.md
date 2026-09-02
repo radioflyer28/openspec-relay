@@ -25,8 +25,8 @@ maintained fork prerelease locally, verify its identity, and then link or
 link a private OpenSpec GSD checkout or unpacked local artifact into the project:
 
 ```bash
-npm install --global github:radioflyer28/OpenSpec#v1.8.0-gsd.1
-openspec --version # 1.8.0-gsd.1
+npm install --global github:radioflyer28/OpenSpec#v1.11.0-gsd.1
+openspec --version # 1.11.0-gsd.1
 openspec extension link /absolute/path/to/openspec-gsd
 openspec extension doctor gsd
 ```
