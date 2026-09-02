@@ -19,7 +19,7 @@ describe('Pi adapter exclusions', () => {
     for (const filename of files) {
       const content = await fs.readFile(filename, 'utf8');
       if (!content.includes('@earendil-works/pi-')) continue;
-      expect(path.relative(root, filename)).toMatch(/^src\/pi\//);
+      expect(path.relative(root, filename).split(path.sep).join('/')).toMatch(/^src\/pi\//);
     }
   });
 

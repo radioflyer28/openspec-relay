@@ -108,8 +108,8 @@ export async function resolveChangeDirectory(options: {
   };
 }
 
-export function relayDirectory(changeDir: string): string {
-  return path.join(changeDir, '.openspec-relay');
+export function relayDirectory(changeDir: string, pathApi: path.PlatformPath = path): string {
+  return pathApi.join(changeDir, '.openspec-relay');
 }
 
 export function relayGeneratedPath(
@@ -117,7 +117,7 @@ export function relayGeneratedPath(
   file: RelayGeneratedFile,
   pathApi: path.PlatformPath = path,
 ): string {
-  return pathApi.join(relayDirectory(changeDir), ...RELAY_GENERATED_FILES[file].split('/'));
+  return pathApi.join(relayDirectory(changeDir, pathApi), ...RELAY_GENERATED_FILES[file].split('/'));
 }
 
 export function runStatePath(changeDir: string): string {
