@@ -326,6 +326,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
   }
 
   let review = selfReview({ revision: semanticRevision.revision, now, allowed: Boolean(options.allowSelfReview) });
+  let lastReviewSummary = '';
   let priorBlocking = '';
   let cycles = 0;
   while (assuranceDispatcher && cycles < 2) {
@@ -339,6 +340,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       }),
     } });
     const findingIds = reviewFindingIds(receipt.result);
+    lastReviewSummary = receipt.result.summary;
     classifications = mergeReviewerClassifications({
       current: classifications,
       supplemental: receipt.result.semanticClassifications,
@@ -435,7 +437,8 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       ? `${review.independent ? 'Independent' : 'Tier 0 self-'} review approved the current semantic plan revision.`
       : !readinessPass ? 'Deterministic readiness blockers must be resolved before plan approval.'
         : semanticDiagnostics.length > 0 ? `Semantic structure must be repaired before plan approval: ${semanticDiagnostics.join(' ')}`
-        : 'Plan review did not converge within two cycles.',
+        : review.status === 'error' ? `Plan review failed: ${lastReviewSummary}`
+          : `Plan review did not converge within two cycles${lastReviewSummary ? `: ${lastReviewSummary}` : '.'}`,
     ...projection,
     review,
     pathfinderResults,
