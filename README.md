@@ -44,7 +44,7 @@ openspec extension link ../openspec-gsd
 openspec extension doctor gsd
 ```
 
-### Pi 0.84.2
+### Pi 0.84.x
 
 The companion is also a Pi package. A private system-level installation uses
 the local checkout directly and does not publish to a registry:
@@ -55,12 +55,16 @@ pi install /absolute/path/to/openspec-gsd
 pi list
 ```
 
-This exposes `/opsx-discuss`, `/opsx-plan`, `/opsx-do`, `/opsx-check`,
+The supported Pi SDK range is `>=0.84.0 <0.85.0`; development and macOS
+qualification use Pi 0.84.4. This exposes `/opsx-discuss`, `/opsx-plan`, `/opsx-do`, `/opsx-check`,
 `/opsx-status`, `/opsx-debug`, and `/opsx-uat`, plus the corresponding
 `openspec-*` skills. The Pi package includes
-a minimal runtime extension that places its bundled `openspec-gsd` CLI on the
-`PATH` of Pi-launched commands, so no separate global CLI installation is
-required. Re-run `pnpm build` after changing a workflow; the build regenerates
+a runtime extension that registers one typed in-process
+`openspec_gsd_workflow` tool and places its bundled `openspec-gsd` CLI on the
+`PATH` as the Tier 0 fallback. The in-process adapter live-probes the active
+model, authentication, restricted session lifecycle, structured results,
+cancellation, timeout, and read-only concurrency before advertising them. No
+separate global CLI installation is required. Re-run `pnpm build` after changing a workflow; the build regenerates
 the Pi resources from the canonical workflow contributions.
 
 The local development dependency uses `../OpenSpec`; it is not included in the
@@ -178,6 +182,11 @@ precedence:
   "repairLimit": 2,
   "allowAgentDispatch": false,
   "allowParallel": false,
+  "piHostAdapter": {
+    "enabled": false,
+    "forceTier0": false,
+    "maxReadOnlyConcurrency": 2
+  },
   "git": {
     "commits": false,
     "branches": false,
@@ -201,6 +210,21 @@ precedence:
   }
 }
 ```
+
+The Pi adapter is opt-in. Set `piHostAdapter.enabled` to `true` for live Tier 1
+qualification. Nested assurance roles add model calls, latency, and token cost;
+only applicable roles run, and independent pathfinders are capped by
+`maxReadOnlyConcurrency` (1–4). Set `forceTier0` to `true` for immediate
+rollback without uninstalling the package. Status distinguishes `available`,
+`disabled`, `probe_failed`, and `unsupported_version`, and records only the
+adapter version, Pi version, model reference, capability states, and
+qualification time—never credentials, prompts, private reasoning, or session
+identity.
+
+`openspec extension doctor gsd` validates the static package manifest and core
+compatibility. It intentionally cannot see an ephemeral adapter inside a live
+Pi session; use `/opsx:status <change>` in Pi to inspect live qualification and
+the recorded assurance provenance.
 
 Generated execution evidence is stored under
 `openspec/changes/<change>/.openspec-gsd/events.json`; `run.json`,

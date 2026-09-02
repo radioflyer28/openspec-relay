@@ -10,9 +10,12 @@ metadata:
 
 Carry an approved OpenSpec change through implementation and assurance.
 
-1. Invoke `openspec-gsd do <change>` before any implementation write. Refuse an
-   absent or stale semantic plan approval and route to `/opsx:plan <change>`.
-   Checkbox-only task progress does not stale approval.
+1. In Pi, invoke `openspec_gsd_workflow` with operation `do` before any
+   implementation write. If it requests canonical apply, perform the selected
+   `$openspec-apply-change` task and invoke the same tool again. If it reports a
+   fallback, invoke its exact `openspec-gsd do <change>` command. Refuse an
+   absent or stale semantic plan approval and route to `/opsx:plan <change>`;
+   checkbox-only task progress does not stale approval.
 2. Act as the executor wrapper around `$openspec-apply-change`. For each selected
    authoritative task, pass its approved revision, planner instructions,
    semantic obligations, scenarios/invariants, risk and RED–GREEN–REFACTOR
@@ -35,9 +38,10 @@ Carry an approved OpenSpec change through implementation and assurance.
 6. Automatically resume after technical replanning. Bound unchanged review or
    verification failures to two convergence cycles, then report `human_needed`
    with the stable findings and exact next action.
-7. Invoke `openspec-gsd check <change>` after review and verification pass.
-   Report assurance and archive blockers; do not weaken semantic minimums based
-   on quick, guarded, or full execution breadth.
+7. In Pi, use `openspec_gsd_workflow` operation `check` after review and
+   verification pass; otherwise use its CLI fallback. Report assurance and
+   archive blockers; do not weaken semantic minimums based on quick, guarded,
+   or full execution breadth.
 
 Commits, branches, parallel waves, and worktrees remain disabled unless the
 developer explicitly enables each operation and the host supports it.

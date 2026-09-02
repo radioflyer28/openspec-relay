@@ -11,8 +11,10 @@ metadata:
 Evaluate the assurance state of an OpenSpec change without implementing
 unrelated work.
 
-Invoke `openspec-gsd check <change>`. This host-neutral workflow does not
- advertise `--repair` until a repair adapter is registered. Recompile repository
+In Pi, invoke `openspec_gsd_workflow` with operation `check`; use its exact CLI
+fallback when the adapter is disabled or unqualified. The host-neutral
+`openspec-gsd check <change>` workflow does not advertise `--repair` until a
+repair adapter is registered. Recompile repository
 context and independent plan readiness before validating deterministic repository
 checks, scenario coverage, applicable TDD evidence, routed specialist checks,
 code review, and independent goal verification according to the selected run

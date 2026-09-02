@@ -27,10 +27,13 @@ Plan and approve an existing OpenSpec change for execution.
    Give it read-only repository access and a disposable experiment workspace;
    incorporate technical conclusions through the planner and route material
    product conclusions to discussion.
-5. Invoke `openspec-gsd plan <change>`. A capable host should use the exported
-   `planGsdChangeV1` coordinator with fresh planner, pathfinder, and read-only
-   plan-reviewer dispatch. Tier 0 records self-review as `independent: false`,
-   warns the developer, and requires explicit `--allow-self-review` to approve.
+5. In Pi, invoke the internal `openspec_gsd_workflow` tool with operation
+   `plan`; it live-qualifies the adapter and supplies fresh read-only pathfinder
+   and plan-reviewer sessions to the existing `planGsdChangeV1` coordinator.
+   The parent remains the planner. If the tool reports a fallback, invoke its
+   exact `openspec-gsd plan <change>` command. Tier 0 records self-review as
+   `independent: false`, warns the developer, and requires explicit
+   `--allow-self-review` to approve.
 6. The plan reviewer evaluates semantic faithfulness, complete coverage,
    assumptions, compatibility, feasibility, pathfinder evidence, and whether
    verification can prove completion. Deterministic blockers are an immutable
