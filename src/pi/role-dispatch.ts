@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import {
+  FindingScopeV2Schema,
+  PortableReferenceV2Schema,
+  SemanticClassificationV1Schema,
+} from '../schemas.js';
 import type {
   ExecutionRole,
   RoleDispatcherV1,
@@ -15,6 +20,38 @@ const ASSURANCE_ROLES = new Set<ExecutionRole>(['plan_reviewer', 'pathfinder', '
 const RESULT_START = '<openspec-gsd-result>';
 const RESULT_END = '</openspec-gsd-result>';
 
+const ReportedFindingV2Schema = z.object({
+  providerId: z.string().min(1),
+  ruleId: z.string().min(1),
+  category: z.string().min(1),
+  scope: FindingScopeV2Schema,
+  severity: z.enum(['info', 'warning', 'error', 'critical']),
+  blocking: z.boolean(),
+  summary: z.string().min(1),
+  requirementIds: z.array(z.string().min(1)).optional(),
+  taskIds: z.array(z.string().min(1)).optional(),
+  evidence: z.array(PortableReferenceV2Schema).optional(),
+}).strict();
+
+const PiRoleResultV1Schema = z.object({
+  status: z.enum(['pass', 'fail', 'error']),
+  summary: z.string().min(1),
+  evidenceRefs: z.array(z.string().min(1)),
+  evidence: z.array(PortableReferenceV2Schema).optional(),
+  findings: z.array(ReportedFindingV2Schema).optional(),
+  semanticClassifications: z.array(SemanticClassificationV1Schema).optional(),
+  pathfinder: z.object({
+    assumptions: z.array(z.string().min(1)),
+    experiments: z.array(z.string().min(1)),
+    observations: z.array(z.string().min(1)),
+    counterexamples: z.array(z.string().min(1)),
+    conclusion: z.string().min(1),
+    confidence: z.enum(['high', 'medium', 'low']),
+    routing: z.enum(['planner', 'discussion', 'human_needed']),
+  }).strict().optional(),
+  scopeExpansion: z.boolean().optional(),
+}).strict();
+
 const PiRoleOutputV1Schema = z.object({
   dispatchId: z.string().min(1),
   parentSessionId: z.string().min(1),
@@ -22,11 +59,7 @@ const PiRoleOutputV1Schema = z.object({
   role: z.enum(['plan_reviewer', 'pathfinder', 'reviewer', 'verifier']),
   changeName: z.string().min(1),
   planRevision: z.string().regex(/^[a-f0-9]{64}$/),
-  result: z.object({
-    status: z.enum(['pass', 'fail', 'error']),
-    summary: z.string().min(1),
-    evidenceRefs: z.array(z.string().min(1)),
-  }).passthrough(),
+  result: PiRoleResultV1Schema,
 }).strict();
 
 export interface PiDispatchEnvelopeV1 {
@@ -73,8 +106,13 @@ function compileRolePrompt(
   childSessionId: string,
 ): string {
   const planning = request.planning!;
+  const roleInstruction = request.role === 'plan_reviewer'
+    ? 'Review whether the plan is sufficient to achieve and verify the requirements. Do not require implementation evidence or passing execution checks before implementation; pending execution checks are expected during planning.'
+    : request.role === 'pathfinder'
+      ? 'Answer only the focused planning uncertainty. Do not treat intentionally unimplemented approved tasks as a defect.'
+      : 'Evaluate the completed implementation using observable repository and test evidence; executor claims alone are insufficient.';
   const resultShape = request.role === 'pathfinder'
-    ? 'result must also contain pathfinder={assumptions:string[],experiments:string[],observations:string[],counterexamples:string[],conclusion:string,confidence:"high"|"medium"|"low",routing:"planner"|"discussion"|"human"}.'
+    ? 'result must also contain pathfinder={assumptions:string[],experiments:string[],observations:string[],counterexamples:string[],conclusion:string,confidence:"high"|"medium"|"low",routing:"planner"|"discussion"|"human_needed"}.'
     : 'result may also contain structured findings or semantic classifications when applicable.';
   return [
     `Role: ${request.role}`,
@@ -83,12 +121,14 @@ function compileRolePrompt(
     `Authoritative artifact references: ${planning.artifactRefs.join(', ')}`,
     `Semantic obligations: ${planning.semanticObligations.join(', ') || 'none'}`,
     `Evidence requirements: ${planning.evidenceRequirements.join('; ') || 'none'}`,
+    roleInstruction,
     ...(planning.pathfinderQuestion ? [`Focused pathfinder question: ${planning.pathfinderQuestion}`] : []),
     'Use only the provided read-only tools. Do not modify the project or planning artifacts.',
     `Finish with exactly one ${RESULT_START}{JSON}${RESULT_END} envelope.`,
     'The JSON must contain dispatchId, parentSessionId, childSessionId, role, changeName, planRevision, ' +
       'and result={status:"pass"|"fail"|"error",summary:string,evidenceRefs:string[]}.',
     resultShape,
+    'If result.findings is present, each finding requires providerId, ruleId, category, scope={kind,identity}, severity, blocking, and summary. Do not provide a findingId.',
     `Echo dispatchId=${envelope.dispatchId}, parentSessionId=${envelope.parentSessionId}, ` +
       `childSessionId=${childSessionId}, role=${envelope.role}, ` +
       `changeName=${envelope.changeName}, and planRevision=${envelope.planRevision}.`,
@@ -183,7 +223,7 @@ export function createPiRoleDispatcher(options: {
         ];
         const mismatch = identities.find(([, actual, expected]) => actual !== expected);
         if (mismatch) return errorResult(`Pi role result identity mismatch for ${mismatch[0]}.`);
-        const result = parsed.result as RoleResultV1;
+        const result: RoleResultV1 = parsed.result;
         if (result.status === 'pass' && envelope.evidenceRequirements.length > 0 && result.evidenceRefs.length === 0) {
           return errorResult('Pi role result omitted evidence required by the dispatch contract.');
         }

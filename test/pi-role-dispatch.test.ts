@@ -101,6 +101,7 @@ describe('Pi role dispatcher', () => {
     });
     expect(prompt).toContain('childSessionId=child-session');
     expect(prompt).toContain('result={status:"pass"|"fail"|"error"');
+    expect(prompt).toMatch(/do not require implementation evidence/i);
   });
 
   it.each([
@@ -145,6 +146,19 @@ describe('Pi role dispatcher', () => {
       currentRevision: async () => revision,
     });
     expect(await writable.dispatch(request())).toMatchObject({ status: 'error', summary: expect.stringMatching(/authority|tools/i) });
+  });
+
+  it('rejects malformed nested findings instead of accepting partial model output', async () => {
+    const dispatcher = createPiRoleDispatcher({
+      profile,
+      factory: factory((sessionId, envelope) => validOutput(sessionId, envelope, {
+        findings: [{ summary: 'Missing stable finding identity inputs.' }],
+      })),
+      currentRevision: async () => revision,
+    });
+    await expect(dispatcher.dispatch(request())).resolves.toMatchObject({
+      status: 'error', summary: expect.stringMatching(/rejected|invalid/i),
+    });
   });
 
   it('makes stale, timed-out, and parent-cancelled results non-authoritative', async () => {
