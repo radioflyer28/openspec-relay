@@ -20,7 +20,7 @@ every tier enforces the same assurance outcomes.
 
 Public source: <https://github.com/radioflyer28/openspec-relay>
 
-- Node.js 20.19 or newer
+- Node.js 22.19 or newer (required by the supported Pi 0.84.x SDK)
 - an API-bearing OpenSpec distribution in the manifest's supported range
 
 Until the generic extension API is released by official OpenSpec, use the

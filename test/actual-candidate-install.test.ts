@@ -55,7 +55,8 @@ describe('actual packed companion candidate', () => {
       },
     }));
     execFileSync('npm', [
-      'install', '--offline', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
+      'install', ...(process.env.RELAY_TEST_NPM_OFFLINE === '1' ? ['--offline'] : []),
+      '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
       '--package-lock=false',
     ], { cwd: projectRoot, encoding: 'utf8', timeout: 30_000, env: nonInteractiveEnvironment });
     const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-relay');
