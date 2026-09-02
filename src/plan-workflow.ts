@@ -4,10 +4,10 @@ import path from 'node:path';
 import type { HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
 import { runReadonlyAnalysisSchedule } from './analysis-scheduler.js';
 import { compileOpenSpecChange } from './artifacts.js';
-import { loadGsdConfigV2 } from './config.js';
+import { loadRelayConfigV2 } from './config.js';
 import {
-  appendGsdEventV2,
-  createGsdEventV2,
+  appendRelayEventV2,
+  createRelayEventV2,
   readEventStoreV2,
   writeReplayedProjectionsV2,
 } from './events.js';
@@ -18,13 +18,13 @@ import {
   type RoleResultV1,
 } from './execution-adapters.js';
 import { computeSemanticPlanRevision, createPlanApproval } from './planning.js';
-import { startGsdRunV2, DEFAULT_HOST_CAPABILITIES } from './runner-v2.js';
+import { startRelayRunV2, DEFAULT_HOST_CAPABILITIES } from './runner-v2.js';
 import {
   PathfinderResultV1Schema,
   PlanReviewResultV1Schema,
-  type GsdAssuranceV2,
-  type GsdConfigV2,
-  type GsdRunV2,
+  type RelayAssuranceV2,
+  type RelayConfigV2,
+  type RelayRunV2,
   type HostAdapterProvenanceV1,
   type PathfinderResultV1,
   type PlanReviewResultV1,
@@ -42,11 +42,11 @@ export interface DisposablePathfinderWorkspaceV1 {
   cleanup(pathfinderId: string, workspace: string): Promise<void>;
 }
 
-export interface PlanGsdChangeOptionsV1 {
+export interface PlanRelayChangeOptionsV1 {
   change: string;
   projectRoot?: string;
   invocation?: 'initial_plan' | 'do_replan';
-  config?: Partial<GsdConfigV2>;
+  config?: Partial<RelayConfigV2>;
   hostCapabilities?: HostCapabilitiesV1;
   /** Read-only assurance authority supplied by hosts that intentionally do not
    * grant this workflow a writable planner child. */
@@ -64,11 +64,11 @@ export interface PlanGsdChangeOptionsV1 {
   now?: string;
 }
 
-export interface PlanGsdChangeResultV1 {
+export interface PlanRelayChangeResultV1 {
   status: 'pass' | 'fail' | 'human_needed' | 'error';
   summary: string;
-  run: GsdRunV2;
-  assurance: GsdAssuranceV2;
+  run: RelayRunV2;
+  assurance: RelayAssuranceV2;
   review: PlanReviewResultV1;
   pathfinderResults: PathfinderResultV1[];
   cycles: number;
@@ -150,12 +150,12 @@ function mergeReviewerClassifications(options: {
 async function appendPlanningEvent(options: {
   changeDir: string;
   now: string;
-  actor: Parameters<typeof createGsdEventV2>[0]['actor'];
-  payload: Parameters<typeof createGsdEventV2>[0]['payload'];
+  actor: Parameters<typeof createRelayEventV2>[0]['actor'];
+  payload: Parameters<typeof createRelayEventV2>[0]['payload'];
   origin: string;
 }): Promise<void> {
   const store = await readEventStoreV2(options.changeDir);
-  const event = createGsdEventV2({
+  const event = createRelayEventV2({
     eventId: `${options.payload.type}:${randomUUID()}`,
     runId: store.runId,
     changeName: store.changeName,
@@ -165,7 +165,7 @@ async function appendPlanningEvent(options: {
     provenance: { origin: options.origin, adapter: store.seed.tier },
     payload: options.payload,
   });
-  await appendGsdEventV2({ changeDir: options.changeDir, event });
+  await appendRelayEventV2({ changeDir: options.changeDir, event });
 }
 
 function selfReview(options: { revision: string; now: string; allowed: boolean }): PlanReviewResultV1 {
@@ -184,12 +184,12 @@ function selfReview(options: { revision: string; now: string; allowed: boolean }
 /** Reusable initial-plan and do-replan orchestration. The only writable planning
  * authority is the planner, and it may edit only the standard OpenSpec
  * proposal/spec/design/tasks artifacts named in the request. */
-export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<PlanGsdChangeResultV1> {
+export async function planRelayChangeV1(options: PlanRelayChangeOptionsV1): Promise<PlanRelayChangeResultV1> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
   if (resolved.archived) throw new Error(`Cannot plan archived change '${resolved.changeName}'.`);
   const invocation = options.invocation ?? 'initial_plan';
   const now = options.now ?? new Date().toISOString();
-  const loadedConfig = await loadGsdConfigV2({
+  const loadedConfig = await loadRelayConfigV2({
     projectRoot: resolved.projectRoot,
     changeDir: resolved.changeDir,
     overrides: options.config,
@@ -219,7 +219,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       },
     });
     if (planner.result.status !== 'pass') {
-      const started = await startGsdRunV2({
+      const started = await startRelayRunV2({
         change: options.change, projectRoot: resolved.projectRoot, config: options.config,
         changedFiles: options.changedFiles, now,
       });
@@ -240,7 +240,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
   const hostCapabilities = options.hostCapabilities ?? (assuranceDispatcher ? {
     ...DEFAULT_HOST_CAPABILITIES, agentDispatch: true,
   } : DEFAULT_HOST_CAPABILITIES);
-  let started = await startGsdRunV2({
+  let started = await startRelayRunV2({
     change: options.change,
     projectRoot: resolved.projectRoot,
     config: assuranceDispatcher ? {
@@ -311,7 +311,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'pathfinder' },
         origin, payload: { type: 'pathfinder.completed', result } });
       if (result.routing !== 'planner') {
-        await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'gsd-plan',
+        await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'relay-plan',
           payload: { type: 'finding.routed', route: {
             findingId: stableId('pathfinder-route', { pathfinderId: result.pathfinderId, routing: result.routing }),
             route: result.routing, planRevision: semanticRevision.revision,
@@ -380,7 +380,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       deterministic: classifySemanticRequirements(compiled.requirements),
       supplemental: repair.result.semanticClassifications,
     });
-    started = await startGsdRunV2({ change: options.change, projectRoot: resolved.projectRoot,
+    started = await startRelayRunV2({ change: options.change, projectRoot: resolved.projectRoot,
       changedFiles: options.changedFiles, now });
   }
 
@@ -390,7 +390,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
   });
 
   for (const classification of classifications) await appendPlanningEvent({
-    changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'gsd-plan',
+    changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'relay-plan',
     payload: { type: 'semantic.classified', classification },
   });
 
@@ -420,12 +420,12 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       semanticLevels: classifications.map(({ requirementId, level }) => ({ requirementId, level })),
       evidenceRefs: review.evidenceRefs,
     });
-    await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'gsd-plan',
+    await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'planner' }, origin: 'relay-plan',
       payload: { type: 'plan.approved', approval } });
-    await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'automation' }, origin: 'gsd-plan',
+    await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'automation' }, origin: 'relay-plan',
       payload: { type: 'run.status_updated', status: 'planned' } });
   } else {
-    await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'automation' }, origin: 'gsd-plan',
+    await appendPlanningEvent({ changeDir: resolved.changeDir, now, actor: { kind: 'automation' }, origin: 'relay-plan',
       payload: { type: 'run.status_updated', status: 'blocked' } });
   }
   const store = await readEventStoreV2(resolved.changeDir);

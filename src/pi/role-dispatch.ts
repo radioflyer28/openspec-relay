@@ -17,8 +17,8 @@ import {
 } from './host-adapter.js';
 
 const ASSURANCE_ROLES = new Set<ExecutionRole>(['plan_reviewer', 'pathfinder', 'reviewer', 'verifier']);
-const RESULT_START = '<openspec-gsd-result>';
-const RESULT_END = '</openspec-gsd-result>';
+const RESULT_START = '<openspec-relay-result>';
+const RESULT_END = '</openspec-relay-result>';
 
 const ReportedFindingV2Schema = z.object({
   providerId: z.string().min(1),
@@ -136,7 +136,7 @@ function compileRolePrompt(
 }
 
 function parseOutput(output: string): unknown {
-  const matches = [...output.matchAll(/<openspec-gsd-result>([\s\S]*?)<\/openspec-gsd-result>/g)];
+  const matches = [...output.matchAll(/<openspec-relay-result>([\s\S]*?)<\/openspec-relay-result>/g)];
   if (matches.length !== 1) throw new Error(`Expected exactly one structured result envelope; received ${matches.length}.`);
   return JSON.parse(matches[0]![1]!);
 }
@@ -198,7 +198,7 @@ export function createPiRoleDispatcher(options: {
           : PI_READ_ONLY_TOOLS;
         session = await options.factory.create({
           envelope,
-          systemPrompt: 'You are an isolated OpenSpec GSD assurance role. Return evidence, not self-certification.',
+          systemPrompt: 'You are an isolated OpenSpec Relay assurance role. Return evidence, not self-certification.',
           toolNames,
           ...(request.workspace ? { workspace: request.workspace } : {}),
         });

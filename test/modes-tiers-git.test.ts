@@ -4,7 +4,7 @@ import {
   plannedGitOperations,
 } from '../src/git-policy.js';
 import { selectAssurancePipeline } from '../src/modes.js';
-import { GsdConfigV1Schema } from '../src/schemas.js';
+import { RelayConfigV1Schema } from '../src/schemas.js';
 import { negotiateExecutionTier } from '../src/tiers.js';
 
 const capabilities = {
@@ -30,9 +30,9 @@ describe('modes, tiers, and Git opt-ins', () => {
   });
 
   it('defaults to Tier 0 and reports capability-safe downgrade', () => {
-    const defaults = GsdConfigV1Schema.parse({});
+    const defaults = RelayConfigV1Schema.parse({});
     expect(negotiateExecutionTier(capabilities, defaults).tier).toBe('tier0');
-    const requested = GsdConfigV1Schema.parse({
+    const requested = RelayConfigV1Schema.parse({
       requestedTier: 'tier2', allowAgentDispatch: true, allowParallel: true,
       git: { commits: false, branches: false, worktrees: false },
     });
@@ -44,7 +44,7 @@ describe('modes, tiers, and Git opt-ins', () => {
   });
 
   it('distinguishes permission flags, probed capabilities, and registered adapters', () => {
-    const config = GsdConfigV1Schema.parse({
+    const config = RelayConfigV1Schema.parse({
       requestedTier: 'tier2', allowAgentDispatch: true, allowParallel: true,
       git: { commits: false, branches: false, worktrees: true },
     });
@@ -61,7 +61,7 @@ describe('modes, tiers, and Git opt-ins', () => {
   });
 
   it.each(['linux', 'darwin', 'win32'])('keeps Git mutations independently disabled on %s', () => {
-    const config = GsdConfigV1Schema.parse({
+    const config = RelayConfigV1Schema.parse({
       git: { commits: true, branches: false, worktrees: false },
     });
     expect(plannedGitOperations(config, { commit: true, branch: true, worktree: true }))

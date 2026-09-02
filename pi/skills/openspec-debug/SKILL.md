@@ -2,16 +2,16 @@
 name: openspec-debug
 description: Start or resume a scientific debugging session for an unresolved finding.
 license: MIT
-compatibility: Requires the openspec and openspec-gsd CLIs.
+compatibility: Requires the openspec and openspec-relay CLIs.
 metadata:
-  author: openspec-gsd
-  version: "0.1.0"
+  author: openspec-relay
+  version: "0.2.0"
 ---
 
 Start or resume a focused scientific debugging session for an unresolved
-OpenSpec GSD finding.
+OpenSpec Relay finding.
 
-Invoke `openspec-gsd debug <change> [--finding <id>] --json`. The command
+Invoke `openspec-relay debug <change> [--finding <id>] --json`. The command
 creates one resumable session per logical failure and reports its next safe
 action. Use `--session <id> --hypothesis <text>`, `--experiment <action>
 --hypothesis-id <id> --evidence <json>`, and `--experiment-id <id> --result

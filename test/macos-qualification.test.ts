@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { confirmDiscussionHandoff } from '../src/discussion.js';
-import { doGsdChangeV1, type CanonicalApplyRequestV1 } from '../src/do-workflow.js';
+import { doRelayChangeV1, type CanonicalApplyRequestV1 } from '../src/do-workflow.js';
 import type { RoleDispatcherV1, RoleRequestV1 } from '../src/execution-adapters.js';
-import { planGsdChangeV1 } from '../src/plan-workflow.js';
+import { planRelayChangeV1 } from '../src/plan-workflow.js';
 import { recordSemanticDowngrade } from '../src/semantics.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
@@ -74,7 +74,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
       '1.2': { requirementRefs: [requirementId], scenarioRefs: [scenarioId], expectedVerification: ['targeted-tests'] },
     } };
     const requests: RoleRequestV1[] = [];
-    const planned = await planGsdChangeV1({
+    const planned = await planRelayChangeV1({
       change: 'level-one', projectRoot: root, config, changedFiles: [], dispatcher: passingRoles(requests, scenarioId),
     });
     expect(planned, JSON.stringify(planned.assurance.readiness, null, 2))
@@ -86,7 +86,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
     const design = await fs.readFile(path.join(changeDir, 'design.md'), 'utf8');
     expect(design).not.toMatch(/proof obligation|state model|formal|FRET|PVS/i);
 
-    const completed = await doGsdChangeV1({
+    const completed = await doRelayChangeV1({
       change: 'level-one', projectRoot: root, changedFiles: [], dispatcher: passingRoles([], scenarioId),
       applyCapability: { apply: async (request) => {
         await completeTask(changeDir, request.taskId);
@@ -116,7 +116,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
     ].join('\n'));
     const roleRequests: RoleRequestV1[] = [];
     const plannerRoles = passingRoles(roleRequests);
-    const planned = await planGsdChangeV1({
+    const planned = await planRelayChangeV1({
       change: 'behavioral', projectRoot: root, config: defaultConfig, changedFiles: [], dispatcher: plannerRoles,
     });
     expect(planned, JSON.stringify(planned.assurance.readiness, null, 2))
@@ -136,7 +136,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
       return qualifiedRoleResult(request.role, defaultScenarioId);
     } };
     const applyRequests: CanonicalApplyRequestV1[] = [];
-    const completed = await doGsdChangeV1({
+    const completed = await doRelayChangeV1({
       change: 'behavioral', projectRoot: root, changedFiles: [], dispatcher: executionRoles,
       applyCapability: { apply: async (request) => {
         applyRequests.push(request);
@@ -179,7 +179,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
       '- [ ] 1.2 Verify the ownership invariant under competing authorization changes.', '',
     ].join('\n'));
     const lifecycle: string[] = [];
-    const pathfinderRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-pathfinder-'));
+    const pathfinderRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-pathfinder-'));
     const dispatcher: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'pathfinder'
       ? { status: 'pass', summary: 'Counterexample analysis completed.', evidenceRefs: ['evidence:pathfinder'], pathfinder: {
         assumptions: ['State updates are atomic.'], experiments: ['Enumerate competing transition orders.'],
@@ -188,7 +188,7 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
         conclusion: 'Add a compare-and-set precondition to the planned transition.', confidence: 'high', routing: 'planner',
       } }
       : qualifiedRoleResult(request.role, defaultScenarioId) };
-    const planned = await planGsdChangeV1({
+    const planned = await planRelayChangeV1({
       change: 'modeling', projectRoot: root, config: defaultConfig, changedFiles: [], dispatcher,
       pathfinderQuestions: ['Can authorization race with ownership assignment?'],
       pathfinderWorkspaces: {
@@ -220,11 +220,11 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
         requirementIds: [defaultRequirementId], taskIds: ['1.1'],
       }] }
       : qualifiedRoleResult(request.role, defaultScenarioId) };
-    const initialPlan = await planGsdChangeV1({
+    const initialPlan = await planRelayChangeV1({
       change: 'intent-update', projectRoot: root, config: defaultConfig, changedFiles: [], dispatcher: roles,
     });
     expect(initialPlan, JSON.stringify(initialPlan.assurance.readiness, null, 2)).toMatchObject({ status: 'pass' });
-    const paused = await doGsdChangeV1({
+    const paused = await doRelayChangeV1({
       change: 'intent-update', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {
         await completeTask(changeDir, request.taskId);
@@ -238,16 +238,16 @@ describe.runIf(process.platform === 'darwin')('macOS/Pi bounded qualification', 
       mappings: [{ decisionId: 'D1', artifact: 'design', reference: 'design.md#confirmed-intent', status: 'consistent' }],
     }).status).toBe('pass');
     await fs.appendFile(path.join(changeDir, 'design.md'), '\n## Confirmed intent\n\nThe action is reversible.\n');
-    const stale = await doGsdChangeV1({
+    const stale = await doRelayChangeV1({
       change: 'intent-update', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async () => ({ status: 'pass', summary: 'unexpected' }) },
     });
     expect(stale).toMatchObject({ status: 'human_needed', applyCalls: 0, nextAction: '/opsx:plan intent-update' });
     intentResolved = true;
-    expect((await planGsdChangeV1({
+    expect((await planRelayChangeV1({
       change: 'intent-update', projectRoot: root, config: defaultConfig, changedFiles: [], dispatcher: roles,
     })).status).toBe('pass');
-    const resumed = await doGsdChangeV1({
+    const resumed = await doRelayChangeV1({
       change: 'intent-update', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async () => ({ status: 'pass', summary: 'no pending task' }) },
     });

@@ -1,18 +1,18 @@
-# OpenSpec GSD v2 Compatibility Contract
+# OpenSpec Relay v2 Compatibility Contract
 
-OpenSpec GSD v2 keeps OpenSpec proposal, delta specs, design, and tasks as the
+OpenSpec Relay v2 keeps OpenSpec proposal, delta specs, design, and tasks as the
 only human-maintained source of requirements, design decisions, and execution
 scope. Its canonical generated record is
-`openspec/changes/<change>/.openspec-gsd/events.json`; v2 `run.json` and
+`openspec/changes/<change>/.openspec-relay/events.json`; v2 `run.json` and
 `assurance.json` are reproducible projections.
 
 The companion supports API-bearing OpenSpec versions in the range declared by
-`openspec-extension.json`. `openspec extension doctor gsd` must confirm
+`openspec-extension.json`. `openspec extension doctor relay` must confirm
 both the semver range and the `openspec.dev/extensions/v1` capability before a
 required archive gate can be considered available.
 
 The currently qualified minimum is the privately maintained
-`@fission-ai/openspec@1.11.0-gsd.1` build. Official OpenSpec `1.11.0` is not an
+`@fission-ai/openspec@1.11.0-relay.1` build. Official OpenSpec `1.11.0` is not an
 equivalent runtime until it exposes the versioned extension API: matching the
 semver range alone cannot satisfy the capability probe.
 
@@ -23,7 +23,7 @@ regeneration guidance; any human acceptance or accepted risk must then be
 recorded again explicitly. Git history and retained local package revisions are
 the implementation rollback mechanism, not execution-record downgrade.
 
-OpenSpec GSD assumes a cooperative repository owner and ordinary same-user
+OpenSpec Relay assumes a cooperative repository owner and ordinary same-user
 processes. Schema validation, replay, content digests, projection comparison,
 path containment, and atomic replacement protect assurance consistency and
 accidental corruption; they are not a tamper-proof ledger or a sandbox. Strong
@@ -31,9 +31,9 @@ identity and isolation remain host capabilities.
 
 This increment deliberately excludes deferred Little Coder mechanisms, future
 specialist-checker categories, phases, milestones, roadmaps, workstreams, and
-persistent GSD project state. None of those artifacts or runtime requirements is
-introduced by OpenSpec GSD v2, and the companion neither installs nor requires
-the complete GSD runtime.
+persistent RELAY project state. None of those artifacts or runtime requirements is
+introduced by OpenSpec Relay v2, and the companion neither installs nor requires
+the complete RELAY runtime.
 
 The semantic vocabulary is inspired by FRET and PVS principles, but neither is a
 runtime dependency. `simple`, `behavioral`, and `modeling` describe required

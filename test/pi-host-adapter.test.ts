@@ -38,7 +38,7 @@ describe('Pi host capability qualification', () => {
     }) });
     expect(profile).toMatchObject({
       version: 1,
-      adapterId: 'openspec-gsd/pi',
+      adapterId: 'openspec-relay/pi',
       piVersion: '0.84.4',
       sessionId: 'pi-session-1',
       modelRef: 'provider/model',

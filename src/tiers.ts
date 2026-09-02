@@ -1,5 +1,5 @@
 import type { HostCapabilitiesV1 } from '@fission-ai/openspec/extensions';
-import type { ExecutionTier, GsdConfigV1 } from './schemas.js';
+import type { ExecutionTier, RelayConfigV1 } from './schemas.js';
 import type { RepositoryAnalysisAdapterV2 } from './repository-context.js';
 import type { ReadinessEvaluatorV2 } from './readiness.js';
 import type { HostReleaseRunnerV2 } from './release-assurance.js';
@@ -21,7 +21,7 @@ export interface TierAdaptersV1 {
 
 export function negotiateExecutionTier(
   capabilities: HostCapabilitiesV1,
-  config: GsdConfigV1,
+  config: RelayConfigV1,
   adapters: Partial<TierAdaptersV1> = {},
 ): TierDecisionV1 {
   const requested = config.requestedTier ?? 'tier0';

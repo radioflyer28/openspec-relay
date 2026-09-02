@@ -26,7 +26,7 @@ describe('materiality-gated grilling discussion', () => {
       'utf8',
     );
     const baseStart = generated.indexOf(base);
-    const supplementStart = generated.indexOf('# OpenSpec GSD supplement');
+    const supplementStart = generated.indexOf('# OpenSpec Relay supplement');
     expect(baseStart).toBeGreaterThan(0);
     expect(supplementStart).toBe(baseStart + base.length + 2);
     for (const contract of [
@@ -56,7 +56,7 @@ describe('materiality-gated grilling discussion', () => {
   it('keeps the workflow conversational and free of persistent discussion state', async () => {
     const workflow = await fs.readFile(path.join(process.cwd(), 'workflows', 'discuss.md'), 'utf8');
     expect(workflow).toContain('do not persist a transcript');
-    expect(workflow).not.toContain('.openspec-gsd/discussion');
+    expect(workflow).not.toContain('.openspec-relay/discussion');
   });
 
   it('rejects supplement drift that weakens each protected grilling behavior', async () => {

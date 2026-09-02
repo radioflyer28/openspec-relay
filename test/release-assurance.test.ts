@@ -10,7 +10,7 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
 
 async function packageProject() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd release project '));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'relay release project '));
   roots.push(root);
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
     name: 'example-package', version: '1.2.3', type: 'module', exports: './index.js', bin: { example: './cli.js' },
@@ -189,21 +189,21 @@ describe('conditional release assurance', () => {
     const root = await packageProject();
     const api = release as Record<string, unknown>;
     const command = api.runLocalReleaseCommand as (input: Record<string, unknown>) => Promise<unknown>;
-    await expect(command({ command: 'gsd-tool-that-does-not-exist', args: [] }))
+    await expect(command({ command: 'relay-tool-that-does-not-exist', args: [] }))
       .rejects.toThrow(/failed to start/i);
 
-    const before = await temporaryEntries('openspec-gsd-configured-release-');
+    const before = await temporaryEntries('openspec-relay-configured-release-');
     const result = await (api.runConfiguredReleaseCommand as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       projectRoot: root,
       configuredCommand: {
         id: 'offline-registry', command: 'npm',
-        args: ['--offline', 'view', 'gsd-package-not-in-local-cache-4e6d1'],
+        args: ['--offline', 'view', 'relay-package-not-in-local-cache-4e6d1'],
         expectedArtifacts: [], timeoutMs: 15_000,
       },
       releaseRunner: trustedTestRunner,
     });
     expect(result.status).toBe('fail');
-    const after = await temporaryEntries('openspec-gsd-configured-release-');
+    const after = await temporaryEntries('openspec-relay-configured-release-');
     expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
   }, 30_000);
 
@@ -223,7 +223,7 @@ describe('conditional release assurance', () => {
 
   it('passes only an allowlisted environment to the host runner and persists no candidate output', async () => {
     const root = await packageProject();
-    process.env.GSD_UNRELATED_SECRET = 'arbitrary-secret-bearing-output';
+    process.env.RELAY_UNRELATED_SECRET = 'arbitrary-secret-bearing-output';
     let observedEnvironment: Record<string, string> | undefined;
     const runner: release.HostReleaseRunnerV2 = {
       ...trustedTestRunner,
@@ -237,10 +237,10 @@ describe('conditional release assurance', () => {
         packageRoot: root, mode: 'quick', releaseRunner: runner,
       });
       expect(verification.status).toBe('pass');
-      expect(observedEnvironment).not.toHaveProperty('GSD_UNRELATED_SECRET');
+      expect(observedEnvironment).not.toHaveProperty('RELAY_UNRELATED_SECRET');
       expect(JSON.stringify(verification)).not.toContain('arbitrary-secret-bearing-output');
     } finally {
-      delete process.env.GSD_UNRELATED_SECRET;
+      delete process.env.RELAY_UNRELATED_SECRET;
     }
   }, 30_000);
 
@@ -342,7 +342,7 @@ describe('conditional release assurance', () => {
 
     manifest.scripts = { build: `${process.execPath} -e \"process.exit(1)\"` };
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify(manifest));
-    const before = await temporaryEntries('openspec-gsd-artifact-');
+    const before = await temporaryEntries('openspec-relay-artifact-');
     const failed = await (api.verifyNodePackageRelease as (input: Record<string, unknown>) => Promise<{ status: string }>)({
       packageRoot: root, mode: 'quick',
       buildCommand: { id: 'failing-build', command: process.execPath,
@@ -350,7 +350,7 @@ describe('conditional release assurance', () => {
       releaseRunner: trustedTestRunner,
     });
     expect(failed.status).toBe('fail');
-    const after = await temporaryEntries('openspec-gsd-artifact-');
+    const after = await temporaryEntries('openspec-relay-artifact-');
     expect([...after].filter((entry) => !before.has(entry))).toEqual([]);
   }, 30_000);
 
@@ -360,7 +360,7 @@ describe('conditional release assurance', () => {
     await fs.writeFile(path.join(root, 'workflows', 'run.md'), 'Run the extension.\n');
     await fs.writeFile(path.join(root, 'openspec-extension.json'), JSON.stringify({
       apiVersion: 'openspec.dev/extensions/v1', id: 'example-extension', version: '1.2.3',
-      requires: { openspec: '>=1.11.0-gsd.1 <2.0.0',
+      requires: { openspec: '>=1.11.0-relay.1 <2.0.0',
         hostCapabilities: { required: ['structuredResults'], optional: [] } },
       contributes: { workflows: [{ id: 'run', name: 'Run', description: 'Run.', entry: 'workflows/run.md',
         artifactRequirements: ['tasks'], gateDependencies: [], requiredHostCapabilities: ['structuredResults'] }], gates: [] },

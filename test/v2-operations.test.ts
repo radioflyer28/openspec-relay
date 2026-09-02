@@ -5,8 +5,8 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { discoverFinding, transitionFinding } from '../src/findings.js';
 import { dispatchRoleV2 } from '../src/execution-adapters.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
-import { startGsdRunV2 } from '../src/runner-v2.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { startRelayRunV2 } from '../src/runner-v2.js';
 import { readAssuranceStateV2 } from '../src/state.js';
 import {
   presentUatV2,
@@ -17,8 +17,8 @@ import {
   transitionFindingV2,
   verifyFindingFromDispatchedResultV2,
 } from '../src/v2-operations.js';
-import { checkGsdRunV2 } from '../src/runner-v2.js';
-import type { GsdEventPayloadV1 } from '../src/schemas.js';
+import { checkRelayRunV2 } from '../src/runner-v2.js';
+import type { RelayEventPayloadV1 } from '../src/schemas.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -32,7 +32,7 @@ function digests(artifacts: Array<{ path: string; sourceDigest: string }>) {
 async function dispatchedVerifier(evidence: Array<{
   referenceId: string; kind: 'artifact' | 'repository' | 'generated' | 'external';
   path?: string; externalId?: string; digest?: string; available: boolean;
-}>, events: GsdEventPayloadV1[] = []) {
+}>, events: RelayEventPayloadV1[] = []) {
   return dispatchRoleV2({
     request: { role: 'verifier', readOnly: true, isolated: true },
     dispatcher: { dispatch: async () => ({
@@ -72,9 +72,9 @@ async function addHumanFinding(root: string, changeDir: string) {
     sourceRevision: createHash('sha256').update('source').digest('hex'),
     occurredAt: now,
   });
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: 'test:human-finding', runId: store.runId, changeName: store.changeName, occurredAt: now,
       sourceDigests: digests(compiled.artifacts), actor: { kind: 'reviewer' },
       provenance: { origin: 'test' }, payload: { type: 'finding.discovered', finding },
@@ -87,7 +87,7 @@ async function addHumanFinding(root: string, changeDir: string) {
 describe('v2 debug and UAT operations', () => {
   it('records an executor repair and a separately authorized verifier closure for a stable finding', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    const started = await startGsdRunV2({ change: 'demo', projectRoot: root });
+    const started = await startRelayRunV2({ change: 'demo', projectRoot: root });
     const finding = await addHumanFinding(root, changeDir);
     const evidence = [{ referenceId: 'test:repair', kind: 'generated' as const, externalId: 'repair', available: true }];
 
@@ -128,7 +128,7 @@ describe('v2 debug and UAT operations', () => {
 
   it('invalidates verified findings and accepted UAT after a material specification change', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, config: {
+    await startRelayRunV2({ change: 'demo', projectRoot: root, config: {
       features: { uat: { enabled: true, required: true } },
     } });
     const finding = await addHumanFinding(root, changeDir);
@@ -140,7 +140,7 @@ describe('v2 debug and UAT operations', () => {
     await recordUatV2({ change: 'demo', projectRoot: root, scenarioId: presented.next!.scenarioId,
       status: 'passed', actor: 'maintainer', notes: 'Observed.' });
     await fs.appendFile(`${changeDir}/specs/demo/spec.md`, '\n<!-- materially revised acceptance contract -->\n');
-    const checked = await checkGsdRunV2({ change: 'demo', projectRoot: root });
+    const checked = await checkRelayRunV2({ change: 'demo', projectRoot: root });
     expect(checked.assurance.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ findingId: finding.findingId, state: 'stale' }),
     ]));
@@ -151,7 +151,7 @@ describe('v2 debug and UAT operations', () => {
 
   it('returns a failed UAT scenario to the production retest queue after independent repair verification', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [], config: {
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [], config: {
       features: { uat: { enabled: true, required: true } },
     } });
     const presented = await presentUatV2({ change: 'demo', projectRoot: root });
@@ -180,7 +180,7 @@ describe('v2 debug and UAT operations', () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.mkdir(`${root}/src`, { recursive: true });
     await fs.writeFile(`${root}/src/index.ts`, 'export const value = 1;\n');
-    await startGsdRunV2({
+    await startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'],
       config: { features: { uat: { enabled: true, required: true } } },
     });
@@ -195,7 +195,7 @@ describe('v2 debug and UAT operations', () => {
       summary: 'The changed source needs repair.', requirementIds: [], taskIds: ['1.1'], evidence: repositoryEvidence,
       occurredAt: now, sourceRevision: createHash('sha256').update('initial').digest('hex'), actor: { kind: 'reviewer' },
     });
-    await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+    await appendRelayEventV2({ changeDir, event: createRelayEventV2({
       eventId: 'source-finding', runId: store.runId, changeName: store.changeName, occurredAt: now,
       sourceDigests: digests(compiled.artifacts), actor: { kind: 'reviewer' }, provenance: { origin: 'test' },
       payload: { type: 'finding.discovered', finding },
@@ -218,7 +218,7 @@ describe('v2 debug and UAT operations', () => {
       expect.objectContaining({ referenceId: 'repository:src/index.ts', digest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
     ]);
     await fs.writeFile(`${root}/src/index.ts`, 'export const value = 2;\n');
-    const checked = await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    const checked = await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     expect(checked.assurance.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ findingId: finding.findingId, state: 'stale' }),
     ]));
@@ -229,7 +229,7 @@ describe('v2 debug and UAT operations', () => {
 
   it('automatically begins a resumable debug session after repair exhaustion and records human-needed when debugging is unavailable', async () => {
     const active = await createOpenSpecProject('active');
-    await startGsdRunV2({ change: 'active', projectRoot: active.root, config: { repairLimit: 1 } });
+    await startRelayRunV2({ change: 'active', projectRoot: active.root, config: { repairLimit: 1 } });
     const repair = (change: string) => recordWorkflowResultV2({
       change, projectRoot: active.root, eventId: `repair:${change}`,
       stage: 'executor',
@@ -246,7 +246,7 @@ describe('v2 debug and UAT operations', () => {
     ]);
 
     const unavailable = await createOpenSpecProject('unavailable');
-    await startGsdRunV2({ change: 'unavailable', projectRoot: unavailable.root, config: {
+    await startRelayRunV2({ change: 'unavailable', projectRoot: unavailable.root, config: {
       repairLimit: 1, features: { debug: { enabled: false, automaticTransition: false } },
     } });
     await recordWorkflowResultV2({
@@ -267,7 +267,7 @@ describe('v2 debug and UAT operations', () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.mkdir(`${root}/src`, { recursive: true });
     await fs.writeFile(`${root}/src/index.ts`, 'export const value = 1;\n');
-    await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     const finding = await addHumanFinding(root, changeDir);
     const initialPresentation = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'uat', 'demo', '--project', root, '--json',
@@ -339,7 +339,7 @@ describe('v2 debug and UAT operations', () => {
       } },
     });
     await fs.writeFile(`${root}/src/index.ts`, 'export const value = 2;\n');
-    await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     await transitionFindingV2({
       change: 'demo', projectRoot: root, findingId: finding.findingId, action: 'repair',
       actorId: 'executor-1', reason: 'Repaired the root cause.', evidence: lifecycleEvidence,

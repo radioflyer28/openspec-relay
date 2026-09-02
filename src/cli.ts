@@ -2,19 +2,19 @@
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
-import { GSD_VERSION } from './version.js';
+import { RELAY_VERSION } from './version.js';
 import {
   PortableReferenceV2Schema,
   DeviationV1Schema,
   EvidenceV1Schema,
   RepairAttemptV1Schema,
 } from './schemas.js';
-import { checkGsdRunV2 } from './runner-v2.js';
+import { checkRelayRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
-import { planGsdChangeV1 } from './plan-workflow.js';
+import { planRelayChangeV1 } from './plan-workflow.js';
 import { assertCurrentPlanApprovalV1 } from './do-workflow.js';
 import {
-  acceptGsdGateV2,
+  acceptRelayGateV2,
   observeDebugExperimentV2,
   planDebugExperimentV2,
   recordDebugConclusionV2,
@@ -56,9 +56,9 @@ async function readInput(filename: string): Promise<unknown> {
 }
 
 const program = new Command()
-  .name('openspec-gsd')
+  .name('openspec-relay')
   .description('Risk-aware execution and assurance for OpenSpec changes')
-  .version(GSD_VERSION);
+  .version(RELAY_VERSION);
 
 program.command('plan')
   .argument('<change>')
@@ -66,13 +66,13 @@ program.command('plan')
   .option('--allow-self-review', 'Explicitly accept disclosed Tier 0 self-review for this invocation')
   .option('--json')
   .action(async (change, options) => {
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change,
       projectRoot: options.project,
       allowSelfReview: Boolean(options.allowSelfReview),
     });
     print(options.json ? result :
-      `OpenSpec GSD plan: ${result.status}; revision=${result.run.planRevision ?? 'unapproved'}; ` +
+      `OpenSpec Relay plan: ${result.status}; revision=${result.run.planRevision ?? 'unapproved'}; ` +
       `review=${result.review.independent ? 'independent' : 'tier0-self-review'}. ${result.summary}`,
     Boolean(options.json));
   });
@@ -84,7 +84,7 @@ program.command('do')
   .action(async (change, options) => {
     const approval = await assertCurrentPlanApprovalV1({ change, projectRoot: options.project });
     print(options.json ? { status: 'ready', approval } :
-      `OpenSpec GSD do is ready for '${approval.changeName}' at approved revision ${approval.revision}. ` +
+      `OpenSpec Relay do is ready for '${approval.changeName}' at approved revision ${approval.revision}. ` +
       `The host executor wrapper must delegate implementation to $openspec-apply-change.`,
     Boolean(options.json));
   });
@@ -94,9 +94,9 @@ program.command('check')
   .option('--project <path>')
   .option('--json')
   .action(async (change, options) => {
-    const result = await checkGsdRunV2({ change, projectRoot: options.project });
+    const result = await checkRelayRunV2({ change, projectRoot: options.project });
     print(options.json ? result :
-      `OpenSpec GSD assurance: ${result.assurance.status}; ` +
+      `OpenSpec Relay assurance: ${result.assurance.status}; ` +
       `${result.assurance.checks.filter((check) => check.status === 'fail' || check.status === 'error').length} blocking check(s).`,
     Boolean(options.json));
   });
@@ -108,7 +108,7 @@ program.command('status')
   .action(async (change, options) => {
     const status = await getRunStatusV2({ change, projectRoot: options.project });
     const human = status.integrity.status === 'error'
-      ? `${status.changeName}: error; OpenSpec GSD execution-record integrity error: ${status.integrity.summary} ` +
+      ? `${status.changeName}: error; OpenSpec Relay execution-record integrity error: ${status.integrity.summary} ` +
         `${status.nextActions[0] ?? 'Regenerate projections before relying on status.'}`
       : `${status.changeName}: ${status.status}; mode=${status.mode}; tier=${status.tier}; ` +
         `tasks=${status.tasks.complete}/${status.tasks.total}; assurance=${status.assuranceStatus}; ` +
@@ -266,7 +266,7 @@ program.command('uat')
   });
 
 const record = program.command('record')
-  .description('Submit validated workflow results to the OpenSpec GSD orchestrator');
+  .description('Submit validated workflow results to the OpenSpec Relay orchestrator');
 
 record.command('task')
   .argument('<change>')
@@ -365,7 +365,7 @@ program.command('accept')
   .option('--event-id <id>')
   .option('--project <path>')
   .action(async (change, gateId, options) => {
-    print(await acceptGsdGateV2({
+    print(await acceptRelayGateV2({
       change,
       projectRoot: options.project,
       gateId,

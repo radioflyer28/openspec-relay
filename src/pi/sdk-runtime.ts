@@ -88,11 +88,11 @@ async function createRestrictedSession(options: {
   });
 }
 
-const PROBE_START = '<openspec-gsd-probe>';
-const PROBE_END = '</openspec-gsd-probe>';
+const PROBE_START = '<openspec-relay-probe>';
+const PROBE_END = '</openspec-relay-probe>';
 
 function validProbeOutput(output: string, nonce: string): boolean {
-  const matches = [...output.matchAll(/<openspec-gsd-probe>([\s\S]*?)<\/openspec-gsd-probe>/g)];
+  const matches = [...output.matchAll(/<openspec-relay-probe>([\s\S]*?)<\/openspec-relay-probe>/g)];
   if (matches.length !== 1) return false;
   try {
     const parsed = JSON.parse(matches[0]![1]!) as { ok?: unknown; nonce?: unknown };
@@ -165,7 +165,7 @@ export async function createPiSdkProbeRuntime(context: ExtensionContext): Promis
   const createProbe = async (): Promise<PiReadOnlyProbeV1> => {
     const created = await createRestrictedSession({
       context,
-      systemPrompt: 'OpenSpec GSD read-only capability probe.',
+      systemPrompt: 'OpenSpec Relay read-only capability probe.',
       toolNames: ['find', 'grep', 'ls', 'read'],
     });
     return {
@@ -173,12 +173,12 @@ export async function createPiSdkProbeRuntime(context: ExtensionContext): Promis
       exercise: async () => {
         const cancellation = await createRestrictedSession({
           context,
-          systemPrompt: 'OpenSpec GSD cancellation capability probe.',
+          systemPrompt: 'OpenSpec Relay cancellation capability probe.',
           toolNames: ['find', 'grep', 'ls', 'read'],
         });
         const timeout = await createRestrictedSession({
           context,
-          systemPrompt: 'OpenSpec GSD timeout capability probe.',
+          systemPrompt: 'OpenSpec Relay timeout capability probe.',
           toolNames: ['find', 'grep', 'ls', 'read'],
         });
         try {
@@ -207,7 +207,7 @@ export async function createPiSdkProbeRuntime(context: ExtensionContext): Promis
     probeParallelism: async () => {
       const probes = await Promise.all([0, 1].map(async () => createRestrictedSession({
         context,
-        systemPrompt: 'OpenSpec GSD concurrent structured capability probe.',
+        systemPrompt: 'OpenSpec Relay concurrent structured capability probe.',
         toolNames: ['find', 'grep', 'ls', 'read'],
       })));
       let active = 0;

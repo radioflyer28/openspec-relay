@@ -22,7 +22,7 @@ jobs:
       - name: Checkout Guardrails
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: openspec-guardrails
+          path: openspec-relay
           persist-credentials: false
 
       - name: Checkout OpenSpec integration branch
@@ -45,18 +45,18 @@ jobs:
           cache: pnpm
           cache-dependency-path: |
             OpenSpec/pnpm-lock.yaml
-            openspec-guardrails/pnpm-lock.yaml
+            openspec-relay/pnpm-lock.yaml
 
       - name: Build OpenSpec core seam
         working-directory: OpenSpec
         run: pnpm install --frozen-lockfile && pnpm build
 
       - name: Install Guardrails dependencies
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build Guardrails
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
           OPENSPEC_NO_UPDATE_CHECK: '1'
@@ -64,15 +64,15 @@ jobs:
         run: pnpm build
 
       - name: Type-check Guardrails
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         run: pnpm typecheck
 
       - name: Lint Guardrails
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         run: pnpm lint
 
       - name: Test Guardrails
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
           OPENSPEC_NO_UPDATE_CHECK: '1'
@@ -80,7 +80,7 @@ jobs:
         run: pnpm test
 
       - name: Run extension conformance
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
           OPENSPEC_NO_UPDATE_CHECK: '1'
@@ -91,7 +91,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           pnpm --dir OpenSpec pack --pack-destination "$RUNNER_TEMP"
-          pnpm --dir openspec-guardrails pack --pack-destination "$RUNNER_TEMP"
+          pnpm --dir openspec-relay pack --pack-destination "$RUNNER_TEMP"
 
   upstream-survivability:
     name: Upstream seam survivability
@@ -101,7 +101,7 @@ jobs:
       - name: Checkout Guardrails
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: openspec-guardrails
+          path: openspec-relay
           persist-credentials: false
 
       - name: Checkout maintained extension seam
@@ -143,14 +143,14 @@ jobs:
           cache: pnpm
           cache-dependency-path: |
             OpenSpec/pnpm-lock.yaml
-            openspec-guardrails/pnpm-lock.yaml
+            openspec-relay/pnpm-lock.yaml
 
       - name: Build patched OpenSpec
         working-directory: OpenSpec
         run: pnpm install --frozen-lockfile && pnpm build
 
       - name: Verify Guardrails against patched upstream
-        working-directory: openspec-guardrails
+        working-directory: openspec-relay
         env:
           OPENSPEC_CORE_ROOT: ${{ github.workspace }}/OpenSpec
           OPENSPEC_NO_UPDATE_CHECK: '1'

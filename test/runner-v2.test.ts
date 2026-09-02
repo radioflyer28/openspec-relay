@@ -5,7 +5,7 @@ import * as status from '../src/status.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { evaluateAssuranceV2 } from '../src/assurance-v2.js';
 import { dispatchRoleV2, executeWithTier } from '../src/execution-adapters.js';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { discoverFinding } from '../src/findings.js';
 import { transitionFindingV2, verifyFindingFromDispatchedResultV2 } from '../src/v2-operations.js';
 import { presentUatV2 } from '../src/v2-operations.js';
@@ -26,10 +26,10 @@ const higherTierHost = {
 
 const evidence = [{ referenceId: 'test:tier-contract', kind: 'generated' as const, externalId: 'tier-contract', available: true }];
 
-describe('OpenSpec GSD v2 run pipeline', () => {
+describe('OpenSpec Relay v2 run pipeline', () => {
   it('records context and independent readiness before offering execution work', async () => {
     const { root } = await createOpenSpecProject();
-    const start = (runner as Record<string, unknown>).startGsdRunV2 as (input: Record<string, unknown>) => Promise<{
+    const start = (runner as Record<string, unknown>).startRelayRunV2 as (input: Record<string, unknown>) => Promise<{
       run: { version: number }; assurance: { readiness?: { status: string }; repositoryContext?: { status: string } }; blockedBeforeExecution: boolean;
     }>;
     const result = await start({ change: 'demo', projectRoot: root, changedFiles: [], config: {
@@ -47,7 +47,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
 
   it('stops required-rollout unready changes before task writes but supports report-only migration', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    const start = (runner as Record<string, unknown>).startGsdRunV2 as (input: Record<string, unknown>) => Promise<{
+    const start = (runner as Record<string, unknown>).startRelayRunV2 as (input: Record<string, unknown>) => Promise<{
       assurance: { readiness?: { status: string } }; blockedBeforeExecution: boolean;
     }>;
     const required = await start({ change: 'demo', projectRoot: root, config: { features: { readiness: { rollout: 'required' } } } });
@@ -63,7 +63,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
 
   it('recomputes required readiness before resuming an existing run', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    const first = await runner.startGsdRunV2({
+    const first = await runner.startRelayRunV2({
       change: 'demo', projectRoot: root,
       changedFiles: [],
       config: { taskOverrides: { '1.1': readinessTask, '1.2': readinessTask } },
@@ -74,7 +74,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
       '', '### Requirement: Newly declared behavior', 'The system SHALL expose new behavior.', '',
       '#### Scenario: New behavior works', '- **WHEN** invoked', '- **THEN** the new behavior works', '',
     ].join('\n'));
-    const resumed = await runner.startGsdRunV2({
+    const resumed = await runner.startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: [], now: '2026-08-12T12:01:00.000Z',
     });
     expect(resumed).toMatchObject({ assurance: { readiness: { status: 'fail' } }, blockedBeforeExecution: true });
@@ -122,14 +122,14 @@ describe('OpenSpec GSD v2 run pipeline', () => {
         ...readinessTask,
         ...(item.repository ? { writeSet: ['src/index.ts'] } : {}),
       };
-      const first = await runner.startGsdRunV2({
+      const first = await runner.startRelayRunV2({
         change: `stale-${item.name}`, projectRoot: root,
         changedFiles: item.repository ? ['src/index.ts'] : [],
         config: { taskOverrides: { '1.1': taskMetadata, '1.2': taskMetadata } },
       });
       expect(first.assurance.readiness).toMatchObject({ status: 'pass' });
       await item.mutate(changeDir, root);
-      const resumed = await runner.startGsdRunV2({
+      const resumed = await runner.startRelayRunV2({
         change: `stale-${item.name}`, projectRoot: root,
         changedFiles: item.repository ? ['src/index.ts'] : [],
       });
@@ -142,7 +142,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
 
   it('persists current OpenSpec scenarios for required UAT instead of producing an empty queue', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await runner.startGsdRunV2({
+    await runner.startRelayRunV2({
       change: 'demo', projectRoot: root,
       config: {
         taskOverrides: { '1.1': readinessTask, '1.2': readinessTask },
@@ -163,7 +163,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
     const { root } = await createOpenSpecProject();
     let repositoryCalls = 0;
     let readinessCalls = 0;
-    const result = await runner.startGsdRunV2({
+    const result = await runner.startRelayRunV2({
       change: 'demo', projectRoot: root, hostCapabilities: higherTierHost,
       adapters: {
         dispatcher: true,
@@ -189,7 +189,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
     const { root } = await createOpenSpecProject();
     let repositoryCalls = 0;
     let readinessCalls = 0;
-    const result = await runner.startGsdRunV2({
+    const result = await runner.startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: [],
       adapters: {
         repositoryAnalyzer: { analyze: async ({ deterministicContext }) => {
@@ -216,7 +216,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
       '', '## Assumptions', '',
       '- The remote production service will remain stable, but no validation is planned.', '',
     ].join('\n'));
-    const result = await runner.startGsdRunV2({
+    const result = await runner.startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: [],
       config: { taskOverrides: { '1.1': readinessTask, '1.2': readinessTask } },
     });
@@ -234,7 +234,7 @@ describe('OpenSpec GSD v2 run pipeline', () => {
     const outcomes: Array<{ tier: string; assurance: string; finding: string; isolated: boolean; usedWorktrees: boolean }> = [];
     for (const tier of ['tier1', 'tier2'] as const) {
       const { root, changeDir } = await createOpenSpecProject(tier);
-      const start = (runner as Record<string, unknown>).startGsdRunV2 as (input: Record<string, unknown>) => Promise<{
+      const start = (runner as Record<string, unknown>).startRelayRunV2 as (input: Record<string, unknown>) => Promise<{
         run: { tier: string; stateRevision: string }; assurance: { readiness?: { status: string } };
       }>;
       const result = await start({
@@ -263,9 +263,9 @@ describe('OpenSpec GSD v2 run pipeline', () => {
         evidence, occurredAt: '2026-08-11T20:30:00.000Z', sourceRevision: result.run.stateRevision,
         actor: { kind: 'reviewer', id: 'reviewer-1' },
       });
-      await appendGsdEventV2({
+      await appendRelayEventV2({
         changeDir,
-        event: createGsdEventV2({
+        event: createRelayEventV2({
           eventId: `review:${tier}`, runId: store.runId, changeName: store.changeName,
           occurredAt: '2026-08-11T20:30:00.000Z',
           sourceDigests: Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest])),

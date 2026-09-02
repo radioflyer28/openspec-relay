@@ -8,12 +8,12 @@ import {
   resolveChangeDirectory,
   resolveChangePathForPlatform,
 } from '../src/state.js';
-import { startGsdRunV2 } from '../src/runner-v2.js';
+import { startRelayRunV2 } from '../src/runner-v2.js';
 
 const roots: string[] = [];
 
 async function project(): Promise<string> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd-state-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-state-'));
   roots.push(root);
   await fs.mkdir(path.join(root, 'openspec', 'changes', 'demo'), { recursive: true });
   return root;
@@ -66,11 +66,11 @@ describe('change resolution and atomic state', () => {
       '## ADDED Requirements', '', '### Requirement: Demo', 'The system SHALL work.', '',
       '#### Scenario: Works', '- **WHEN** invoked', '- **THEN** it works', '',
     ].join('\n'));
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd-outside-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-outside-'));
     roots.push(outside);
-    await fs.symlink(outside, path.join(changeDir, '.openspec-gsd'), 'dir');
+    await fs.symlink(outside, path.join(changeDir, '.openspec-relay'), 'dir');
 
-    await expect(startGsdRunV2({ change: 'demo', projectRoot: root })).rejects.toThrow(/symlink|outside|contain/i);
+    await expect(startRelayRunV2({ change: 'demo', projectRoot: root })).rejects.toThrow(/symlink|outside|contain/i);
     await expect(readRunStateV2(changeDir)).rejects.toThrow(/symlink|outside|contain/i);
     expect(await fs.readdir(outside)).toEqual([]);
   });

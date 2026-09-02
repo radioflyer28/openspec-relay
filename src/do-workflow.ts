@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { compileOpenSpecChange, type TaskMetadataV1 } from './artifacts.js';
-import { loadCanonicalGsdState } from './canonical-state.js';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2 } from './events.js';
+import { loadCanonicalRelayState } from './canonical-state.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2 } from './events.js';
 import { dispatchRoleV2, type RoleDispatcherV1, type RoleResultV1 } from './execution-adapters.js';
 import { routeDispatchedFindingsV1 } from './finding-routing.js';
 import { computeSemanticPlanRevision, isPlanApprovalCurrent } from './planning.js';
-import { planGsdChangeV1 } from './plan-workflow.js';
-import { checkGsdRunV2 } from './runner-v2.js';
-import type { GsdAssuranceV2, GsdRunV2, PortableReferenceV2, SemanticClassificationV1 } from './schemas.js';
+import { planRelayChangeV1 } from './plan-workflow.js';
+import { checkRelayRunV2 } from './runner-v2.js';
+import type { RelayAssuranceV2, RelayRunV2, PortableReferenceV2, SemanticClassificationV1 } from './schemas.js';
 import { resolveChangeDirectory } from './state.js';
 import {
   recordDispatchedRoleResultV2,
@@ -40,11 +40,11 @@ export interface CanonicalApplyCapabilityV1 {
   apply(request: Readonly<CanonicalApplyRequestV1>): Promise<CanonicalApplyResultV1>;
 }
 
-export interface DoGsdChangeResultV1 {
+export interface DoRelayChangeResultV1 {
   status: 'pass' | 'fail' | 'human_needed' | 'error';
   summary: string;
-  run: GsdRunV2;
-  assurance: GsdAssuranceV2;
+  run: RelayRunV2;
+  assurance: RelayAssuranceV2;
   applyCalls: number;
   convergenceCycles: number;
   nextAction?: string;
@@ -58,11 +58,11 @@ function stableFindingIds(result: RoleResultV1): string[] {
 
 async function currentApproved(options: { change: string; projectRoot?: string }) {
   const resolved = await resolveChangeDirectory(options);
-  const canonical = await loadCanonicalGsdState(resolved.changeDir);
+  const canonical = await loadCanonicalRelayState(resolved.changeDir);
   const revision = await computeSemanticPlanRevision({ changeDir: resolved.changeDir, compiled: canonical.compiled });
   if (!isPlanApprovalCurrent(canonical.projection.assurance.planApproval, revision.revision) ||
       canonical.projection.assurance.planStale) {
-    throw new Error(`OpenSpec GSD refuses execution: plan approval is absent or stale for '${resolved.changeName}'. Run /opsx:plan ${resolved.changeName}.`);
+    throw new Error(`OpenSpec Relay refuses execution: plan approval is absent or stale for '${resolved.changeName}'. Run /opsx:plan ${resolved.changeName}.`);
   }
   return { resolved, canonical, revision };
 }
@@ -78,10 +78,10 @@ export async function assertCurrentPlanApprovalV1(options: { change: string; pro
   };
 }
 
-async function setRunStatus(changeDir: string, status: GsdRunV2['status'], origin: string): Promise<void> {
+async function setRunStatus(changeDir: string, status: RelayRunV2['status'], origin: string): Promise<void> {
   const store = await readEventStoreV2(changeDir);
   const now = new Date().toISOString();
-  await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+  await appendRelayEventV2({ changeDir, event: createRelayEventV2({
     eventId: `do-status:${status}:${randomUUID()}`,
     runId: store.runId, changeName: store.changeName, occurredAt: now, sourceDigests: {},
     actor: { kind: 'automation' }, provenance: { origin }, payload: { type: 'run.status_updated', status },
@@ -124,7 +124,7 @@ async function taskIsComplete(changeDir: string, taskId: string, taskMetadata: R
 /** Closed execution convergence around canonical OpenSpec apply. This function
  * selects approved task context and assurance roles; the supplied canonical
  * apply capability owns implementation and checkbox updates. */
-export async function doGsdChangeV1(options: {
+export async function doRelayChangeV1(options: {
   change: string;
   projectRoot?: string;
   applyCapability: CanonicalApplyCapabilityV1;
@@ -134,18 +134,18 @@ export async function doGsdChangeV1(options: {
   allowWritablePlannerDispatch?: boolean;
   changedFiles?: string[];
   now?: string;
-}): Promise<DoGsdChangeResultV1> {
+}): Promise<DoRelayChangeResultV1> {
   let current: Awaited<ReturnType<typeof currentApproved>>;
   try {
     current = await currentApproved(options);
   } catch (error) {
     const resolved = await resolveChangeDirectory(options);
-    const canonical = await loadCanonicalGsdState(resolved.changeDir);
+    const canonical = await loadCanonicalRelayState(resolved.changeDir);
     return { status: 'human_needed', summary: (error as Error).message,
       ...canonical.projection, applyCalls: 0, convergenceCycles: 0,
       nextAction: `/opsx:plan ${resolved.changeName}` };
   }
-  await setRunStatus(current.resolved.changeDir, 'running', 'gsd-do');
+  await setRunStatus(current.resolved.changeDir, 'running', 'relay-do');
   let applyCalls = 0;
   let convergenceCycles = 0;
   let repairTaskId: string | undefined;
@@ -169,23 +169,23 @@ export async function doGsdChangeV1(options: {
       applyCalls += 1;
       if (request.action === 'repair') cycleRepairEvidence.push(...(result.evidence ?? []));
       if (result.status !== 'pass') {
-        await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-apply');
-        const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
+        await setRunStatus(current.resolved.changeDir, 'blocked', 'relay-do-apply');
+        const projection = (await loadCanonicalRelayState(current.resolved.changeDir)).projection;
         return { status: result.status, summary: result.summary, ...projection, applyCalls, convergenceCycles,
           nextAction: 'Return the canonical apply ambiguity or failure to planner triage.' };
       }
       if (!(await taskIsComplete(current.resolved.changeDir, task.taskId,
         current.canonical.store.seed.config.taskOverrides))) {
-        await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-apply-contract');
-        const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
+        await setRunStatus(current.resolved.changeDir, 'blocked', 'relay-do-apply-contract');
+        const projection = (await loadCanonicalRelayState(current.resolved.changeDir)).projection;
         return { status: 'error', summary: `Canonical apply reported pass without completing task '${task.taskId}'.`,
           ...projection, applyCalls, convergenceCycles,
           nextAction: 'Use the canonical apply capability to update the authoritative task checkbox.' };
       }
     }
     if (cycleFindingIds.length > 0 && cycleRepairEvidence.length === 0) {
-      await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-repair-evidence');
-      const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
+      await setRunStatus(current.resolved.changeDir, 'blocked', 'relay-do-repair-evidence');
+      const projection = (await loadCanonicalRelayState(current.resolved.changeDir)).projection;
       return { status: 'error',
         summary: 'Canonical apply reported a passing repair without linked repair evidence.',
         ...projection, applyCalls, convergenceCycles,
@@ -193,7 +193,7 @@ export async function doGsdChangeV1(options: {
     }
     for (const findingId of cycleFindingIds) await transitionFindingV2({
       change: options.change, projectRoot: current.resolved.projectRoot, findingId, action: 'repair',
-      actorId: 'gsd-do-executor', reason: 'Canonical apply completed the planner-dispositioned repair.',
+      actorId: 'relay-do-executor', reason: 'Canonical apply completed the planner-dispositioned repair.',
       evidence: cycleRepairEvidence,
       now: options.now,
     });
@@ -207,7 +207,7 @@ export async function doGsdChangeV1(options: {
         finding.findingId === findingId && finding.state === 'open'));
     for (const findingId of revisedPlanFindingIds) await transitionFindingV2({
       change: options.change, projectRoot: current.resolved.projectRoot, findingId, action: 'repair',
-      actorId: 'gsd-do-planner-disposition',
+      actorId: 'relay-do-planner-disposition',
       reason: 'A newly approved semantic plan revision incorporates the routed finding disposition.',
       evidence: [{
         referenceId: `plan:${current.revision.revision}`, kind: 'artifact',
@@ -255,8 +255,8 @@ export async function doGsdChangeV1(options: {
         ? verificationReceipt.result : undefined;
     }
     if (!failed) {
-      await setRunStatus(current.resolved.changeDir, 'checking', 'gsd-do');
-      const checked = await checkGsdRunV2({ change: options.change, projectRoot: current.resolved.projectRoot,
+      await setRunStatus(current.resolved.changeDir, 'checking', 'relay-do');
+      const checked = await checkRelayRunV2({ change: options.change, projectRoot: current.resolved.projectRoot,
         changedFiles: options.changedFiles, now: options.now });
       if (checked.assurance.status === 'pass' || checked.assurance.status === 'warn') return {
         status: 'pass', summary: 'Canonical apply, independent code review, goal verification, and aggregate assurance passed.',
@@ -280,15 +280,15 @@ export async function doGsdChangeV1(options: {
       current.canonical.compiled.graph.nodes[0]?.taskId;
     for (const route of routes) {
       const routeStore = await readEventStoreV2(current.resolved.changeDir);
-      await appendGsdEventV2({ changeDir: current.resolved.changeDir, event: createGsdEventV2({
+      await appendRelayEventV2({ changeDir: current.resolved.changeDir, event: createRelayEventV2({
         eventId: `do-route:${route.findingId}:${convergenceCycles}:${randomUUID()}`,
         runId: routeStore.runId, changeName: routeStore.changeName,
         occurredAt: options.now ?? new Date().toISOString(), sourceDigests: {},
-        actor: { kind: 'planner', id: 'gsd-do-triage' }, provenance: { origin: failedReceipt.dispatchId },
+        actor: { kind: 'planner', id: 'relay-do-triage' }, provenance: { origin: failedReceipt.dispatchId },
         payload: { type: 'finding.routed', route },
       }) });
     }
-    const replanned = await planGsdChangeV1({
+    const replanned = await planRelayChangeV1({
       change: options.change, projectRoot: current.resolved.projectRoot, invocation: 'do_replan',
       ...(options.allowWritablePlannerDispatch === false ? {} : { dispatcher: options.dispatcher }),
       assuranceDispatcher: options.dispatcher, findingIds,
@@ -313,8 +313,8 @@ export async function doGsdChangeV1(options: {
       run: replanned.run, assurance: replanned.assurance, applyCalls, convergenceCycles,
       nextAction: `/opsx:plan ${current.resolved.changeName} with an isolated pathfinder` };
   }
-  await setRunStatus(current.resolved.changeDir, 'blocked', 'gsd-do-exhausted');
-  const projection = (await loadCanonicalGsdState(current.resolved.changeDir)).projection;
+  await setRunStatus(current.resolved.changeDir, 'blocked', 'relay-do-exhausted');
+  const projection = (await loadCanonicalRelayState(current.resolved.changeDir)).projection;
   return { status: 'human_needed', summary: 'Review or verification did not converge within two cycles.',
     ...projection, applyCalls, convergenceCycles,
     nextAction: 'Inspect the unchanged blocking findings and provide human direction.' };

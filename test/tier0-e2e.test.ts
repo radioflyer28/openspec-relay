@@ -4,11 +4,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { compileOpenSpecChange } from '../src/artifacts.js';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { discoverFinding, transitionFinding } from '../src/findings.js';
 import { dispatchRoleV2, type DispatchedRoleResultV2 } from '../src/execution-adapters.js';
-import { checkGsdRunV2, startGsdRunV2 } from '../src/runner-v2.js';
-import { planGsdChangeV1 } from '../src/plan-workflow.js';
+import { checkRelayRunV2, startRelayRunV2 } from '../src/runner-v2.js';
+import { planRelayChangeV1 } from '../src/plan-workflow.js';
 import {
   observeDebugExperimentV2,
   planDebugExperimentV2,
@@ -68,9 +68,9 @@ async function recordFinding(options: {
 }) {
   const store = await readEventStoreV2(options.changeDir);
   const compiled = await compileOpenSpecChange({ changeDir: options.changeDir, taskMetadata: store.seed.config.taskOverrides });
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: options.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `e2e:${options.finding.findingId}`,
       runId: store.runId,
       changeName: store.changeName,
@@ -88,7 +88,7 @@ async function recordFinding(options: {
   });
 }
 
-describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
+describe('Tier 0 OpenSpec Relay end-to-end assurance', () => {
   it('remediates readiness, converges review and debugging, records UAT and release evidence, then archives', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.writeFile(path.join(changeDir, 'tasks.md'), [
@@ -98,10 +98,10 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       '',
     ].join('\n'));
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
-      name: 'gsd-tier0-e2e', version: '1.0.0', type: 'module', exports: './index.js',
+      name: 'relay-tier0-e2e', version: '1.0.0', type: 'module', exports: './index.js',
     }));
     await fs.writeFile(path.join(root, 'index.js'), 'export const works = false;\n');
-    await fs.writeFile(path.join(root, 'README.md'), '# Tier 0\n\nInstall with `npm install gsd-tier0-e2e`.\n');
+    await fs.writeFile(path.join(root, 'README.md'), '# Tier 0\n\nInstall with `npm install relay-tier0-e2e`.\n');
 
     const configuration = {
       mode: 'quick' as const,
@@ -113,7 +113,7 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       },
       features: { readiness: { rollout: 'required' as const } },
     };
-    const unready = await startGsdRunV2({
+    const unready = await startRelayRunV2({
       change: 'demo', projectRoot: root, config: configuration, changedFiles: ['package.json', 'index.js'],
       now: '2026-08-11T20:40:00.000Z',
     });
@@ -126,11 +126,11 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       '- [ ] 1.2 Update documentation',
       '',
     ].join('\n'));
-    const remediated = await checkGsdRunV2({
+    const remediated = await checkRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'], now: '2026-08-11T20:41:00.000Z',
     });
     expect(remediated.assurance.readiness).toMatchObject({ status: 'pass' });
-    const approved = await planGsdChangeV1({
+    const approved = await planRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'],
       allowSelfReview: true, now: '2026-08-11T20:41:30.000Z',
     });
@@ -233,7 +233,7 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       now: '2026-08-11T20:44:05.500Z',
     });
     await fs.writeFile(path.join(root, 'index.js'), 'export const works = true;\n');
-    await checkGsdRunV2({
+    await checkRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'],
       now: '2026-08-11T20:44:05.600Z',
     });
@@ -290,7 +290,7 @@ describe('Tier 0 OpenSpec GSD end-to-end assurance', () => {
       notes: 'Observed the expected behavior.', evidence: portableEvidence, now: '2026-08-11T20:45:03.000Z',
     });
 
-    const ready = await checkGsdRunV2({
+    const ready = await checkRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['package.json', 'index.js'], now: '2026-08-11T20:46:00.000Z',
       adapters: { releaseRunner: trustedTestRunner },
     });

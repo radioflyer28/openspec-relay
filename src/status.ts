@@ -1,21 +1,21 @@
-import { loadCanonicalGsdRecords } from './canonical-state.js';
-import type { GsdAssuranceV2, GsdRunV2 } from './schemas.js';
+import { loadCanonicalRelayRecords } from './canonical-state.js';
+import type { RelayAssuranceV2, RelayRunV2 } from './schemas.js';
 import { resolveChangeDirectory } from './state.js';
 
 export interface RunStatusV2 {
   changeName: string;
-  mode: GsdRunV2['mode'];
-  tier: GsdRunV2['tier'];
-  status: GsdRunV2['status'];
+  mode: RelayRunV2['mode'];
+  tier: RelayRunV2['tier'];
+  status: RelayRunV2['status'];
   tasks: { total: number; complete: number; blocked: number };
-  checks: GsdAssuranceV2['checks'];
-  assuranceStatus: GsdAssuranceV2['status'];
-  hostAdapter?: GsdAssuranceV2['hostAdapter'];
+  checks: RelayAssuranceV2['checks'];
+  assuranceStatus: RelayAssuranceV2['status'];
+  hostAdapter?: RelayAssuranceV2['hostAdapter'];
   repositoryContext: { status: 'current' | 'stale' | 'unavailable' | 'missing' };
-  readiness: { status: NonNullable<GsdAssuranceV2['readiness']>['status'] | 'missing'; issueCount: number };
+  readiness: { status: NonNullable<RelayAssuranceV2['readiness']>['status'] | 'missing'; issueCount: number };
   planning: {
     revision?: string;
-    approval: GsdRunV2['planApprovalStatus'];
+    approval: RelayRunV2['planApprovalStatus'];
     review: 'independent' | 'self_review' | 'missing';
     pathfinderCount: number;
     activeRoute?: string;
@@ -37,7 +37,7 @@ export async function getRunStatusV2(options: {
   projectRoot?: string;
 }): Promise<RunStatusV2> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const canonical = await loadCanonicalGsdRecords(resolved.changeDir);
+  const canonical = await loadCanonicalRelayRecords(resolved.changeDir);
   const { run, assurance } = canonical.projection;
   const integrityError = !canonical.projectionsMatch;
   const findings: Record<string, number> = {};
@@ -48,7 +48,7 @@ export async function getRunStatusV2(options: {
     ['pending', 'fail', 'human_needed', 'error'].includes(candidate.status));
   const nextActions = [
     ...(integrityError
-      ? ['Regenerate projections from canonical OpenSpec GSD history with openspec-gsd check.'] : []),
+      ? ['Regenerate projections from canonical OpenSpec Relay history with openspec-relay check.'] : []),
     ...(assurance.repositoryContext?.status === 'stale' ? ['Refresh stale repository context.'] : []),
     ...(assurance.readiness && assurance.readiness.status !== 'pass'
       ? assurance.readiness.issues.filter((issue) => issue.blocking).flatMap((issue) => issue.remediation) : []),
@@ -105,7 +105,7 @@ export async function getRunStatusV2(options: {
     staleEvidenceCount: assurance.staleEvidenceIds.length,
     assuranceDigestMatches: canonical.projectionsMatch,
     integrity: integrityError
-      ? { status: 'error', summary: 'Generated projections do not match canonical OpenSpec GSD history.' }
-      : { status: 'pass', summary: 'Generated projections match canonical OpenSpec GSD history.' },
+      ? { status: 'error', summary: 'Generated projections do not match canonical OpenSpec Relay history.' }
+      : { status: 'pass', summary: 'Generated projections match canonical OpenSpec Relay history.' },
   };
 }

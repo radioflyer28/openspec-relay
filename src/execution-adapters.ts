@@ -3,7 +3,7 @@ import type { ExecutionGraphV1 } from './graph.js';
 import {
   type ExecutionTier,
   type FindingLifecycleRecordV2,
-  type GsdEventPayloadV1,
+  type RelayEventPayloadV1,
   type PortableReferenceV2,
   type SemanticClassificationV1,
 } from './schemas.js';
@@ -38,7 +38,7 @@ export interface RoleResultV1 {
   evidenceRefs: string[];
   evidence?: PortableReferenceV2[];
   findings?: ReportedFindingV2[];
-  events?: GsdEventPayloadV1[];
+  events?: RelayEventPayloadV1[];
   semanticClassifications?: SemanticClassificationV1[];
   pathfinder?: {
     assumptions: string[];
@@ -52,7 +52,7 @@ export interface RoleResultV1 {
   scopeExpansion?: boolean;
 }
 
-/** A reviewer/verifier report deliberately omits findingId. OpenSpec GSD derives
+/** A reviewer/verifier report deliberately omits findingId. OpenSpec Relay derives
  * stable identities from provider, rule, category, and scope. */
 export interface ReportedFindingV2 {
   providerId: string;
@@ -139,7 +139,7 @@ export interface ExecutionOutcomeV1 {
     status: RoleResultV1['status'];
     summary: string;
     evidenceRefs: string[];
-    events?: GsdEventPayloadV1[];
+    events?: RelayEventPayloadV1[];
   }>;
   review?: RoleResultV1;
   reviewReceipt?: DispatchedRoleResultV2;

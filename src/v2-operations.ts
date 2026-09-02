@@ -1,12 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
-  appendGsdEventV2,
-  createGsdEventV2,
+  appendRelayEventV2,
+  createRelayEventV2,
   readEventStoreV2,
   writeReplayedProjectionsV2,
 } from './events.js';
-import { loadCanonicalGsdState } from './canonical-state.js';
+import { loadCanonicalRelayState } from './canonical-state.js';
 import {
   debugSessionForRepairExhaustion,
   observeDebugExperiment,
@@ -28,17 +28,17 @@ import { digestJson } from './state.js';
 import { bindRepositoryEvidenceDigests, computeMaterialRevision } from './repository-context.js';
 import { acceptRequiredGate, readRequiredGateRecord } from '@fission-ai/openspec/extensions';
 import {
-  GsdEventPayloadV1Schema,
+  RelayEventPayloadV1Schema,
   type FindingStateV2,
   type FindingTransitionV2,
-  type GsdEventPayloadV1,
-  type GsdEventActorV2,
+  type RelayEventPayloadV1,
+  type RelayEventActorV2,
   type PortableReferenceV2,
 } from './schemas.js';
 
 async function currentV2(options: { change: string; projectRoot?: string }) {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const canonical = await loadCanonicalGsdState(resolved.changeDir);
+  const canonical = await loadCanonicalRelayState(resolved.changeDir);
   return { resolved, ...canonical };
 }
 
@@ -80,12 +80,12 @@ export async function startOrResumeDebugV2(options: {
     references: [...finding.requirementIds, ...finding.taskIds], failedEvidence,
     existing: current.projection.assurance.debugSessions, now,
   });
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `debug:${session.sessionId}`, runId: current.store.runId, changeName: current.store.changeName,
       occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'host' },
-      provenance: { origin: 'gsd-debug' }, payload: { type: 'debug.session_started', session },
+      provenance: { origin: 'relay-debug' }, payload: { type: 'debug.session_started', session },
     }),
   });
   const projection = await writeReplayedProjectionsV2({
@@ -154,16 +154,16 @@ export async function transitionFindingV2(options: {
     ...(options.followUp ? { followUp: options.followUp } : {}),
   });
   const transition = updated.transitions.at(-1)!;
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `finding-transition:${finding.findingId}:${transition.transitionId}`,
       runId: current.store.runId,
       changeName: current.store.changeName,
       occurredAt: now,
       sourceDigests: sources(current.compiled),
       actor: workflow.actor,
-      provenance: { origin: `gsd-finding-${options.action}` },
+      provenance: { origin: `relay-finding-${options.action}` },
       payload: { type: 'finding.transitioned', findingId: finding.findingId, transition },
     }),
   });
@@ -186,16 +186,16 @@ async function appendUatRetestForVerifiedFinding(options: {
   const scenario = options.current.projection.assurance.uatScenarios.find((item) =>
     item.scenarioId === options.finding.scope.identity);
   if (!scenario) throw new Error(`Failed UAT finding '${options.finding.findingId}' has no projected scenario to retest.`);
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: options.current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `uat-retest:${scenario.scenarioId}:${options.transition.transitionId}`,
       runId: options.current.store.runId,
       changeName: options.current.store.changeName,
       occurredAt: options.now,
       sourceDigests: sources(options.current.compiled),
       actor: options.transition.actor,
-      provenance: { origin: 'gsd-dispatched-verifier' },
+      provenance: { origin: 'relay-dispatched-verifier' },
       payload: {
         type: 'uat.scenario_retest',
         scenarioId: scenario.scenarioId,
@@ -222,7 +222,7 @@ export async function recordDispatchedRoleResultV2(options: {
   const now = options.now ?? new Date().toISOString();
   const repositoryRevision = await sourceRevision(current);
   for (const [index, candidate] of (options.receipt.result.events ?? []).entries()) {
-    const payload = GsdEventPayloadV1Schema.parse(candidate);
+    const payload = RelayEventPayloadV1Schema.parse(candidate);
     if (payload.type !== 'evidence.recorded') {
       throw new Error('Dispatched reviewer/verifier results may persist evidence only; findings use structured reports.');
     }
@@ -234,16 +234,16 @@ export async function recordDispatchedRoleResultV2(options: {
       sourceDigests: sources(current.compiled),
       origin: expectedOrigin,
     };
-    await appendGsdEventV2({
+    await appendRelayEventV2({
       changeDir: current.resolved.changeDir,
-      event: createGsdEventV2({
+      event: createRelayEventV2({
         eventId: `${options.receipt.dispatchId}:evidence:${index}`,
         runId: current.store.runId,
         changeName: current.store.changeName,
         occurredAt: now,
         sourceDigests: sources(current.compiled),
         actor: { kind: role, id: options.receipt.dispatchId },
-        provenance: { origin: 'gsd-dispatched-role-result', adapter: role },
+        provenance: { origin: 'relay-dispatched-role-result', adapter: role },
         payload: { type: 'evidence.recorded', evidence },
       }),
     });
@@ -264,16 +264,16 @@ export async function recordDispatchedRoleResultV2(options: {
     });
     const existing = current.projection.assurance.findings.find((item) => item.findingId === discovered.findingId);
     if (!existing) {
-      await appendGsdEventV2({
+      await appendRelayEventV2({
         changeDir: current.resolved.changeDir,
-        event: createGsdEventV2({
+        event: createRelayEventV2({
           eventId: `${options.receipt.dispatchId}:finding:${discovered.findingId}`,
           runId: current.store.runId,
           changeName: current.store.changeName,
           occurredAt: now,
           sourceDigests: sources(current.compiled),
           actor: { kind: role, id: options.receipt.dispatchId },
-          provenance: { origin: 'gsd-dispatched-role-result', adapter: role },
+          provenance: { origin: 'relay-dispatched-role-result', adapter: role },
           payload: { type: 'finding.discovered', finding: discovered },
         }),
       });
@@ -288,16 +288,16 @@ export async function recordDispatchedRoleResultV2(options: {
         occurredAt: now,
       });
       const transition = stale.transitions.at(-1)!;
-      await appendGsdEventV2({
+      await appendRelayEventV2({
         changeDir: current.resolved.changeDir,
-        event: createGsdEventV2({
+        event: createRelayEventV2({
           eventId: `${options.receipt.dispatchId}:finding-rerun:${discovered.findingId}`,
           runId: current.store.runId,
           changeName: current.store.changeName,
           occurredAt: now,
           sourceDigests: sources(current.compiled),
           actor: { kind: role, id: options.receipt.dispatchId },
-          provenance: { origin: 'gsd-dispatched-role-result', adapter: role },
+          provenance: { origin: 'relay-dispatched-role-result', adapter: role },
           payload: { type: 'finding.transitioned', findingId: existing.findingId, transition },
         }),
       });
@@ -348,16 +348,16 @@ export async function verifyFindingFromDispatchedResultV2(options: {
     occurredAt: now,
   });
   const transition = updated.transitions.at(-1)!;
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `${options.receipt.dispatchId}:verify:${finding.findingId}`,
       runId: current.store.runId,
       changeName: current.store.changeName,
       occurredAt: now,
       sourceDigests: sources(current.compiled),
       actor: transition.actor,
-      provenance: { origin: 'gsd-dispatched-verifier', adapter: 'verifier' },
+      provenance: { origin: 'relay-dispatched-verifier', adapter: 'verifier' },
       payload: { type: 'finding.transitioned', findingId: finding.findingId, transition },
     }),
   });
@@ -375,19 +375,19 @@ async function appendDebugEvent(options: {
   current: Awaited<ReturnType<typeof currentV2>>;
   eventId: string;
   now: string;
-  payload: Extract<Parameters<typeof createGsdEventV2>[0]['payload'], { type: `debug.${string}` }>;
-  actor?: GsdEventActorV2;
+  payload: Extract<Parameters<typeof createRelayEventV2>[0]['payload'], { type: `debug.${string}` }>;
+  actor?: RelayEventActorV2;
 }) {
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: options.current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: options.eventId,
       runId: options.current.store.runId,
       changeName: options.current.store.changeName,
       occurredAt: options.now,
       sourceDigests: sources(options.current.compiled),
       actor: options.actor ?? { kind: 'executor' },
-      provenance: { origin: 'gsd-debug' },
+      provenance: { origin: 'relay-debug' },
       payload: options.payload,
     }),
   });
@@ -699,12 +699,12 @@ export async function presentUatV2(options: { change: string; projectRoot?: stri
     sourceRevision: await sourceRevision(current),
   });
   if (!existing.length) {
-    for (const scenario of scenarios) await appendGsdEventV2({
+    for (const scenario of scenarios) await appendRelayEventV2({
       changeDir: current.resolved.changeDir,
-      event: createGsdEventV2({
+      event: createRelayEventV2({
         eventId: `uat:${scenario.scenarioId}`, runId: current.store.runId, changeName: current.store.changeName,
         occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'host' },
-        provenance: { origin: 'gsd-uat' }, payload: { type: 'uat.scenario_recorded', scenario },
+        provenance: { origin: 'relay-uat' }, payload: { type: 'uat.scenario_recorded', scenario },
       }),
     });
   }
@@ -735,43 +735,43 @@ export async function recordUatV2(options: {
   const currentSourceRevision = await sourceRevision(current, [...(scenario.disposition?.evidence ?? []), ...evidence]);
   const currentScenario = { ...scenario, sourceRevision: currentSourceRevision };
   const result = recordUatDisposition({ ...options, scenario: currentScenario, evidence, now });
-  await appendGsdEventV2({
+  await appendRelayEventV2({
     changeDir: current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `uat-disposition:${options.scenarioId}:${now}`, runId: current.store.runId, changeName: current.store.changeName,
       occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'human', id: options.actor },
-      provenance: { origin: 'gsd-uat' }, payload: {
+      provenance: { origin: 'relay-uat' }, payload: {
         type: 'uat.disposition_recorded', scenarioId: options.scenarioId, status: options.status,
         actor: options.actor, notes: options.notes, sourceRevision: currentSourceRevision, evidence,
       },
     }),
   });
-  if (result.finding) await appendGsdEventV2({
+  if (result.finding) await appendRelayEventV2({
     changeDir: current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: `uat-finding:${result.finding.findingId}`, runId: current.store.runId, changeName: current.store.changeName,
       occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'human', id: options.actor },
-      provenance: { origin: 'gsd-uat' }, payload: { type: 'finding.discovered', finding: result.finding },
+      provenance: { origin: 'relay-uat' }, payload: { type: 'finding.discovered', finding: result.finding },
     }),
   });
   if (result.acceptedRisk) {
     const transition = result.acceptedRisk.transitions.at(-1)!;
-    await appendGsdEventV2({
+    await appendRelayEventV2({
       changeDir: current.resolved.changeDir,
-      event: createGsdEventV2({
+      event: createRelayEventV2({
         eventId: `uat-accepted-risk:${result.acceptedRisk.findingId}`, runId: current.store.runId, changeName: current.store.changeName,
         occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'human', id: options.actor },
-        provenance: { origin: 'gsd-uat' }, payload: { type: 'finding.discovered', finding: {
+        provenance: { origin: 'relay-uat' }, payload: { type: 'finding.discovered', finding: {
           ...result.acceptedRisk, state: 'open', transitions: [result.acceptedRisk.transitions[0]],
         } },
       }),
     });
-    await appendGsdEventV2({
+    await appendRelayEventV2({
       changeDir: current.resolved.changeDir,
-      event: createGsdEventV2({
+      event: createRelayEventV2({
         eventId: `uat-accepted-risk-transition:${result.acceptedRisk.findingId}`, runId: current.store.runId, changeName: current.store.changeName,
         occurredAt: now, sourceDigests: sources(current.compiled), actor: { kind: 'human', id: options.actor },
-        provenance: { origin: 'gsd-uat' }, payload: { type: 'finding.transitioned', findingId: result.acceptedRisk.findingId, transition },
+        provenance: { origin: 'relay-uat' }, payload: { type: 'finding.transitioned', findingId: result.acceptedRisk.findingId, transition },
       }),
     });
   }
@@ -784,7 +784,7 @@ export async function recordUatV2(options: {
 /** Record the durable core gate acceptance and mirror its audit binding in the
  * v2 event history. This intentionally does not close UAT or lifecycle
  * obligations: their individual dispositions remain independently blocking. */
-export async function acceptGsdGateV2(options: {
+export async function acceptRelayGateV2(options: {
   change: string;
   projectRoot?: string;
   gateId: string;
@@ -801,7 +801,7 @@ export async function acceptGsdGateV2(options: {
   const gateRecord = await readRequiredGateRecord(current.resolved.changeDir);
   const gate = gateRecord.gates.find((item) => item.gateId === options.gateId);
   if (!gate?.acceptance) throw new Error(`Gate '${options.gateId}' acceptance was not recorded.`);
-  const event = createGsdEventV2({
+  const event = createRelayEventV2({
     eventId: options.eventId ?? `gate-accept:${options.gateId}:${acceptedAt}`,
     runId: current.store.runId,
     changeName: current.store.changeName,
@@ -817,7 +817,7 @@ export async function acceptGsdGateV2(options: {
       evidenceDigest: gate.acceptance.evidenceDigest,
     },
   });
-  const appended = await appendGsdEventV2({ changeDir: current.resolved.changeDir, event });
+  const appended = await appendRelayEventV2({ changeDir: current.resolved.changeDir, event });
   const projection = await writeReplayedProjectionsV2({
     changeDir: current.resolved.changeDir,
     store: await readEventStoreV2(current.resolved.changeDir),
@@ -863,7 +863,7 @@ async function updateTaskCheckbox(changeDir: string, taskId: string, complete: b
 
 export type WorkflowStageV2 = 'automation' | 'executor' | 'host';
 
-function validateWorkflowResultProvenance(stage: WorkflowStageV2, payload: GsdEventPayloadV1): void {
+function validateWorkflowResultProvenance(stage: WorkflowStageV2, payload: RelayEventPayloadV1): void {
   if (payload.type === 'human.decision') {
     throw new Error('Human decisions require a dedicated human action.');
   }
@@ -888,11 +888,11 @@ export async function recordWorkflowResultV2(options: {
   occurredAt?: string;
   stage: WorkflowStageV2;
   actorId?: string;
-  payload: GsdEventPayloadV1;
+  payload: RelayEventPayloadV1;
 }) {
   const current = await currentV2(options);
   const now = options.occurredAt ?? new Date().toISOString();
-  let payload = GsdEventPayloadV1Schema.parse(options.payload);
+  let payload = RelayEventPayloadV1Schema.parse(options.payload);
   validateWorkflowResultProvenance(options.stage, payload);
   const referencedTaskId = payload.type === 'task.transition'
     ? payload.taskId
@@ -910,7 +910,7 @@ export async function recordWorkflowResultV2(options: {
       ([artifact, value]) => sources(current.compiled)[artifact] !== value)) {
       throw new Error('Evidence must bind current controlling OpenSpec source digests.');
     }
-    payload = GsdEventPayloadV1Schema.parse({
+    payload = RelayEventPayloadV1Schema.parse({
       ...payload,
       evidence: {
         ...payload.evidence,
@@ -920,13 +920,13 @@ export async function recordWorkflowResultV2(options: {
       },
     });
   }
-  const appended = await appendGsdEventV2({
+  const appended = await appendRelayEventV2({
     changeDir: current.resolved.changeDir,
-    event: createGsdEventV2({
+    event: createRelayEventV2({
       eventId: options.eventId, runId: current.store.runId, changeName: current.store.changeName, occurredAt: now,
       sourceDigests: sources(current.compiled),
       actor: { kind: options.stage, ...(options.actorId ? { id: options.actorId } : {}) },
-      provenance: { origin: `gsd-${options.stage}-result` },
+      provenance: { origin: `relay-${options.stage}-result` },
       payload,
     }),
   });
@@ -949,9 +949,9 @@ export async function recordWorkflowResultV2(options: {
         existing: current.projection.assurance.debugSessions,
         now,
       });
-      await appendGsdEventV2({
+      await appendRelayEventV2({
         changeDir: current.resolved.changeDir,
-        event: createGsdEventV2({
+        event: createRelayEventV2({
           eventId: `repair-exhausted-debug:${session.sessionId}`,
           runId: current.store.runId, changeName: current.store.changeName, occurredAt: now,
           sourceDigests: sources(current.compiled), actor: { kind: 'automation' },
@@ -959,15 +959,15 @@ export async function recordWorkflowResultV2(options: {
         }),
       });
     } else {
-      await appendGsdEventV2({
+      await appendRelayEventV2({
         changeDir: current.resolved.changeDir,
-        event: createGsdEventV2({
+        event: createRelayEventV2({
           eventId: `repair-exhausted-human:${payload.repair.checkId}:${payload.repair.attempt}`,
           runId: current.store.runId, changeName: current.store.changeName, occurredAt: now,
           sourceDigests: sources(current.compiled), actor: { kind: 'host' },
           provenance: { origin: 'bounded-repair' }, payload: {
             type: 'human.disposition_recorded', subjectId: `check:${payload.repair.checkId}`,
-            disposition: 'human_needed', actor: 'gsd',
+            disposition: 'human_needed', actor: 'relay',
             reason: 'Repair is exhausted and no safe automatic debugging capability is enabled.',
             scope: 'bounded repair',
           },
@@ -975,7 +975,7 @@ export async function recordWorkflowResultV2(options: {
       });
     }
   }
-  const refreshed = await loadCanonicalGsdState(current.resolved.changeDir);
+  const refreshed = await loadCanonicalRelayState(current.resolved.changeDir);
   const projection = await writeReplayedProjectionsV2({
     changeDir: current.resolved.changeDir, store: refreshed.store, compiled: refreshed.compiled,
   });

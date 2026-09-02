@@ -19,7 +19,7 @@ describe('Pi package resources', () => {
     const pkg = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8')) as PackageManifest;
     expect(pkg.keywords).toContain('pi-package');
     expect(pkg.pi).toEqual({
-      extensions: ['./pi/extensions/openspec-gsd.ts'],
+      extensions: ['./pi/extensions/openspec-relay.ts'],
       skills: ['./pi/skills'],
       prompts: ['./pi/prompts'],
     });
@@ -50,12 +50,12 @@ describe('Pi package resources', () => {
   it('bundles the single typed Pi workflow adapter and CLI fallback shim', async () => {
     const root = process.cwd();
     const runtimeExtension = await fs.readFile(
-      path.join(root, 'pi', 'extensions', 'openspec-gsd.ts'),
+      path.join(root, 'pi', 'extensions', 'openspec-relay.ts'),
       'utf8',
     );
-    const executable = await fs.readFile(path.join(root, 'pi', 'bin', 'openspec-gsd'), 'utf8');
+    const executable = await fs.readFile(path.join(root, 'pi', 'bin', 'openspec-relay'), 'utf8');
     expect(runtimeExtension).toContain("new URL('../bin/', import.meta.url)");
-    expect(runtimeExtension).toContain("name: 'openspec_gsd_workflow'");
+    expect(runtimeExtension).toContain("name: 'openspec_relay_workflow'");
     expect(runtimeExtension).toContain('pi.registerTool(workflowTool)');
     expect(runtimeExtension).toContain("../../dist/pi/workflow.js");
     expect(executable).toContain("import('../../dist/cli.js')");

@@ -12,12 +12,12 @@ function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-export const REQUIRED_UAT_PROJECTION_ERROR_ID = 'gsd:required-uat-projection-error';
+export const REQUIRED_UAT_PROJECTION_ERROR_ID = 'relay:required-uat-projection-error';
 
 export function requiredUatProjectionError(sourceRevision: string): UatScenarioV2 {
   return UatScenarioV2Schema.parse({
     scenarioId: REQUIRED_UAT_PROJECTION_ERROR_ID,
-    requirementId: 'gsd:required-uat',
+    requirementId: 'relay:required-uat',
     taskIds: [],
     prerequisites: [],
     action: 'Repair OpenSpec scenario coverage or record an explicit non-applicability decision.',

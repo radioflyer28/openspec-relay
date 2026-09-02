@@ -2,10 +2,10 @@
 name: openspec-discuss
 description: Reach shared understanding of material product intent before proposal or targeted replanning.
 license: MIT
-compatibility: Requires the openspec and openspec-gsd CLIs.
+compatibility: Requires the openspec and openspec-relay CLIs.
 metadata:
-  author: openspec-gsd
-  version: "0.1.0"
+  author: openspec-relay
+  version: "0.2.0"
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
@@ -32,7 +32,7 @@ Finding _facts_ is your job, never the user's. When a frontier question needs a 
 
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
 
-# OpenSpec GSD supplement
+# OpenSpec Relay supplement
 
 Apply the upstream grilling instructions above with these narrowly scoped
 OpenSpec specializations. They add product-development context; they do not

@@ -33,7 +33,7 @@ describe('Pi pathfinder experiment workspace', () => {
 
   it('rejects symlink escape through an existing workspace entry', async () => {
     const workspace = await createPiExperimentWorkspace();
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-outside-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-outside-'));
     try {
       await fs.symlink(outside, path.join(workspace.root, 'linked'));
       await expect(workspace.write('linked/escape.txt', 'no')).rejects.toThrow(/symbolic link|contained/i);

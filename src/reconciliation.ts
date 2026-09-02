@@ -1,9 +1,9 @@
 import type { CompiledOpenSpecChangeV1 } from './artifacts.js';
 import { compileOpenSpecChange } from './artifacts.js';
 import type {
-  GsdAssuranceV1,
-  GsdConfigV1,
-  GsdRunV1,
+  RelayAssuranceV1,
+  RelayConfigV1,
+  RelayRunV1,
   TaskNodeV1,
 } from './schemas.js';
 import { classifyTddRequirement, resolveTddPolicy } from './tdd.js';
@@ -28,7 +28,7 @@ function symmetricDifference(left: Iterable<string>, right: Iterable<string>): s
   ])].sort();
 }
 
-function ids(artifacts: GsdRunV1['artifacts'], marker: 'requirement' | 'scenario'): string[] {
+function ids(artifacts: RelayRunV1['artifacts'], marker: 'requirement' | 'scenario'): string[] {
   return artifacts.flatMap((artifact) => artifact.ids).filter((id) => marker === 'scenario'
     ? id.includes('/scenario:')
     : id.includes('#requirement:') && !id.includes('/scenario:'));
@@ -36,7 +36,7 @@ function ids(artifacts: GsdRunV1['artifacts'], marker: 'requirement' | 'scenario
 
 export function materializeCompiledTasks(
   compiled: CompiledOpenSpecChangeV1,
-  config: GsdConfigV1,
+  config: RelayConfigV1,
 ): TaskNodeV1[] {
   return compiled.graph.nodes.map((task) => {
     const policy = resolveTddPolicy({ change: config.tdd, task: task.tdd });
@@ -52,12 +52,12 @@ export function materializeCompiledTasks(
 }
 
 export function reconcileCompiledOpenSpec(options: {
-  run: GsdRunV1;
-  assurance: GsdAssuranceV1;
+  run: RelayRunV1;
+  assurance: RelayAssuranceV1;
   compiled: CompiledOpenSpecChangeV1;
 }): {
-  run: GsdRunV1;
-  assurance: GsdAssuranceV1;
+  run: RelayRunV1;
+  assurance: RelayAssuranceV1;
   reconciliation: SourceReconciliationV1;
 } {
   const oldTasks = new Map(options.run.tasks.map((task) => [task.taskId, task]));
@@ -139,8 +139,8 @@ export async function reconcileCurrentOpenSpec(options: {
   projectRoot: string;
   changeDir: string;
   changeName: string;
-  run: GsdRunV1;
-  assurance: GsdAssuranceV1;
+  run: RelayRunV1;
+  assurance: RelayAssuranceV1;
 }): Promise<ReturnType<typeof reconcileCompiledOpenSpec>> {
   const compiled = await compileOpenSpecChange({
     changeDir: options.changeDir,

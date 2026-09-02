@@ -1,7 +1,7 @@
 Start or resume a focused scientific debugging session for an unresolved
-OpenSpec GSD finding.
+OpenSpec Relay finding.
 
-Invoke `openspec-gsd debug <change> [--finding <id>] --json`. The command
+Invoke `openspec-relay debug <change> [--finding <id>] --json`. The command
 creates one resumable session per logical failure and reports its next safe
 action. Use `--session <id> --hypothesis <text>`, `--experiment <action>
 --hypothesis-id <id> --evidence <json>`, and `--experiment-id <id> --result

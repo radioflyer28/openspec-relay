@@ -10,7 +10,7 @@ export async function createOpenSpecProject(name = 'demo'): Promise<{
   root: string;
   changeDir: string;
 }> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd-project-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-project-'));
   temporaryRoots.push(root);
   const changeDir = path.join(root, 'openspec', 'changes', name);
   await fs.mkdir(path.join(changeDir, 'specs', 'demo'), { recursive: true });

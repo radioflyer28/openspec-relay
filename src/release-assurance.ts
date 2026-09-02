@@ -255,9 +255,9 @@ export async function createNodePackageReleasePlan(options: {
   packageRoot: string;
   mode: RunMode;
 }): Promise<{ artifactDirectory: string; sourceDirectory: string; installDirectory: string; commands: ReleaseCommandV2[] }> {
-  const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-artifact-'));
+  const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-artifact-'));
   const sourceDirectory = path.join(artifactDirectory, 'source');
-  const installDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-install-'));
+  const installDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-install-'));
   const archive = path.join(artifactDirectory, 'candidate.tgz');
   const commands: ReleaseCommandV2[] = [
     { command: 'npm', args: ['pack', '--json', '--ignore-scripts', '--pack-destination', artifactDirectory], cwd: sourceDirectory },
@@ -385,7 +385,7 @@ async function exists(filename: string): Promise<boolean> {
 }
 
 async function copyPackageSource(packageRoot: string, destination: string): Promise<void> {
-  const excluded = new Set(['.git', 'node_modules', '.openspec-gsd']);
+  const excluded = new Set(['.git', 'node_modules', '.openspec-relay']);
   await fs.cp(packageRoot, destination, {
     recursive: true,
     filter: (source) => {
@@ -424,7 +424,7 @@ export async function verifyNodePackageRelease(options: {
   buildCommand?: ConfiguredReleaseCommandV2;
   releaseRunner?: HostReleaseRunnerV2;
 }): Promise<NodeReleaseVerificationV2> {
-  const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-artifact-'));
+  const artifactDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-artifact-'));
   const sourceDirectory = path.join(artifactDirectory, 'source');
   let installDirectory: string | undefined;
   const checks: ReleaseCheck[] = [];
@@ -559,7 +559,7 @@ export async function runConfiguredReleaseCommand(options: {
   releaseRunner?: HostReleaseRunnerV2;
 }): Promise<ReleaseCandidateV2> {
   const command = createConfiguredCommandPlan(options.configuredCommand);
-  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-configured-release-'));
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-configured-release-'));
   const sourceDirectory = path.join(workspace, 'source');
   const evidence = [{ referenceId: `config:release-command:${options.configuredCommand.id}`, kind: 'external' as const, externalId: options.configuredCommand.id, available: true }];
   try {
@@ -759,10 +759,10 @@ export async function createCleanInstallProject(options: {
   packageName: string;
   artifactPath: string;
 }): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-clean-install-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-clean-install-'));
   await fs.writeFile(path.join(directory, 'package.json'), `${JSON.stringify({
     private: true,
-    name: 'gsd-clean-install',
+    name: 'relay-clean-install',
     dependencies: { [options.packageName]: options.artifactPath },
   }, null, 2)}\n`);
   return directory;
@@ -777,7 +777,7 @@ export async function createExtensionReleasePlan(options: {
     throw new Error('Packaged extension verification requires openspec-extension.json.');
   });
   JSON.parse(content);
-  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-gsd-extension-install-'));
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-relay-extension-install-'));
   const commands: ReleaseCommandV2[] = [
     { command: 'node', args: ['-e', '/* validate extension manifest and generated workflow entries */'], cwd: options.packageRoot },
     { command: 'node', args: ['-e', '/* discover installed extension workflows in clean state */'], cwd: workspace },

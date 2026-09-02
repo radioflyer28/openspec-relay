@@ -1,14 +1,14 @@
-import { AssuranceCheckV2Schema, type GsdAssuranceV2, type GsdRunV2 } from './schemas.js';
+import { AssuranceCheckV2Schema, type RelayAssuranceV2, type RelayRunV2 } from './schemas.js';
 import { evaluateFindingObligations } from './findings.js';
 import { validateTddEvidence } from './tdd.js';
 import { mapScenarioCoverage } from './verification.js';
 
-function independentEvidence(input: GsdAssuranceV2, checkId: string): string[] {
+function independentEvidence(input: RelayAssuranceV2, checkId: string): string[] {
   return input.evidence.filter((item) => item.checkId === checkId && item.result === 'pass' &&
     item.origin !== 'executor' && !input.staleEvidenceIds.includes(item.evidenceId)).map((item) => item.evidenceId);
 }
 
-function overall(checks: GsdAssuranceV2['checks'], assurance: GsdAssuranceV2): GsdAssuranceV2['status'] {
+function overall(checks: RelayAssuranceV2['checks'], assurance: RelayAssuranceV2): RelayAssuranceV2['status'] {
   if (checks.some((item) => item.status === 'error')) return 'error';
   if (checks.some((item) => item.status === 'fail')) return 'fail';
   if (checks.some((item) => item.status === 'human_needed')) return 'human_needed';
@@ -25,10 +25,10 @@ function overall(checks: GsdAssuranceV2['checks'], assurance: GsdAssuranceV2): G
 
 /** Evaluate deterministic evidence and preserve the lifecycle, UAT, readiness,
  * and release obligations that are already projected from the event history. */
-export function evaluateAssuranceV2(run: GsdRunV2, input: GsdAssuranceV2): {
-  checks: GsdAssuranceV2['checks'];
-  scenarioCoverage: GsdAssuranceV2['scenarioCoverage'];
-  status: GsdAssuranceV2['status'];
+export function evaluateAssuranceV2(run: RelayRunV2, input: RelayAssuranceV2): {
+  checks: RelayAssuranceV2['checks'];
+  scenarioCoverage: RelayAssuranceV2['scenarioCoverage'];
+  status: RelayAssuranceV2['status'];
   unresolvedHumanActions: string[];
 } {
   const scenarios = run.artifacts.flatMap((artifact) => artifact.ids).filter((id) => id.includes('/scenario:'));

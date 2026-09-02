@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { dispatchRoleV2 } from '../src/execution-adapters.js';
 import { readEventStoreV2 } from '../src/events.js';
-import { checkGsdRunV2, startGsdRunV2 } from '../src/runner-v2.js';
+import { checkRelayRunV2, startRelayRunV2 } from '../src/runner-v2.js';
 import { readAssuranceStateV2 } from '../src/state.js';
 import {
   recordDispatchedRoleResultV2,
@@ -35,7 +35,7 @@ describe('dispatch-bound assurance provenance', () => {
     const { root } = await createOpenSpecProject();
     await fs.mkdir(path.join(root, 'src'), { recursive: true });
     await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 1;\n');
-    const started = await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    const started = await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
 
     await expect(recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'caller-reviewer', stage: 'reviewer' as never,
@@ -109,7 +109,7 @@ describe('dispatch-bound assurance provenance', () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.mkdir(path.join(root, 'src'), { recursive: true });
     await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 1;\n');
-    const started = await startGsdRunV2({
+    const started = await startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'], config: { repairLimit: 1 },
     });
     const sourceDigests = Object.fromEntries(started.run.artifacts.map((item) => [item.path, item.sourceDigest]));
@@ -152,7 +152,7 @@ describe('dispatch-bound assurance provenance', () => {
     });
 
     await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 2;\n');
-    await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     await recordWorkflowResultV2({
       change: 'demo', projectRoot: root, eventId: 'repair:complete', stage: 'executor',
       payload: { type: 'repair.recorded', repair: {
@@ -185,7 +185,7 @@ describe('dispatch-bound assurance provenance', () => {
     expect(resolved).toMatchObject({ status: 'resolved', verification: { verifier: { kind: 'verifier' } } });
 
     await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 3;\n');
-    const checked = await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    const checked = await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     expect(checked.assurance.debugSessions).toEqual([
       expect.objectContaining({ sessionId: session.sessionId, status: 'active' }),
     ]);
@@ -198,7 +198,7 @@ describe('dispatch-bound assurance provenance', () => {
     const { root, changeDir } = await createOpenSpecProject();
     await fs.mkdir(path.join(root, 'src'), { recursive: true });
     await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 1;\n');
-    const started = await startGsdRunV2({
+    const started = await startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'], config: { repairLimit: 1 },
     });
     const sourceDigests = Object.fromEntries(started.run.artifacts.map((item) => [item.path, item.sourceDigest]));
@@ -228,7 +228,7 @@ describe('dispatch-bound assurance provenance', () => {
       } },
     });
     await fs.writeFile(path.join(root, 'src/index.ts'), 'export const value = 2;\n');
-    await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
+    await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: ['src/index.ts'] });
     const verifier = await dispatchRoleV2({
       request: { role: 'verifier', readOnly: true, isolated: true },
       dispatcher: { dispatch: async () => ({

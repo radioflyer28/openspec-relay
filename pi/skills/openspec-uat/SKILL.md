@@ -1,18 +1,18 @@
 ---
 name: openspec-uat
-description: Guide scenario-by-scenario human acceptance for an OpenSpec GSD run.
+description: Guide scenario-by-scenario human acceptance for an OpenSpec Relay run.
 license: MIT
-compatibility: Requires the openspec and openspec-gsd CLIs.
+compatibility: Requires the openspec and openspec-relay CLIs.
 metadata:
-  author: openspec-gsd
-  version: "0.1.0"
+  author: openspec-relay
+  version: "0.2.0"
 ---
 
 Guide human acceptance one scenario at a time.
 
-Invoke `openspec-gsd uat <change> --json` to receive the next unresolved
+Invoke `openspec-relay uat <change> --json` to receive the next unresolved
 scenario, its prerequisites, action, and expected observable result. Record a
-human decision with `openspec-gsd uat <change> --scenario <id> --status
+human decision with `openspec-relay uat <change> --scenario <id> --status
 passed|failed|blocked|accepted_limitation --actor <human> --notes <text>` and
 optional portable evidence references.
 

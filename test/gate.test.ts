@@ -8,9 +8,9 @@ import {
   readRunStateV2,
   runStatePath,
 } from '../src/state.js';
-import { gsdAssuranceGate } from '../src/gate.js';
-import { checkGsdRunV2, startGsdRunV2 } from '../src/runner-v2.js';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { relayAssuranceGate } from '../src/gate.js';
+import { checkRelayRunV2, startRelayRunV2 } from '../src/runner-v2.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { startDebugSession } from '../src/debug-sessions.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
@@ -32,17 +32,17 @@ function context(root: string, changeDir: string): GateContextV1 {
   };
 }
 
-describe('OpenSpec GSD archive gate', () => {
+describe('OpenSpec Relay archive gate', () => {
   it('evaluates v2 projections and preserves their subordinate archive obligations', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [], config: { mode: 'quick' } });
-    const checked = await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [], config: { mode: 'quick' } });
+    const checked = await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
     expect(checked.run).toMatchObject({ version: 2, status: 'blocked' });
     expect(checked.assurance.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ checkId: 'repository-context', status: 'pass' }),
       expect.objectContaining({ checkId: 'plan-readiness', status: 'fail' }),
     ]));
-    expect(await gsdAssuranceGate.evaluate(context(root, changeDir)))
+    expect(await relayAssuranceGate.evaluate(context(root, changeDir)))
       .toMatchObject({ status: 'fail', summary: expect.stringContaining('repository-checks') });
   });
 
@@ -55,22 +55,22 @@ describe('OpenSpec GSD archive gate', () => {
       'The system SHALL demonstrate behavior.',
       '',
     ].join('\n'));
-    await startGsdRunV2({
+    await startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: [],
       config: { features: { uat: { enabled: true, required: true } } },
     });
-    expect(await gsdAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+    expect(await relayAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
       status: 'error', summary: expect.stringMatching(/required UAT.*no projected/i),
     });
   });
 
   it('fails closed for incomplete assurance and returns human-needed state', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
-    const initial = await gsdAssuranceGate.evaluate(context(root, changeDir));
-    expect(initial).toMatchObject({ status: 'error', gateId: 'gsd.assurance' });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    const initial = await relayAssuranceGate.evaluate(context(root, changeDir));
+    expect(initial).toMatchObject({ status: 'error', gateId: 'relay.assurance' });
     const store = await readEventStoreV2(changeDir);
-    await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+    await appendRelayEventV2({ changeDir, event: createRelayEventV2({
       eventId: 'human:visual', runId: store.runId, changeName: store.changeName,
       occurredAt: '2026-08-04T13:00:00.000Z', sourceDigests: {}, actor: { kind: 'human', id: 'maintainer' },
       provenance: { origin: 'gate-test' },
@@ -78,24 +78,24 @@ describe('OpenSpec GSD archive gate', () => {
     }) });
     const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: store.seed.config.taskOverrides });
     await writeReplayedProjectionsV2({ changeDir, store: await readEventStoreV2(changeDir), compiled });
-    expect(await gsdAssuranceGate.evaluate(context(root, changeDir)))
+    expect(await relayAssuranceGate.evaluate(context(root, changeDir)))
       .toMatchObject({ status: 'human_needed', summary: expect.stringMatching(/visual/i) });
   });
 
   it('blocks mismatched run and assurance digests', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
     const assurance = await readAssuranceStateV2(changeDir);
     await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify({
       ...assurance, updatedAt: '2026-08-04T13:00:00.000Z',
     }, null, 2)}\n`);
-    expect(await gsdAssuranceGate.evaluate(context(root, changeDir)))
+    expect(await relayAssuranceGate.evaluate(context(root, changeDir)))
       .toMatchObject({ status: 'error', summary: expect.stringMatching(/does not match|projection/i) });
   });
 
   it('rejects matching forged projections when canonical events remain incomplete', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
     const run = await readRunStateV2(changeDir);
     const assurance = JSON.parse(await fs.readFile(assuranceStatePath(changeDir), 'utf8')) as Record<string, unknown>;
     const forgedAssurance = {
@@ -110,20 +110,20 @@ describe('OpenSpec GSD archive gate', () => {
     await fs.writeFile(assuranceStatePath(changeDir), `${JSON.stringify(forgedAssurance, null, 2)}\n`);
     await fs.writeFile(runStatePath(changeDir), `${JSON.stringify(forgedRun, null, 2)}\n`);
 
-    expect(await gsdAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+    expect(await relayAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
       status: 'error', summary: expect.stringMatching(/canonical|replay|projection/i),
     });
   });
 
   it('blocks archive while a blocking debug session is unresolved', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, config: { mode: 'quick' } });
     const store = await readEventStoreV2(changeDir);
     const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: store.seed.config.taskOverrides });
     const session = startDebugSession({ logicalFailureId: 'check:targeted-tests', references: ['targeted-tests'],
       failedEvidence: [{ referenceId: 'check:targeted-tests', kind: 'generated', externalId: 'targeted-tests', available: true }],
       existing: [], now: '2026-08-12T12:00:00.000Z' });
-    await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+    await appendRelayEventV2({ changeDir, event: createRelayEventV2({
       eventId: 'debug:blocking', runId: store.runId, changeName: store.changeName,
       occurredAt: '2026-08-12T12:00:00.000Z',
       sourceDigests: Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest])),
@@ -131,7 +131,7 @@ describe('OpenSpec GSD archive gate', () => {
       payload: { type: 'debug.session_started', session },
     }) });
     await writeReplayedProjectionsV2({ changeDir, store: await readEventStoreV2(changeDir), compiled });
-    expect(await gsdAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
+    expect(await relayAssuranceGate.evaluate(context(root, changeDir))).toMatchObject({
       status: expect.stringMatching(/fail|human_needed/), summary: expect.stringMatching(/debug|investigation/i),
     });
   });

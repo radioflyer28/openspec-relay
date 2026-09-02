@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-/** The latest generated-state format written by OpenSpec GSD. */
-export const GSD_STATE_VERSION = 2 as const;
+/** The latest generated-state format written by OpenSpec Relay. */
+export const RELAY_STATE_VERSION = 2 as const;
 /** Retained solely for parsing and migrating pre-v2 projections. */
-export const GSD_V1_STATE_VERSION = 1 as const;
+export const RELAY_V1_STATE_VERSION = 1 as const;
 
 export const RunModeSchema = z.enum(['quick', 'guarded', 'full']);
 export const ExecutionTierSchema = z.enum(['tier0', 'tier1', 'tier2']);
@@ -105,8 +105,8 @@ const TaskOverrideV1Schema = z.object({
   tdd: TddPolicySchema.optional(),
 }).strict();
 
-export const GsdConfigV1Schema = z.object({
-  version: z.literal(GSD_V1_STATE_VERSION).default(GSD_V1_STATE_VERSION),
+export const RelayConfigV1Schema = z.object({
+  version: z.literal(RELAY_V1_STATE_VERSION).default(RELAY_V1_STATE_VERSION),
   mode: RunModeSchema.default('guarded'),
   tdd: TddPolicySchema.default('auto'),
   repairLimit: z.number().int().min(0).max(10).default(2),
@@ -221,8 +221,8 @@ export const VerificationFindingV1Schema = z.object({
   origin: z.enum(['reviewer', 'verifier', 'human']),
 }).strict();
 
-export const GsdRunV1Schema = z.object({
-  version: z.literal(GSD_V1_STATE_VERSION),
+export const RelayRunV1Schema = z.object({
+  version: z.literal(RELAY_V1_STATE_VERSION),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   changeRef: z.string().min(1),
@@ -237,12 +237,12 @@ export const GsdRunV1Schema = z.object({
   gateIds: z.array(z.string().min(1)),
   deviations: z.array(DeviationV1Schema).default([]),
   repairIds: z.array(z.string().min(1)).default([]),
-  config: GsdConfigV1Schema,
+  config: RelayConfigV1Schema,
   assuranceDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).strict();
 
-export const GsdAssuranceV1Schema = z.object({
-  version: z.literal(GSD_V1_STATE_VERSION),
+export const RelayAssuranceV1Schema = z.object({
+  version: z.literal(RELAY_V1_STATE_VERSION),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   mode: RunModeSchema,
@@ -257,8 +257,8 @@ export const GsdAssuranceV1Schema = z.object({
   unresolvedHumanActions: z.array(z.string().min(1)).default([]),
 }).strict();
 
-export const GsdReportV1Schema = z.object({
-  version: z.literal(GSD_V1_STATE_VERSION),
+export const RelayReportV1Schema = z.object({
+  version: z.literal(RELAY_V1_STATE_VERSION),
   reportId: z.string().min(1),
   runId: z.string().min(1),
   kind: z.enum(['review', 'verification', 'security', 'integration', 'ui', 'ai-evaluation', 'compatibility', 'documentation', 'human-uat']),
@@ -268,18 +268,18 @@ export const GsdReportV1Schema = z.object({
   evidenceRefs: z.array(z.string().min(1)),
 }).strict();
 
-export const GsdEventActorV1Schema = z.object({
+export const RelayEventActorV1Schema = z.object({
   kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host']),
   id: z.string().min(1).optional(),
 }).strict();
 
-export const GsdEventProvenanceV1Schema = z.object({
+export const RelayEventProvenanceV1Schema = z.object({
   origin: z.string().min(1),
   adapter: z.string().min(1).optional(),
   command: z.string().min(1).optional(),
 }).strict();
 
-export const GsdEventPayloadV1Schema = z.discriminatedUnion('type', [
+export const RelayEventPayloadV1Schema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('task.transition'),
     taskId: z.string().min(1),
@@ -300,56 +300,56 @@ export const GsdEventPayloadV1Schema = z.discriminatedUnion('type', [
   }).strict(),
 ]);
 
-export const GsdEventEnvelopeV1Schema = z.object({
-  version: z.literal(GSD_V1_STATE_VERSION),
+export const RelayEventEnvelopeV1Schema = z.object({
+  version: z.literal(RELAY_V1_STATE_VERSION),
   eventId: z.string().min(1),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   occurredAt: z.string().datetime(),
   sourceDigests: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/)),
-  actor: GsdEventActorV1Schema,
-  provenance: GsdEventProvenanceV1Schema,
+  actor: RelayEventActorV1Schema,
+  provenance: RelayEventProvenanceV1Schema,
   payloadDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  payload: GsdEventPayloadV1Schema,
+  payload: RelayEventPayloadV1Schema,
 }).strict();
 
-export const GsdEventStoreSeedV1Schema = z.object({
+export const RelayEventStoreSeedV1Schema = z.object({
   changeRef: z.string().min(1),
   mode: RunModeSchema,
   tier: ExecutionTierSchema,
   status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']),
   startedAt: z.string().datetime(),
   gateIds: z.array(z.string().min(1)),
-  config: GsdConfigV1Schema,
+  config: RelayConfigV1Schema,
   checks: z.array(AssuranceCheckV1Schema),
   scenarioCoverage: z.array(ScenarioCoverageV1Schema),
 }).strict();
 
-export const GsdEventStoreV1Schema = z.object({
-  version: z.literal(GSD_V1_STATE_VERSION),
-  owner: z.literal('openspec-gsd'),
+export const RelayEventStoreV1Schema = z.object({
+  version: z.literal(RELAY_V1_STATE_VERSION),
+  owner: z.literal('openspec-relay'),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   createdAt: z.string().datetime(),
-  seed: GsdEventStoreSeedV1Schema,
-  events: z.array(GsdEventEnvelopeV1Schema),
+  seed: RelayEventStoreSeedV1Schema,
+  events: z.array(RelayEventEnvelopeV1Schema),
 }).strict();
 
 export type RunMode = z.infer<typeof RunModeSchema>;
 export type ExecutionTier = z.infer<typeof ExecutionTierSchema>;
 export type TddPolicy = z.infer<typeof TddPolicySchema>;
-export type GsdConfigV1 = z.infer<typeof GsdConfigV1Schema>;
+export type RelayConfigV1 = z.infer<typeof RelayConfigV1Schema>;
 export type TaskNodeV1 = z.infer<typeof TaskNodeV1Schema>;
 export type EvidenceV1 = z.infer<typeof EvidenceV1Schema>;
 export type RepairAttemptV1 = z.infer<typeof RepairAttemptV1Schema>;
 export type AssuranceCheckV1 = z.infer<typeof AssuranceCheckV1Schema>;
 export type VerificationFindingV1 = z.infer<typeof VerificationFindingV1Schema>;
-export type GsdRunV1 = z.infer<typeof GsdRunV1Schema>;
-export type GsdAssuranceV1 = z.infer<typeof GsdAssuranceV1Schema>;
-export type GsdReportV1 = z.infer<typeof GsdReportV1Schema>;
-export type GsdEventPayloadV1 = z.infer<typeof GsdEventPayloadV1Schema>;
-export type GsdEventEnvelopeV1 = z.infer<typeof GsdEventEnvelopeV1Schema>;
-export type GsdEventStoreV1 = z.infer<typeof GsdEventStoreV1Schema>;
+export type RelayRunV1 = z.infer<typeof RelayRunV1Schema>;
+export type RelayAssuranceV1 = z.infer<typeof RelayAssuranceV1Schema>;
+export type RelayReportV1 = z.infer<typeof RelayReportV1Schema>;
+export type RelayEventPayloadV1 = z.infer<typeof RelayEventPayloadV1Schema>;
+export type RelayEventEnvelopeV1 = z.infer<typeof RelayEventEnvelopeV1Schema>;
+export type RelayEventStoreV1 = z.infer<typeof RelayEventStoreV1Schema>;
 
 export const PortableReferenceV2Schema = z.object({
   referenceId: z.string().min(1),
@@ -412,7 +412,7 @@ export const ReleaseAssuranceConfigV2Schema = z.object({
   message: 'release assurance disabled requires a recorded reason',
 });
 
-export const GsdFeatureConfigV2Schema = z.object({
+export const RelayFeatureConfigV2Schema = z.object({
   repositoryContext: RepositoryAnalysisConfigV2Schema.default({ enabled: true, boundaries: [] }),
   readiness: ReadinessConfigV2Schema.default({ rollout: 'required', independentRequired: true }),
   debug: DebugConfigV2Schema.default({ enabled: true, automaticTransition: true }),
@@ -428,12 +428,12 @@ export const PiHostAdapterConfigV1Schema = z.object({
   maxReadOnlyConcurrency: z.number().int().min(1).max(4).default(2),
 }).strict();
 
-export const GsdConfigV2Schema = GsdConfigV1Schema.omit({ version: true }).extend({
-  version: z.literal(GSD_STATE_VERSION).default(GSD_STATE_VERSION),
+export const RelayConfigV2Schema = RelayConfigV1Schema.omit({ version: true }).extend({
+  version: z.literal(RELAY_STATE_VERSION).default(RELAY_STATE_VERSION),
   piHostAdapter: PiHostAdapterConfigV1Schema.default({
     enabled: false, forceTier0: false, maxReadOnlyConcurrency: 2,
   }),
-  features: GsdFeatureConfigV2Schema.default({
+  features: RelayFeatureConfigV2Schema.default({
     repositoryContext: { enabled: true, boundaries: [] },
     readiness: { rollout: 'required', independentRequired: true },
     debug: { enabled: true, automaticTransition: true },
@@ -649,7 +649,7 @@ export const AssuranceCheckV2Schema = AssuranceCheckV1Schema.extend({
   ]),
 }).strict();
 
-export const GsdEventActorV2Schema = z.object({
+export const RelayEventActorV2Schema = z.object({
   kind: z.enum(['automation', 'executor', 'reviewer', 'verifier', 'human', 'host', 'analyzer', 'release_driver', 'planner', 'plan_reviewer', 'pathfinder']),
   id: z.string().min(1).optional(),
 }).strict();
@@ -664,7 +664,7 @@ export const HostAdapterProvenanceV1Schema = z.object({
   qualifiedAt: z.string().datetime(),
 }).strict();
 
-export const GsdEventPayloadV2Schema = z.discriminatedUnion('type', [
+export const RelayEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('host.adapter_qualified'), adapter: HostAdapterProvenanceV1Schema }).strict(),
   z.object({
     type: z.literal('task.transition'),
@@ -725,22 +725,22 @@ export const GsdEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('human.disposition_recorded'), subjectId: z.string().min(1), disposition: z.enum(['accepted_risk', 'human_needed']), actor: z.string().min(1), reason: z.string().min(1), scope: z.string().min(1), expiry: z.string().datetime().optional() }).strict(),
 ]);
 
-export const GsdEventEnvelopeV2Schema = z.object({
-  version: z.literal(GSD_STATE_VERSION),
+export const RelayEventEnvelopeV2Schema = z.object({
+  version: z.literal(RELAY_STATE_VERSION),
   eventId: z.string().min(1),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   occurredAt: z.string().datetime(),
   sourceDigests: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/)),
-  actor: GsdEventActorV2Schema,
-  provenance: GsdEventProvenanceV1Schema,
+  actor: RelayEventActorV2Schema,
+  provenance: RelayEventProvenanceV1Schema,
   payloadDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  payload: GsdEventPayloadV2Schema,
+  payload: RelayEventPayloadV2Schema,
 }).strict();
 
-export const GsdRunV2Schema = GsdRunV1Schema.omit({ version: true, config: true }).extend({
-  version: z.literal(GSD_STATE_VERSION),
-  config: GsdConfigV2Schema,
+export const RelayRunV2Schema = RelayRunV1Schema.omit({ version: true, config: true }).extend({
+  version: z.literal(RELAY_STATE_VERSION),
+  config: RelayConfigV2Schema,
   stateRevision: z.string().regex(/^[a-f0-9]{64}$/),
   repositoryContextId: z.string().min(1).optional(),
   readinessResultId: z.string().min(1).optional(),
@@ -748,10 +748,10 @@ export const GsdRunV2Schema = GsdRunV1Schema.omit({ version: true, config: true 
   planApprovalStatus: z.enum(['missing', 'current', 'stale']).default('missing'),
 }).strict();
 
-export const GsdAssuranceV2Schema = GsdAssuranceV1Schema.omit({
+export const RelayAssuranceV2Schema = RelayAssuranceV1Schema.omit({
   version: true, checks: true, findings: true,
 }).extend({
-  version: z.literal(GSD_STATE_VERSION),
+  version: z.literal(RELAY_STATE_VERSION),
   checks: z.array(AssuranceCheckV2Schema),
   findings: z.array(FindingLifecycleRecordV2Schema),
   repositoryContext: RepositoryContextV2Schema.optional(),
@@ -769,9 +769,9 @@ export const GsdAssuranceV2Schema = GsdAssuranceV1Schema.omit({
   planStale: z.boolean().default(false),
 }).strict();
 
-export const GsdEventStoreV2Schema = z.object({
-  version: z.literal(GSD_STATE_VERSION),
-  owner: z.literal('openspec-gsd'),
+export const RelayEventStoreV2Schema = z.object({
+  version: z.literal(RELAY_STATE_VERSION),
+  owner: z.literal('openspec-relay'),
   runId: z.string().min(1),
   changeName: z.string().min(1),
   createdAt: z.string().datetime(),
@@ -782,11 +782,11 @@ export const GsdEventStoreV2Schema = z.object({
     status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']),
     startedAt: z.string().datetime(),
     gateIds: z.array(z.string().min(1)),
-    config: GsdConfigV2Schema,
+    config: RelayConfigV2Schema,
     checks: z.array(AssuranceCheckV2Schema),
     scenarioCoverage: z.array(ScenarioCoverageV1Schema),
   }).strict(),
-  events: z.array(GsdEventEnvelopeV2Schema),
+  events: z.array(RelayEventEnvelopeV2Schema),
 }).strict();
 
 export type PortableReferenceV2 = z.infer<typeof PortableReferenceV2Schema>;
@@ -797,7 +797,7 @@ export type PlanApprovalV1 = z.infer<typeof PlanApprovalV1Schema>;
 export type PathfinderResultV1 = z.infer<typeof PathfinderResultV1Schema>;
 export type PlanReviewResultV1 = z.infer<typeof PlanReviewResultV1Schema>;
 export type FindingRouteV1 = z.infer<typeof FindingRouteV1Schema>;
-export type GsdConfigV2 = z.infer<typeof GsdConfigV2Schema>;
+export type RelayConfigV2 = z.infer<typeof RelayConfigV2Schema>;
 export type ConfiguredReleaseCommandV2 = z.infer<typeof ConfiguredReleaseCommandV2Schema>;
 export type RepositoryContextClaimV2 = z.infer<typeof RepositoryContextClaimV2Schema>;
 export type RepositoryContextV2 = z.infer<typeof RepositoryContextV2Schema>;
@@ -813,10 +813,10 @@ export type DebugVerificationV2 = z.infer<typeof DebugVerificationV2Schema>;
 export type DebugSessionV2 = z.infer<typeof DebugSessionV2Schema>;
 export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;
-export type GsdEventPayloadV2 = z.infer<typeof GsdEventPayloadV2Schema>;
+export type RelayEventPayloadV2 = z.infer<typeof RelayEventPayloadV2Schema>;
 export type HostAdapterProvenanceV1 = z.infer<typeof HostAdapterProvenanceV1Schema>;
-export type GsdEventActorV2 = z.infer<typeof GsdEventActorV2Schema>;
-export type GsdEventEnvelopeV2 = z.infer<typeof GsdEventEnvelopeV2Schema>;
-export type GsdRunV2 = z.infer<typeof GsdRunV2Schema>;
-export type GsdAssuranceV2 = z.infer<typeof GsdAssuranceV2Schema>;
-export type GsdEventStoreV2 = z.infer<typeof GsdEventStoreV2Schema>;
+export type RelayEventActorV2 = z.infer<typeof RelayEventActorV2Schema>;
+export type RelayEventEnvelopeV2 = z.infer<typeof RelayEventEnvelopeV2Schema>;
+export type RelayRunV2 = z.infer<typeof RelayRunV2Schema>;
+export type RelayAssuranceV2 = z.infer<typeof RelayAssuranceV2Schema>;
+export type RelayEventStoreV2 = z.infer<typeof RelayEventStoreV2Schema>;

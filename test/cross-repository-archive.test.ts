@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { acceptGsdGateV2, startGsdRunV2 } from '../src/index.js';
+import { acceptRelayGateV2, startRelayRunV2 } from '../src/index.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -31,17 +31,17 @@ describe('cross-repository archive gate flow', () => {
     expect(initialized.status, initialized.stderr || initialized.stdout).toBe(0);
     const linked = openspec(root, ['extension', 'link', path.resolve('.')]);
     expect(linked.status, linked.stderr || linked.stdout).toBe(0);
-    const doctor = openspec(root, ['extension', 'doctor', 'gsd']);
+    const doctor = openspec(root, ['extension', 'doctor', 'relay']);
     expect(doctor.status, doctor.stderr || doctor.stdout).toBe(0);
     expect(doctor.stdout).toContain('reconciliation: ok');
     const generatedRun = await fs.readFile(
       path.join(root, '.agents', 'skills', 'openspec-do', 'SKILL.md'),
       'utf8',
     );
-    expect(generatedRun).toContain('openspec-extension:gsd@');
+    expect(generatedRun).toContain('openspec-extension:relay@');
     expect(generatedRun).toContain('$openspec-apply-change');
 
-    const run = await startGsdRunV2({ change: 'demo', projectRoot: root });
+    const run = await startRelayRunV2({ change: 'demo', projectRoot: root });
     expect(run.run.mode).toBe('guarded');
 
     const blocked = openspec(root, [
@@ -53,10 +53,10 @@ describe('cross-repository archive gate flow', () => {
       status: [expect.objectContaining({ code: 'archive_gate_blocked' })],
     });
 
-    await expect(acceptGsdGateV2({
+    await expect(acceptRelayGateV2({
       change: 'demo',
       projectRoot: root,
-      gateId: 'gsd.assurance',
+      gateId: 'relay.assurance',
       actor: 'integration-test',
     })).rejects.toThrow(/no current human-needed result/i);
     const stillBlocked = openspec(root, [
@@ -65,12 +65,12 @@ describe('cross-repository archive gate flow', () => {
     expect(stillBlocked.status).not.toBe(0);
     const archived = openspec(root, [
       'archive', 'demo', '--yes', '--no-validate', '--skip-specs', '--json',
-      '--override-gate', 'gsd.assurance', '--reason', 'Cross-repository fixture intentionally leaves deterministic checks pending.',
+      '--override-gate', 'relay.assurance', '--reason', 'Cross-repository fixture intentionally leaves deterministic checks pending.',
     ]);
     expect(archived.status, archived.stderr || archived.stdout).toBe(0);
     const archiveRoot = path.join(root, 'openspec', 'changes', 'archive');
     const archivedName = (await fs.readdir(archiveRoot)).find((name) => name.endsWith('-demo'))!;
-    await expect(fs.access(path.join(archiveRoot, archivedName, '.openspec-gsd', 'assurance.json')))
+    await expect(fs.access(path.join(archiveRoot, archivedName, '.openspec-relay', 'assurance.json')))
       .resolves.toBeUndefined();
     const gateRecord = JSON.parse(await fs.readFile(
       path.join(archiveRoot, archivedName, '.openspec-gates.json'), 'utf8',
@@ -85,11 +85,11 @@ describe('cross-repository archive gate flow', () => {
     const { root } = await createOpenSpecProject('override-demo');
     const linked = openspec(root, ['extension', 'link', path.resolve('.')]);
     expect(linked.status, linked.stderr || linked.stdout).toBe(0);
-    await startGsdRunV2({ change: 'override-demo', projectRoot: root });
+    await startRelayRunV2({ change: 'override-demo', projectRoot: root });
 
     const archived = openspec(root, [
       'archive', 'override-demo', '--yes', '--no-validate', '--skip-specs', '--json',
-      '--override-gate', 'gsd.assurance',
+      '--override-gate', 'relay.assurance',
       '--reason', 'Release owner accepted the documented residual risk.',
     ]);
     expect(archived.status, archived.stderr || archived.stdout).toBe(0);

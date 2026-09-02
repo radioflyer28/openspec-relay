@@ -2,10 +2,10 @@
 name: openspec-plan
 description: Refine, review, and approve an OpenSpec change for execution.
 license: MIT
-compatibility: Requires the openspec and openspec-gsd CLIs.
+compatibility: Requires the openspec and openspec-relay CLIs.
 metadata:
-  author: openspec-gsd
-  version: "0.1.0"
+  author: openspec-relay
+  version: "0.2.0"
 ---
 
 Plan and approve an existing OpenSpec change for execution.
@@ -27,11 +27,11 @@ Plan and approve an existing OpenSpec change for execution.
    Give it read-only repository access and a disposable experiment workspace;
    incorporate technical conclusions through the planner and route material
    product conclusions to discussion.
-5. In Pi, invoke the internal `openspec_gsd_workflow` tool with operation
+5. In Pi, invoke the internal `openspec_relay_workflow` tool with operation
    `plan`; it live-qualifies the adapter and supplies fresh read-only pathfinder
-   and plan-reviewer sessions to the existing `planGsdChangeV1` coordinator.
+   and plan-reviewer sessions to the existing `planRelayChangeV1` coordinator.
    The parent remains the planner. If the tool reports a fallback, invoke its
-   exact `openspec-gsd plan <change>` command. Tier 0 records self-review as
+   exact `openspec-relay plan <change>` command. Tier 0 records self-review as
    `independent: false`, warns the developer, and requires explicit
    `--allow-self-review` to approve.
 6. The plan reviewer evaluates semantic faithfulness, complete coverage,

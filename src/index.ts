@@ -3,19 +3,19 @@
  *
  * Canonical event and projection writers are intentionally not exported. Role
  * adapters return structured results; only these orchestrated operations may
- * commit them to OpenSpec GSD execution records.
+ * commit them to OpenSpec Relay execution records.
  */
-export { GSD_VERSION } from './version.js';
-export { gsdAssuranceGate } from './gate.js';
+export { RELAY_VERSION } from './version.js';
+export { relayAssuranceGate } from './gate.js';
 export {
   DEFAULT_HOST_CAPABILITIES,
-  checkGsdRunV2,
-  startGsdRunV2,
+  checkRelayRunV2,
+  startRelayRunV2,
   type StartRunResultV2,
 } from './runner-v2.js';
 export { getRunStatusV2, type RunStatusV2 } from './status.js';
 export {
-  acceptGsdGateV2,
+  acceptRelayGateV2,
   observeDebugExperimentV2,
   planDebugExperimentV2,
   presentUatV2,
@@ -52,7 +52,7 @@ export {
   type TierAdaptersV1,
   type TierDecisionV1,
 } from './tiers.js';
-export { loadGsdConfigV2 } from './config.js';
+export { loadRelayConfigV2 } from './config.js';
 export {
   confirmDiscussionHandoff,
   type DiscussionArtifactMappingV1,
@@ -69,30 +69,30 @@ export {
   type SemanticPlanRevisionV1,
 } from './planning.js';
 export {
-  planGsdChangeV1,
+  planRelayChangeV1,
   type DisposablePathfinderWorkspaceV1,
-  type PlanGsdChangeOptionsV1,
-  type PlanGsdChangeResultV1,
+  type PlanRelayChangeOptionsV1,
+  type PlanRelayChangeResultV1,
 } from './plan-workflow.js';
 export {
   assertCurrentPlanApprovalV1,
-  doGsdChangeV1,
+  doRelayChangeV1,
   type CanonicalApplyCapabilityV1,
   type CanonicalApplyRequestV1,
   type CanonicalApplyResultV1,
-  type DoGsdChangeResultV1,
+  type DoRelayChangeResultV1,
 } from './do-workflow.js';
 export { routeDispatchedFindingsV1 } from './finding-routing.js';
 export {
   ExecutionTierSchema,
-  GsdConfigV2Schema,
+  RelayConfigV2Schema,
   PortableReferenceV2Schema,
   RunModeSchema,
   TddPolicySchema,
   type ExecutionTier,
-  type GsdAssuranceV2,
-  type GsdConfigV2,
-  type GsdRunV2,
+  type RelayAssuranceV2,
+  type RelayConfigV2,
+  type RelayRunV2,
   type PortableReferenceV2,
   type RunMode,
   type TddPolicy,

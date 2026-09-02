@@ -1,4 +1,4 @@
-# OpenSpec GSD supplement
+# OpenSpec Relay supplement
 
 Apply the upstream grilling instructions above with these narrowly scoped
 OpenSpec specializations. They add product-development context; they do not

@@ -1,9 +1,9 @@
 import { compileOpenSpecChange } from '../artifacts.js';
-import { loadGsdConfigV2 } from '../config.js';
-import { doGsdChangeV1 } from '../do-workflow.js';
+import { loadRelayConfigV2 } from '../config.js';
+import { doRelayChangeV1 } from '../do-workflow.js';
 import { computeSemanticPlanRevision } from '../planning.js';
-import { planGsdChangeV1 } from '../plan-workflow.js';
-import { checkGsdRunV2 } from '../runner-v2.js';
+import { planRelayChangeV1 } from '../plan-workflow.js';
+import { checkRelayRunV2 } from '../runner-v2.js';
 import { getRunStatusV2 } from '../status.js';
 import { resolveChangeDirectory } from '../state.js';
 import { createPiExperimentWorkspace, type PiExperimentWorkspaceV1 } from './experiment-workspace.js';
@@ -22,7 +22,7 @@ export interface PiWorkflowOperationResultV1 {
 
 async function semanticRevision(projectRoot: string, change: string): Promise<string> {
   const resolved = await resolveChangeDirectory({ projectRoot, change });
-  const config = await loadGsdConfigV2({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir });
+  const config = await loadRelayConfigV2({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir });
   const compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: config.taskOverrides });
   return (await computeSemanticPlanRevision({ changeDir: resolved.changeDir, compiled })).revision;
 }
@@ -44,7 +44,7 @@ function disposableWorkspaces() {
 }
 
 /** The sole in-process Pi integration point. It delegates lifecycle decisions
- * to existing OpenSpec GSD workflows and supplies only qualified read-only
+ * to existing OpenSpec Relay workflows and supplies only qualified read-only
  * assurance dispatch. Canonical implementation remains $openspec-apply-change
  * in the parent session. */
 export async function executePiWorkflowOperationV1(options: {
@@ -57,13 +57,13 @@ export async function executePiWorkflowOperationV1(options: {
   parentSignal?: AbortSignal;
 }): Promise<PiWorkflowOperationResultV1> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
-  const config = await loadGsdConfigV2({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir });
+  const config = await loadRelayConfigV2({ projectRoot: resolved.projectRoot, changeDir: resolved.changeDir });
   const adapter = await qualifyPiHostAdapter({
     enabled: config.piHostAdapter.enabled,
     forceTier0: config.piHostAdapter.forceTier0,
     runtime: options.runtime,
   });
-  const fallbackCommand = `openspec-gsd ${options.operation} ${resolved.changeName}${options.operation === 'status' ? ' --json' : ''}`;
+  const fallbackCommand = `openspec-relay ${options.operation} ${resolved.changeName}${options.operation === 'status' ? ' --json' : ''}`;
   if (adapter.agentDispatch.state !== 'available') {
     return { operation: options.operation, adapter, usedAdapter: false, fallbackCommand };
   }
@@ -81,7 +81,7 @@ export async function executePiWorkflowOperationV1(options: {
   };
   if (options.operation === 'plan') {
     const qualifiedAt = new Date().toISOString();
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: resolved.changeName,
       projectRoot: resolved.projectRoot,
       changedFiles: [],
@@ -106,7 +106,7 @@ export async function executePiWorkflowOperationV1(options: {
     return { operation: options.operation, adapter, usedAdapter: true, result };
   }
   if (options.operation === 'do') {
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: resolved.changeName,
       projectRoot: resolved.projectRoot,
       dispatcher,
@@ -119,7 +119,7 @@ export async function executePiWorkflowOperationV1(options: {
     return { operation: options.operation, adapter, usedAdapter: true, result };
   }
   if (options.operation === 'check') {
-    const result = await checkGsdRunV2({ change: resolved.changeName, projectRoot: resolved.projectRoot });
+    const result = await checkRelayRunV2({ change: resolved.changeName, projectRoot: resolved.projectRoot });
     return { operation: options.operation, adapter, usedAdapter: true, result };
   }
   const result = await getRunStatusV2({ change: resolved.changeName, projectRoot: resolved.projectRoot });
