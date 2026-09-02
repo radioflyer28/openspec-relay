@@ -55,7 +55,7 @@ describe('published package boundary', () => {
       'dist', 'workflows', 'openspec-extension.json', 'README.md',
     ]));
     expect(pkg.peerDependencies['@fission-ai/openspec'])
-      .toBe('>=1.8.0-gsd.1 <2.0.0');
+      .toBe('>=1.11.0-gsd.1 <2.0.0');
     expect(pkg.dependencies?.['@fission-ai/openspec']).toBeUndefined();
     expect(pkg.devDependencies['@fission-ai/openspec']).toBe('file:../OpenSpec');
   });

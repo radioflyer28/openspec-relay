@@ -24,7 +24,7 @@ describe('OpenSpec extension conformance', () => {
   it('rejects an official semver-compatible package when the extension API is absent', async () => {
     const result = await checkExtensionConformanceV1({
       extensionRoot: path.resolve('.'),
-      coreVersion: '1.8.0',
+      coreVersion: '1.11.0',
       extensionApiProvider: {},
     });
 

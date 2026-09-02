@@ -360,14 +360,14 @@ describe('conditional release assurance', () => {
     await fs.writeFile(path.join(root, 'workflows', 'run.md'), 'Run the extension.\n');
     await fs.writeFile(path.join(root, 'openspec-extension.json'), JSON.stringify({
       apiVersion: 'openspec.dev/extensions/v1', id: 'example-extension', version: '1.2.3',
-      requires: { openspec: '>=1.8.0-gsd.1 <2.0.0',
+      requires: { openspec: '>=1.11.0-gsd.1 <2.0.0',
         hostCapabilities: { required: ['structuredResults'], optional: [] } },
       contributes: { workflows: [{ id: 'run', name: 'Run', description: 'Run.', entry: 'workflows/run.md',
         artifactRequirements: ['tasks'], gateDependencies: [], requiredHostCapabilities: ['structuredResults'] }], gates: [] },
     }));
     const api = release as Record<string, unknown>;
     const previousCoreRoot = process.env.OPENSPEC_CORE_ROOT;
-    process.env.OPENSPEC_CORE_ROOT = path.resolve('..', 'OpenSpec');
+    process.env.OPENSPEC_CORE_ROOT = previousCoreRoot ?? path.resolve('..', 'OpenSpec');
     const candidates = await (api.executeReleaseCandidates as (input: Record<string, unknown>) => Promise<Array<{
       surface: string; status: string; checks: Array<{ checkId: string; status: string }>;
     }>>)({
