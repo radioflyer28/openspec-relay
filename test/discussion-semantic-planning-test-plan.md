@@ -7,7 +7,7 @@ family to executable evidence without creating another product plan.
 ## Frozen baseline
 
 - OpenSpec fork: `b3a4202be3b2bc456d2d0526c05cf112f47d7dc3`
-- OpenSpec GSD companion: `2b495bb89c0b9397e521d17169a52d18f7d06bca`
+- OpenSpec Relay companion: `2b495bb89c0b9397e521d17169a52d18f7d06bca`
 - Companion package and extension version: `0.1.0`
 - Canonical event/projection version: `2`
 - Existing workflow contributions: `run`, `check`, `run-status`, `debug`, `uat`

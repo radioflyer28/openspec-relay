@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { dispatchRoleV2, type RoleDispatcherV1, type RoleRequestV1 } from '../src/execution-adapters.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
-import { planGsdChangeV1 } from '../src/plan-workflow.js';
+import { planRelayChangeV1 } from '../src/plan-workflow.js';
 import { classifySemanticRequirements } from '../src/semantics.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
@@ -23,11 +23,11 @@ const passingDispatcher = (requests: RoleRequestV1[]): RoleDispatcherV1 => ({ di
   return { status: 'pass', summary: `${request.role} passed`, evidenceRefs: [`evidence:${request.role}`] };
 } });
 
-describe('reusable OpenSpec GSD planning', () => {
+describe('reusable OpenSpec Relay planning', () => {
   it('accepts a read-only assurance dispatcher without granting writable planner authority', async () => {
     const { root } = await createOpenSpecProject();
     const requests: RoleRequestV1[] = [];
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [],
       assuranceDispatcher: passingDispatcher(requests),
     });
@@ -38,7 +38,7 @@ describe('reusable OpenSpec GSD planning', () => {
   it('dispatches a writable planner and fresh read-only reviewer, then approves the semantic revision', async () => {
     const { root } = await createOpenSpecProject();
     const requests: RoleRequestV1[] = [];
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [],
       dispatcher: passingDispatcher(requests),
     });
@@ -62,7 +62,7 @@ describe('reusable OpenSpec GSD planning', () => {
 
   it('discloses Tier 0 self-review and requires an explicit continue choice', async () => {
     const first = await createOpenSpecProject('needs-choice');
-    const blocked = await planGsdChangeV1({
+    const blocked = await planRelayChangeV1({
       change: 'needs-choice', projectRoot: first.root, config, changedFiles: [],
     });
     expect(blocked).toMatchObject({
@@ -72,7 +72,7 @@ describe('reusable OpenSpec GSD planning', () => {
     expect(blocked.nextAction).toMatch(/self-review|feedback/i);
 
     const second = await createOpenSpecProject('continued');
-    const continued = await planGsdChangeV1({
+    const continued = await planRelayChangeV1({
       change: 'continued', projectRoot: second.root, config, changedFiles: [], allowSelfReview: true,
     });
     expect(continued).toMatchObject({
@@ -83,7 +83,7 @@ describe('reusable OpenSpec GSD planning', () => {
 
   it('keeps deterministic readiness blockers as an immutable approval lower bound', async () => {
     const { root } = await createOpenSpecProject();
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [],
       dispatcher: passingDispatcher([]),
     });
@@ -114,7 +114,7 @@ describe('reusable OpenSpec GSD planning', () => {
       };
       return { status: 'pass', summary: 'pass', evidenceRefs: [] };
     } };
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher,
       pathfinderQuestions: ['Can cancellation race with completion?'],
       pathfinderWorkspaces: {
@@ -148,7 +148,7 @@ describe('reusable OpenSpec GSD planning', () => {
         conclusion: 'Evidence is sufficient.', confidence: 'high', routing: 'planner',
       } };
     } };
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [], assuranceDispatcher,
       pathfinderQuestions: ['one', 'two', 'three'], readOnlyConcurrency: 2,
       pathfinderWorkspaces: { create: async (id) => `/tmp/${id}`, cleanup: async () => undefined },
@@ -167,7 +167,7 @@ describe('reusable OpenSpec GSD planning', () => {
         counterexamples: [], conclusion: 'The human must choose destructive or reversible behavior.',
         confidence: 'high', routing: 'discussion' },
     } : { status: 'pass', summary: 'pass', evidenceRefs: [] } };
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher,
       pathfinderQuestions: ['Which deletion contract applies?'],
       pathfinderWorkspaces: { create: async () => '/tmp/disposable', cleanup: async () => undefined },
@@ -190,7 +190,7 @@ describe('reusable OpenSpec GSD planning', () => {
       };
       return { status: 'pass', summary: 'pass', evidenceRefs: [] };
     } };
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher,
       invocation: 'do_replan', findingIds: ['finding:original'],
     });
@@ -212,14 +212,14 @@ describe('reusable OpenSpec GSD planning', () => {
       }
       return { status: 'pass', summary: 'planner', evidenceRefs: [] };
     } };
-    const result = await planGsdChangeV1({ change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher });
+    const result = await planRelayChangeV1({ change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher });
     expect(result).toMatchObject({ status: 'fail', cycles: 2 });
     expect(reviews).toBe(2);
   });
 
   it('preserves a terminal assurance-dispatch diagnostic for remediation', async () => {
     const { root } = await createOpenSpecProject();
-    const result = await planGsdChangeV1({
+    const result = await planRelayChangeV1({
       change: 'demo', projectRoot: root, config, changedFiles: [],
       assuranceDispatcher: { dispatch: async () => ({
         status: 'error', summary: 'Pi role result rejected: findings[0].scope is missing.', evidenceRefs: [],
@@ -247,7 +247,7 @@ describe('reusable OpenSpec GSD planning', () => {
       'The policy engine SHALL preserve role permissions after session refresh.', '',
       '#### Scenario: Works', '- **WHEN** the session refreshes', '- **THEN** role permissions are preserved', '',
     ].join('\n'));
-    const modeled = await planGsdChangeV1({
+    const modeled = await planRelayChangeV1({
       change: 'authorization-state', projectRoot: authorization.root, config, changedFiles: [],
       dispatcher: passingDispatcher([]),
     });
@@ -261,7 +261,7 @@ describe('reusable OpenSpec GSD planning', () => {
       'Cancellation requested before publication.', '',
       '#### Scenario: Works', '- **WHEN** cancellation is requested', '- **THEN** publication stops', '',
     ].join('\n'));
-    const rejected = await planGsdChangeV1({
+    const rejected = await planRelayChangeV1({
       change: 'malformed-semantics', projectRoot: malformed.root, config, changedFiles: [],
       dispatcher: passingDispatcher([]),
     });
@@ -279,7 +279,7 @@ describe('reusable OpenSpec GSD planning', () => {
         ...minimum, level: 'simple', rationale: 'The planner claimed this was ordinary.', provenance: 'planner',
       }] }
       : { status: 'pass', summary: 'review passed', evidenceRefs: [] } };
-    await expect(planGsdChangeV1({
+    await expect(planRelayChangeV1({
       change: 'planner-lower-bound', projectRoot: root, config, changedFiles: [], dispatcher,
     })).rejects.toThrow(/lower bound/i);
   });

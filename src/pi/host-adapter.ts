@@ -16,7 +16,7 @@ export type PiCapabilityStateV1 = z.infer<typeof PiCapabilityStateV1Schema>;
 
 export const PiHostCapabilityProfileV1Schema = z.object({
   version: z.literal(PI_HOST_ADAPTER_VERSION),
-  adapterId: z.literal('openspec-gsd/pi'),
+  adapterId: z.literal('openspec-relay/pi'),
   piVersion: z.string().min(1),
   sessionId: z.string().min(1).optional(),
   modelRef: z.string().min(1).optional(),
@@ -81,7 +81,7 @@ function profile(options: {
   const parallelAvailable = dispatchAvailable && options.parallelism.state === 'available';
   return PiHostCapabilityProfileV1Schema.parse({
     version: PI_HOST_ADAPTER_VERSION,
-    adapterId: 'openspec-gsd/pi',
+    adapterId: 'openspec-relay/pi',
     piVersion: options.runtime.piVersion,
     ...(options.runtime.sessionId ? { sessionId: options.runtime.sessionId } : {}),
     ...(options.runtime.modelRef ? { modelRef: options.runtime.modelRef } : {}),

@@ -16,7 +16,7 @@ const TEST_FILE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)(?:test|tests|__tes
 const MANIFEST_NAMES = new Set([
   'package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'composer.json', 'Gemfile',
 ]);
-const IGNORED_DIRECTORIES = new Set(['.git', '.openspec-gsd', 'node_modules', 'dist', 'coverage', '.next']);
+const IGNORED_DIRECTORIES = new Set(['.git', '.openspec-relay', 'node_modules', 'dist', 'coverage', '.next']);
 const execFileAsync = promisify(execFile);
 
 export type RepositoryAnalysisTierV2 = 'tier0' | 'tier1' | 'tier2';

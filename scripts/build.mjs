@@ -14,4 +14,4 @@ execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', 'ts
   stdio: 'inherit',
 });
 chmodSync(new URL('../dist/cli.js', import.meta.url), 0o755);
-chmodSync(new URL('../pi/bin/openspec-gsd', import.meta.url), 0o755);
+chmodSync(new URL('../pi/bin/openspec-relay', import.meta.url), 0o755);

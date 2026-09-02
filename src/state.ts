@@ -2,14 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
-  GsdAssuranceV1Schema,
-  GsdAssuranceV2Schema,
-  GsdRunV1Schema,
-  GsdRunV2Schema,
-  type GsdAssuranceV1,
-  type GsdAssuranceV2,
-  type GsdRunV1,
-  type GsdRunV2,
+  RelayAssuranceV1Schema,
+  RelayAssuranceV2Schema,
+  RelayRunV1Schema,
+  RelayRunV2Schema,
+  type RelayAssuranceV1,
+  type RelayAssuranceV2,
+  type RelayRunV1,
+  type RelayRunV2,
 } from './schemas.js';
 
 export interface ResolvedChange {
@@ -21,16 +21,16 @@ export interface ResolvedChange {
 }
 
 /**
- * Every generated path owned by OpenSpec GSD. Values are portable identities;
- * callers must use gsdGeneratedPath() at a filesystem boundary.
+ * Every generated path owned by OpenSpec Relay. Values are portable identities;
+ * callers must use relayGeneratedPath() at a filesystem boundary.
  */
-export const GSD_GENERATED_FILES = {
+export const RELAY_GENERATED_FILES = {
   run: 'run.json',
   assurance: 'assurance.json',
   events: 'events.json',
 } as const;
 
-export type GsdGeneratedFile = keyof typeof GSD_GENERATED_FILES;
+export type RelayGeneratedFile = keyof typeof RELAY_GENERATED_FILES;
 
 async function isDirectory(candidate: string): Promise<boolean> {
   try {
@@ -108,24 +108,24 @@ export async function resolveChangeDirectory(options: {
   };
 }
 
-export function gsdDirectory(changeDir: string): string {
-  return path.join(changeDir, '.openspec-gsd');
+export function relayDirectory(changeDir: string): string {
+  return path.join(changeDir, '.openspec-relay');
 }
 
-export function gsdGeneratedPath(
+export function relayGeneratedPath(
   changeDir: string,
-  file: GsdGeneratedFile,
+  file: RelayGeneratedFile,
   pathApi: path.PlatformPath = path,
 ): string {
-  return pathApi.join(gsdDirectory(changeDir), ...GSD_GENERATED_FILES[file].split('/'));
+  return pathApi.join(relayDirectory(changeDir), ...RELAY_GENERATED_FILES[file].split('/'));
 }
 
 export function runStatePath(changeDir: string): string {
-  return gsdGeneratedPath(changeDir, 'run');
+  return relayGeneratedPath(changeDir, 'run');
 }
 
 export function assuranceStatePath(changeDir: string): string {
-  return gsdGeneratedPath(changeDir, 'assurance');
+  return relayGeneratedPath(changeDir, 'assurance');
 }
 
 function contained(root: string, candidate: string): boolean {
@@ -134,48 +134,48 @@ function contained(root: string, candidate: string): boolean {
 }
 
 /**
- * Validate that a registered OpenSpec GSD path is contained by the active change
+ * Validate that a registered OpenSpec Relay path is contained by the active change
  * and that its existing ancestors are ordinary directories rather than links.
  */
-export async function assertGsdGeneratedPath(options: {
+export async function assertRelayGeneratedPath(options: {
   changeDir: string;
   filename: string;
   createParents?: boolean;
   allowMissingFile?: boolean;
 }): Promise<string> {
   const logicalChangeRoot = path.resolve(options.changeDir);
-  const logicalGsdRoot = path.join(logicalChangeRoot, '.openspec-gsd');
+  const logicalRelayRoot = path.join(logicalChangeRoot, '.openspec-relay');
   const target = path.resolve(options.filename);
-  if (!contained(logicalGsdRoot, target)) {
-    throw new Error(`Generated OpenSpec GSD path '${target}' escapes the active change workspace.`);
+  if (!contained(logicalRelayRoot, target)) {
+    throw new Error(`Generated OpenSpec Relay path '${target}' escapes the active change workspace.`);
   }
   const realChangeRoot = await fs.realpath(logicalChangeRoot);
-  const expectedRealRoot = path.join(realChangeRoot, '.openspec-gsd');
+  const expectedRealRoot = path.join(realChangeRoot, '.openspec-relay');
   try {
-    const rootStat = await fs.lstat(logicalGsdRoot);
+    const rootStat = await fs.lstat(logicalRelayRoot);
     if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
-      throw new Error(`Generated OpenSpec GSD directory '${logicalGsdRoot}' must be a real directory, not a symlink or junction.`);
+      throw new Error(`Generated OpenSpec Relay directory '${logicalRelayRoot}' must be a real directory, not a symlink or junction.`);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.createParents) throw error;
-    await fs.mkdir(logicalGsdRoot).catch((mkdirError) => {
+    await fs.mkdir(logicalRelayRoot).catch((mkdirError) => {
       if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError;
     });
   }
-  const realGsdRoot = await fs.realpath(logicalGsdRoot);
-  if (path.normalize(realGsdRoot) !== path.normalize(expectedRealRoot)) {
-    throw new Error(`Generated OpenSpec GSD directory '${logicalGsdRoot}' resolves outside the active change workspace.`);
+  const realRelayRoot = await fs.realpath(logicalRelayRoot);
+  if (path.normalize(realRelayRoot) !== path.normalize(expectedRealRoot)) {
+    throw new Error(`Generated OpenSpec Relay directory '${logicalRelayRoot}' resolves outside the active change workspace.`);
   }
 
-  const relative = path.relative(logicalGsdRoot, target);
+  const relative = path.relative(logicalRelayRoot, target);
   const parentSegments = path.dirname(relative) === '.' ? [] : path.dirname(relative).split(path.sep);
-  let current = logicalGsdRoot;
+  let current = logicalRelayRoot;
   for (const segment of parentSegments) {
     current = path.join(current, segment);
     try {
       const stat = await fs.lstat(current);
       if (stat.isSymbolicLink() || !stat.isDirectory()) {
-        throw new Error(`Generated OpenSpec GSD ancestor '${current}' must be a real directory.`);
+        throw new Error(`Generated OpenSpec Relay ancestor '${current}' must be a real directory.`);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.createParents) throw error;
@@ -184,21 +184,21 @@ export async function assertGsdGeneratedPath(options: {
       });
     }
     const realCurrent = await fs.realpath(current);
-    if (!contained(realGsdRoot, realCurrent)) {
-      throw new Error(`Generated OpenSpec GSD ancestor '${current}' resolves outside the active change workspace.`);
+    if (!contained(realRelayRoot, realCurrent)) {
+      throw new Error(`Generated OpenSpec Relay ancestor '${current}' resolves outside the active change workspace.`);
     }
   }
   try {
     const targetStat = await fs.lstat(target);
-    if (targetStat.isSymbolicLink()) throw new Error(`Generated OpenSpec GSD file '${target}' must not be a symlink.`);
+    if (targetStat.isSymbolicLink()) throw new Error(`Generated OpenSpec Relay file '${target}' must not be a symlink.`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.allowMissingFile) throw error;
   }
   return target;
 }
 
-export async function readGsdText(changeDir: string, filename: string): Promise<string> {
-  const safe = await assertGsdGeneratedPath({ changeDir, filename });
+export async function readRelayText(changeDir: string, filename: string): Promise<string> {
+  const safe = await assertRelayGeneratedPath({ changeDir, filename });
   return fs.readFile(safe, 'utf8');
 }
 
@@ -244,13 +244,13 @@ export async function atomicWriteText(
   }
 }
 
-export async function atomicWriteGsdJson(
+export async function atomicWriteRelayJson(
   changeDir: string,
   filename: string,
   value: unknown,
   operations: { beforeCommit?: () => Promise<void>; failBeforeCommit?: boolean } = {},
 ): Promise<void> {
-  const safe = await assertGsdGeneratedPath({
+  const safe = await assertRelayGeneratedPath({
     changeDir, filename, createParents: true, allowMissingFile: true,
   });
   await operations.beforeCommit?.();
@@ -259,70 +259,70 @@ export async function atomicWriteGsdJson(
       ? { rename: async () => { throw new Error('interrupted'); } }
       : {}),
   });
-  await assertGsdGeneratedPath({ changeDir, filename: safe });
+  await assertRelayGeneratedPath({ changeDir, filename: safe });
 }
 
-export async function removeGsdGeneratedFile(
+export async function removeRelayGeneratedFile(
   changeDir: string,
   filename: string,
   operations: { beforeRemove?: () => Promise<void> } = {},
 ): Promise<void> {
-  const safe = await assertGsdGeneratedPath({ changeDir, filename, allowMissingFile: true });
+  const safe = await assertRelayGeneratedPath({ changeDir, filename, allowMissingFile: true });
   await operations.beforeRemove?.();
-  await assertGsdGeneratedPath({ changeDir, filename: safe, allowMissingFile: true });
+  await assertRelayGeneratedPath({ changeDir, filename: safe, allowMissingFile: true });
   await fs.rm(safe, { force: true });
 }
 
-export async function readRunState(changeDir: string): Promise<GsdRunV1> {
-  return GsdRunV1Schema.parse(JSON.parse(await readGsdText(changeDir, runStatePath(changeDir))));
+export async function readRunState(changeDir: string): Promise<RelayRunV1> {
+  return RelayRunV1Schema.parse(JSON.parse(await readRelayText(changeDir, runStatePath(changeDir))));
 }
 
-export async function readAssuranceState(changeDir: string): Promise<GsdAssuranceV1> {
-  return GsdAssuranceV1Schema.parse(
-    JSON.parse(await readGsdText(changeDir, assuranceStatePath(changeDir))),
+export async function readAssuranceState(changeDir: string): Promise<RelayAssuranceV1> {
+  return RelayAssuranceV1Schema.parse(
+    JSON.parse(await readRelayText(changeDir, assuranceStatePath(changeDir))),
   );
 }
 
-export async function readRunStateV2(changeDir: string): Promise<GsdRunV2> {
-  return GsdRunV2Schema.parse(JSON.parse(await readGsdText(changeDir, runStatePath(changeDir))));
+export async function readRunStateV2(changeDir: string): Promise<RelayRunV2> {
+  return RelayRunV2Schema.parse(JSON.parse(await readRelayText(changeDir, runStatePath(changeDir))));
 }
 
-export async function readAssuranceStateV2(changeDir: string): Promise<GsdAssuranceV2> {
-  return GsdAssuranceV2Schema.parse(
-    JSON.parse(await readGsdText(changeDir, assuranceStatePath(changeDir))),
+export async function readAssuranceStateV2(changeDir: string): Promise<RelayAssuranceV2> {
+  return RelayAssuranceV2Schema.parse(
+    JSON.parse(await readRelayText(changeDir, assuranceStatePath(changeDir))),
   );
 }
 
-export async function writeRunState(changeDir: string, run: GsdRunV1): Promise<void> {
-  await atomicWriteGsdJson(changeDir, runStatePath(changeDir), GsdRunV1Schema.parse(run));
+export async function writeRunState(changeDir: string, run: RelayRunV1): Promise<void> {
+  await atomicWriteRelayJson(changeDir, runStatePath(changeDir), RelayRunV1Schema.parse(run));
 }
 
 export async function writeAssuranceState(
   changeDir: string,
-  assurance: GsdAssuranceV1,
-  run?: GsdRunV1,
+  assurance: RelayAssuranceV1,
+  run?: RelayRunV1,
 ): Promise<string> {
-  const validated = GsdAssuranceV1Schema.parse(assurance);
+  const validated = RelayAssuranceV1Schema.parse(assurance);
   const assuranceDigest = digestJson(validated);
-  await atomicWriteGsdJson(changeDir, assuranceStatePath(changeDir), validated);
+  await atomicWriteRelayJson(changeDir, assuranceStatePath(changeDir), validated);
   if (run) {
     await writeRunState(changeDir, { ...run, assuranceDigest, updatedAt: new Date().toISOString() });
   }
   return assuranceDigest;
 }
 
-export async function writeRunStateV2(changeDir: string, run: GsdRunV2): Promise<void> {
-  await atomicWriteGsdJson(changeDir, runStatePath(changeDir), GsdRunV2Schema.parse(run));
+export async function writeRunStateV2(changeDir: string, run: RelayRunV2): Promise<void> {
+  await atomicWriteRelayJson(changeDir, runStatePath(changeDir), RelayRunV2Schema.parse(run));
 }
 
 export async function writeAssuranceStateV2(
   changeDir: string,
-  assurance: GsdAssuranceV2,
-  run?: GsdRunV2,
+  assurance: RelayAssuranceV2,
+  run?: RelayRunV2,
 ): Promise<string> {
-  const validated = GsdAssuranceV2Schema.parse(assurance);
+  const validated = RelayAssuranceV2Schema.parse(assurance);
   const assuranceDigest = digestJson(validated);
-  await atomicWriteGsdJson(changeDir, assuranceStatePath(changeDir), validated);
+  await atomicWriteRelayJson(changeDir, assuranceStatePath(changeDir), validated);
   if (run) {
     await writeRunStateV2(changeDir, { ...run, assuranceDigest, updatedAt: new Date().toISOString() });
   }

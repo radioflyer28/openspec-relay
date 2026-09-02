@@ -47,7 +47,7 @@ export async function createPiExperimentWorkspace(options: {
 } = {}): Promise<PiExperimentWorkspaceV1> {
   const temporaryRoot = path.resolve(options.temporaryRoot ?? os.tmpdir());
   await fs.mkdir(temporaryRoot, { recursive: true });
-  const root = await fs.mkdtemp(path.join(temporaryRoot, 'openspec-gsd-pathfinder-'));
+  const root = await fs.mkdtemp(path.join(temporaryRoot, 'openspec-relay-pathfinder-'));
   return workspaceForRoot(root, true);
 }
 

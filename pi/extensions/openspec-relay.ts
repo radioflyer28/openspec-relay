@@ -8,10 +8,10 @@ import { executePiWorkflowOperationV1 } from '../../dist/pi/workflow.js';
 const binDirectory = fileURLToPath(new URL('../bin/', import.meta.url));
 
 const workflowTool = defineTool({
-  name: 'openspec_gsd_workflow',
-  label: 'OpenSpec GSD workflow',
-  description: 'Run an existing OpenSpec GSD plan, do, check, or status operation with live Pi capability qualification and isolated read-only assurance roles.',
-  promptSnippet: 'Use openspec_gsd_workflow for OpenSpec GSD lifecycle operations when available; honor its CLI fallback response.',
+  name: 'openspec_relay_workflow',
+  label: 'OpenSpec Relay workflow',
+  description: 'Run an existing OpenSpec Relay plan, do, check, or status operation with live Pi capability qualification and isolated read-only assurance roles.',
+  promptSnippet: 'Use openspec_relay_workflow for OpenSpec Relay lifecycle operations when available; honor its CLI fallback response.',
   executionMode: 'sequential',
   parameters: Type.Object({
     operation: Type.Union([
@@ -38,7 +38,7 @@ const workflowTool = defineTool({
   },
 });
 
-export default function loadOpenSpecGsdRuntime(pi: ExtensionAPI): void {
+export default function loadOpenSpecRelayRuntime(pi: ExtensionAPI): void {
   const entries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
   if (!entries.includes(binDirectory)) {
     process.env.PATH = [binDirectory, ...entries].join(path.delimiter);

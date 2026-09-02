@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import { dispatchRoleV2 } from '../src/execution-adapters.js';
 import { routeDispatchedFindingsV1 } from '../src/finding-routing.js';
-import { planGsdChangeV1 } from '../src/plan-workflow.js';
-import { checkGsdRunV2 } from '../src/runner-v2.js';
+import { planRelayChangeV1 } from '../src/plan-workflow.js';
+import { checkRelayRunV2 } from '../src/runner-v2.js';
 import { recordSemanticDowngrade } from '../src/semantics.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
@@ -27,9 +27,9 @@ describe('planning assurance and privileged finding routes', () => {
     const observed: Array<{ mode: string; level?: string; check?: string }> = [];
     for (const mode of ['quick', 'guarded', 'full'] as const) {
       const project = await createOpenSpecProject(`mode-${mode}`);
-      await planGsdChangeV1({ change: `mode-${mode}`, projectRoot: project.root,
+      await planRelayChangeV1({ change: `mode-${mode}`, projectRoot: project.root,
         config: { ...config, mode }, changedFiles: [], allowSelfReview: true });
-      const checked = await checkGsdRunV2({ change: `mode-${mode}`, projectRoot: project.root, changedFiles: [] });
+      const checked = await checkRelayRunV2({ change: `mode-${mode}`, projectRoot: project.root, changedFiles: [] });
       observed.push({ mode, level: checked.assurance.semanticClassifications[0]?.level,
         check: checked.assurance.checks.find((item) => item.kind === 'planning-assurance')?.status });
     }
@@ -39,25 +39,25 @@ describe('planning assurance and privileged finding routes', () => {
 
   it('reports independent and disclosed self-review provenance distinctly', async () => {
     const independentProject = await createOpenSpecProject('independent');
-    await planGsdChangeV1({ change: 'independent', projectRoot: independentProject.root,
+    await planRelayChangeV1({ change: 'independent', projectRoot: independentProject.root,
       config, changedFiles: [], dispatcher });
-    const independent = await checkGsdRunV2({ change: 'independent', projectRoot: independentProject.root, changedFiles: [] });
+    const independent = await checkRelayRunV2({ change: 'independent', projectRoot: independentProject.root, changedFiles: [] });
     expect(independent.assurance.checks.find((item) => item.kind === 'planning-assurance'))
       .toMatchObject({ status: 'pass', independent: true });
 
     const selfProject = await createOpenSpecProject('self');
-    await planGsdChangeV1({ change: 'self', projectRoot: selfProject.root,
+    await planRelayChangeV1({ change: 'self', projectRoot: selfProject.root,
       config, changedFiles: [], allowSelfReview: true });
-    const self = await checkGsdRunV2({ change: 'self', projectRoot: selfProject.root, changedFiles: [] });
+    const self = await checkRelayRunV2({ change: 'self', projectRoot: selfProject.root, changedFiles: [] });
     expect(self.assurance.checks.find((item) => item.kind === 'planning-assurance'))
       .toMatchObject({ status: 'warn', independent: false, summary: expect.stringMatching(/self-review/i) });
   });
 
   it('fails planning assurance when authoritative meaning changes after approval', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await planGsdChangeV1({ change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher });
+    await planRelayChangeV1({ change: 'demo', projectRoot: root, config, changedFiles: [], dispatcher });
     await fs.appendFile(`${changeDir}/design.md`, '\nA new semantic obligation.\n');
-    const checked = await checkGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const checked = await checkRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
     expect(checked.run.planApprovalStatus).toBe('stale');
     expect(checked.assurance.checks.find((item) => item.kind === 'planning-assurance'))
       .toMatchObject({ status: 'fail', summary: expect.stringMatching(/stale/i) });
@@ -66,7 +66,7 @@ describe('planning assurance and privileged finding routes', () => {
   it('requires human action for an unresolved semantic downgrade and warns after audited acceptance', async () => {
     for (const accepted of [false, true]) {
       const { root, changeDir } = await createOpenSpecProject(`downgrade-${accepted}`);
-      const planned = await planGsdChangeV1({ change: `downgrade-${accepted}`, projectRoot: root,
+      const planned = await planRelayChangeV1({ change: `downgrade-${accepted}`, projectRoot: root,
         config, changedFiles: [], dispatcher });
       const classification = planned.assurance.semanticClassifications[0];
       const downgrade = recordSemanticDowngrade({
@@ -75,7 +75,7 @@ describe('planning assurance and privileged finding routes', () => {
         ...(accepted ? { reason: 'Risk accepted for this private evaluation.', actor: 'maintainer' } : {}),
       });
       const store = await readEventStoreV2(changeDir);
-      await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+      await appendRelayEventV2({ changeDir, event: createRelayEventV2({
         eventId: `downgrade:${accepted}`, runId: store.runId, changeName: store.changeName,
         occurredAt: '2026-08-29T12:00:00.000Z', sourceDigests: {}, actor: accepted
           ? { kind: 'human', id: 'maintainer' } : { kind: 'planner' },
@@ -84,7 +84,7 @@ describe('planning assurance and privileged finding routes', () => {
       }) });
       const compiled = await compileOpenSpecChange({ changeDir, taskMetadata: store.seed.config.taskOverrides });
       await writeReplayedProjectionsV2({ changeDir, store: await readEventStoreV2(changeDir), compiled });
-      const checked = await checkGsdRunV2({ change: `downgrade-${accepted}`, projectRoot: root, changedFiles: [] });
+      const checked = await checkRelayRunV2({ change: `downgrade-${accepted}`, projectRoot: root, changedFiles: [] });
       expect(checked.assurance.checks.find((item) => item.kind === 'planning-assurance')?.status)
         .toBe(accepted ? 'warn' : 'human_needed');
     }

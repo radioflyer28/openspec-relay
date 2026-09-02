@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { doGsdChangeV1, type CanonicalApplyRequestV1 } from '../src/do-workflow.js';
+import { doRelayChangeV1, type CanonicalApplyRequestV1 } from '../src/do-workflow.js';
 import type { RoleDispatcherV1 } from '../src/execution-adapters.js';
-import { planGsdChangeV1 } from '../src/plan-workflow.js';
+import { planRelayChangeV1 } from '../src/plan-workflow.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -19,7 +19,7 @@ const config = {
 };
 
 async function approve(root: string, change = 'demo') {
-  const result = await planGsdChangeV1({
+  const result = await planRelayChangeV1({
     change, projectRoot: root, config, changedFiles: [], allowSelfReview: true,
   });
   expect(result.status).toBe('pass');
@@ -78,7 +78,7 @@ describe('approved do convergence', () => {
     const noEvidenceRoles: RoleDispatcherV1 = { dispatch: async (request) => ({
       status: 'pass', summary: `${request.role} claimed pass`, evidenceRefs: [],
     }) };
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'missing-evidence', projectRoot: root, changedFiles: [], dispatcher: noEvidenceRoles,
       applyCapability: { apply: async (request) => {
         await completeTask(changeDir, request.taskId);
@@ -92,7 +92,7 @@ describe('approved do convergence', () => {
   it('refuses absent approval before invoking canonical apply', async () => {
     const { root } = await createOpenSpecProject();
     let calls = 0;
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: passingRoles,
       applyCapability: { apply: async () => { calls += 1; return { status: 'pass', summary: 'unexpected' }; } },
     }).catch((error) => error as Error);
@@ -105,7 +105,7 @@ describe('approved do convergence', () => {
     const { root, changeDir } = await createOpenSpecProject();
     await approve(root);
     const requests: CanonicalApplyRequestV1[] = [];
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: passingRoles,
       applyCapability: { apply: async (request) => {
         requests.push(request);
@@ -130,7 +130,7 @@ describe('approved do convergence', () => {
     await approve(root);
     await fs.appendFile(`${changeDir}/design.md`, '\nMaterial semantic task design change.\n');
     let calls = 0;
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: passingRoles,
       applyCapability: { apply: async () => { calls += 1; return { status: 'pass', summary: 'unexpected' }; } },
     });
@@ -152,7 +152,7 @@ describe('approved do convergence', () => {
       return passingRoleResult(request.role);
     } };
     const requests: CanonicalApplyRequestV1[] = [];
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {
         requests.push(request);
@@ -179,7 +179,7 @@ describe('approved do convergence', () => {
       return passingRoleResult(request.role);
     } };
     const requests: CanonicalApplyRequestV1[] = [];
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'contradictory-review', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {
         requests.push(request);
@@ -200,7 +200,7 @@ describe('approved do convergence', () => {
     const roles: RoleDispatcherV1 = { dispatch: async (request) => request.role === 'verifier'
       ? { status: 'fail', summary: 'same goal gap', evidenceRefs: [] }
       : passingRoleResult(request.role) };
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {
         await completeTask(changeDir, request.taskId);
@@ -223,7 +223,7 @@ describe('approved do convergence', () => {
         requirementIds: [requirementId], taskIds: ['1.1'],
       }] }
       : passingRoleResult(request.role) };
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async (request) => {
         await completeTask(changeDir, request.taskId);
@@ -234,9 +234,9 @@ describe('approved do convergence', () => {
     expect(result.assurance.findingRoutes.at(-1)).toMatchObject({ source: 'verifier', route: 'discussion' });
     await fs.appendFile(`${changeDir}/design.md`, '\n## Confirmed intent\n\nThe targeted discussion settled reversible behavior.\n');
     intentResolved = true;
-    const replanned = await planGsdChangeV1({ change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles });
+    const replanned = await planRelayChangeV1({ change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles });
     expect(replanned.status).toBe('pass');
-    const resumed = await doGsdChangeV1({
+    const resumed = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: roles,
       applyCapability: { apply: async () => ({ status: 'pass', summary: 'no pending repair' }) },
     });
@@ -246,7 +246,7 @@ describe('approved do convergence', () => {
   it('returns canonical apply ambiguity to planner triage without claiming completion', async () => {
     const { root } = await createOpenSpecProject();
     await approve(root);
-    const result = await doGsdChangeV1({
+    const result = await doRelayChangeV1({
       change: 'demo', projectRoot: root, changedFiles: [], dispatcher: passingRoles,
       applyCapability: { apply: async () => ({
         status: 'human_needed', summary: 'The task is ambiguous against the approved planner instructions.',

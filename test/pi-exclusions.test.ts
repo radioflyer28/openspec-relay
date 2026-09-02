@@ -38,7 +38,7 @@ describe('Pi adapter exclusions', () => {
 
     const files = [
       ...(await sourceFiles(path.join(root, 'src', 'pi'))),
-      path.join(root, 'pi', 'extensions', 'openspec-gsd.ts'),
+      path.join(root, 'pi', 'extensions', 'openspec-relay.ts'),
     ];
     const content = (await Promise.all(files.map((filename) => fs.readFile(filename, 'utf8')))).join('\n');
     expect(content).not.toMatch(/\b(?:createServer|listen)\s*\(/);
@@ -48,7 +48,7 @@ describe('Pi adapter exclusions', () => {
   });
 
   it('uses existing workflow implementations instead of defining a second lifecycle', async () => {
-    const extension = await fs.readFile(path.join(root, 'pi', 'extensions', 'openspec-gsd.ts'), 'utf8');
+    const extension = await fs.readFile(path.join(root, 'pi', 'extensions', 'openspec-relay.ts'), 'utf8');
     expect(extension).not.toMatch(/class\s+.*(?:Workflow|Queue|Lifecycle)/);
     expect(extension).not.toMatch(/\btaskQueue\b|\blifecycleState\b/);
   });

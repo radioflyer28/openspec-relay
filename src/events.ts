@@ -3,20 +3,20 @@ import { evaluateFindingObligations } from './findings.js';
 import { materializeCompiledTasks } from './reconciliation.js';
 import {
   AssuranceCheckV2Schema,
-  GsdAssuranceV2Schema,
-  GsdConfigV1Schema,
-  GsdEventEnvelopeV2Schema,
-  GsdEventPayloadV2Schema,
-  GsdEventStoreV2Schema,
-  GsdRunV2Schema,
+  RelayAssuranceV2Schema,
+  RelayConfigV1Schema,
+  RelayEventEnvelopeV2Schema,
+  RelayEventPayloadV2Schema,
+  RelayEventStoreV2Schema,
+  RelayRunV2Schema,
   type DebugSessionV2,
   type FindingLifecycleRecordV2,
-  type GsdAssuranceV2,
-  type GsdEventEnvelopeV2,
-  type GsdEventPayloadV2,
-  type GsdEventStoreV2,
-  type GsdEventPayloadV1,
-  type GsdRunV2,
+  type RelayAssuranceV2,
+  type RelayEventEnvelopeV2,
+  type RelayEventPayloadV2,
+  type RelayEventStoreV2,
+  type RelayEventPayloadV1,
+  type RelayRunV2,
   type HostAdapterProvenanceV1,
   type FindingRouteV1,
   type PathfinderResultV1,
@@ -32,19 +32,19 @@ import {
 } from './schemas.js';
 import {
   assuranceStatePath,
-  atomicWriteGsdJson,
+  atomicWriteRelayJson,
   digestJson,
-  gsdGeneratedPath,
-  readGsdText,
+  relayGeneratedPath,
+  readRelayText,
   runStatePath,
 } from './state.js';
 
 export function eventStorePath(changeDir: string): string {
-  return gsdGeneratedPath(changeDir, 'events');
+  return relayGeneratedPath(changeDir, 'events');
 }
 
-function eventStoreV2(value: unknown): GsdEventStoreV2 {
-  const store = GsdEventStoreV2Schema.parse(value);
+function eventStoreV2(value: unknown): RelayEventStoreV2 {
+  const store = RelayEventStoreV2Schema.parse(value);
   const ids = new Set<string>();
   for (const event of store.events) {
     if (event.runId !== store.runId || event.changeName !== store.changeName) {
@@ -59,18 +59,18 @@ function eventStoreV2(value: unknown): GsdEventStoreV2 {
   return store;
 }
 
-export function createGsdEventV2(options: {
+export function createRelayEventV2(options: {
   eventId: string;
   runId: string;
   changeName: string;
   occurredAt: string;
   sourceDigests: Record<string, string>;
-  actor: GsdEventEnvelopeV2['actor'];
-  provenance: GsdEventEnvelopeV2['provenance'];
-  payload: GsdEventPayloadV2;
-}): GsdEventEnvelopeV2 {
-  const payload = GsdEventPayloadV2Schema.parse(options.payload);
-  return GsdEventEnvelopeV2Schema.parse({
+  actor: RelayEventEnvelopeV2['actor'];
+  provenance: RelayEventEnvelopeV2['provenance'];
+  payload: RelayEventPayloadV2;
+}): RelayEventEnvelopeV2 {
+  const payload = RelayEventPayloadV2Schema.parse(options.payload);
+  return RelayEventEnvelopeV2Schema.parse({
     version: 2,
     ...options,
     payload,
@@ -78,30 +78,30 @@ export function createGsdEventV2(options: {
   });
 }
 
-export async function readEventStoreV2(changeDir: string): Promise<GsdEventStoreV2> {
-  return eventStoreV2(JSON.parse(await readGsdText(changeDir, eventStorePath(changeDir))));
+export async function readEventStoreV2(changeDir: string): Promise<RelayEventStoreV2> {
+  return eventStoreV2(JSON.parse(await readRelayText(changeDir, eventStorePath(changeDir))));
 }
 
 /** Read the only supported generated history format. Pre-release state may be
  * deleted and regenerated from the controlling OpenSpec change. */
-export async function readCanonicalEventStore(changeDir: string): Promise<GsdEventStoreV2> {
+export async function readCanonicalEventStore(changeDir: string): Promise<RelayEventStoreV2> {
   try {
     return await readEventStoreV2(changeDir);
   } catch (error) {
     throw new Error(
-      `OpenSpec GSD execution records are missing or unsupported. Remove the change's .openspec-gsd directory ` +
+      `OpenSpec Relay execution records are missing or unsupported. Remove the change's .openspec-relay directory ` +
       `and start a new run to regenerate it: ${(error as Error).message}`,
     );
   }
 }
 
-export async function appendGsdEventV2(options: {
+export async function appendRelayEventV2(options: {
   changeDir: string;
-  event: GsdEventEnvelopeV2;
+  event: RelayEventEnvelopeV2;
   beforeCommit?: () => Promise<void>;
   failBeforeCommit?: boolean;
-}): Promise<{ store: GsdEventStoreV2; appended: boolean }> {
-  const event = GsdEventEnvelopeV2Schema.parse(options.event);
+}): Promise<{ store: RelayEventStoreV2; appended: boolean }> {
+  const event = RelayEventEnvelopeV2Schema.parse(options.event);
   if (event.payloadDigest !== digestJson(event.payload)) {
     throw new Error(`Event '${event.eventId}' payload digest does not match its payload.`);
   }
@@ -117,7 +117,7 @@ export async function appendGsdEventV2(options: {
     return { store, appended: false };
   }
   const next = eventStoreV2({ ...store, events: [...store.events, event] });
-  await atomicWriteGsdJson(options.changeDir, eventStorePath(options.changeDir), next, {
+  await atomicWriteRelayJson(options.changeDir, eventStorePath(options.changeDir), next, {
     ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
     ...(options.failBeforeCommit ? { failBeforeCommit: true } : {}),
   });
@@ -126,7 +126,7 @@ export async function appendGsdEventV2(options: {
 
 function findingFromV1(
   finding: VerificationFindingV1,
-  event: GsdEventEnvelopeV2,
+  event: RelayEventEnvelopeV2,
 ): FindingLifecycleRecordV2 {
   const state = finding.status === 'human_needed' ? 'human_needed' : 'open';
   return {
@@ -160,14 +160,14 @@ function findingFromV1(
 }
 
 function assuranceStatusV2(options: {
-  checks: GsdAssuranceV2['checks'];
+  checks: RelayAssuranceV2['checks'];
   findings: FindingLifecycleRecordV2[];
   debugSessions: DebugSessionV2[];
   uatScenarios: UatScenarioV2[];
   releaseCandidates: ReleaseCandidateV2[];
   planStale: boolean;
   semanticDowngrades: SemanticDowngradeV1[];
-}): GsdAssuranceV2['status'] {
+}): RelayAssuranceV2['status'] {
   if (options.checks.some((check) => check.status === 'error') ||
       options.releaseCandidates.some((candidate) => candidate.status === 'error')) return 'error';
   if (options.checks.some((check) => check.status === 'fail') ||
@@ -184,21 +184,21 @@ function assuranceStatusV2(options: {
   return 'pass';
 }
 
-export function replayGsdEventsV2(options: {
-  store: GsdEventStoreV2;
+export function replayRelayEventsV2(options: {
+  store: RelayEventStoreV2;
   compiled: CompiledOpenSpecChangeV1;
-}): { run: GsdRunV2; assurance: GsdAssuranceV2 } {
+}): { run: RelayRunV2; assurance: RelayAssuranceV2 } {
   const store = eventStoreV2(options.store);
   const legacyConfigInput = Object.fromEntries(
     Object.entries(store.seed.config)
       .filter(([key]) => key !== 'features' && key !== 'piHostAdapter'),
   );
-  const legacyConfig = GsdConfigV1Schema.parse({ ...legacyConfigInput, version: 1 });
+  const legacyConfig = RelayConfigV1Schema.parse({ ...legacyConfigInput, version: 1 });
   const tasks = materializeCompiledTasks(options.compiled, legacyConfig);
   const byTask = new Map(tasks.map((task) => [task.taskId, task]));
-  const evidence: GsdAssuranceV2['evidence'] = [];
-  const repairs: GsdAssuranceV2['repairs'] = [];
-  const deviations: GsdRunV2['deviations'] = [];
+  const evidence: RelayAssuranceV2['evidence'] = [];
+  const repairs: RelayAssuranceV2['repairs'] = [];
+  const deviations: RelayRunV2['deviations'] = [];
   const findings = new Map<string, FindingLifecycleRecordV2>();
   const debugSessions = new Map<string, DebugSessionV2>();
   const uatScenarios = new Map<string, UatScenarioV2>();
@@ -218,7 +218,7 @@ export function replayGsdEventsV2(options: {
   let checks = store.seed.checks.map((check) => AssuranceCheckV2Schema.parse(check));
   const humanActions: string[] = [];
 
-  const applyV1Payload = (payload: GsdEventPayloadV1, event: GsdEventEnvelopeV2) => {
+  const applyV1Payload = (payload: RelayEventPayloadV1, event: RelayEventEnvelopeV2) => {
     if (payload.type === 'task.transition') {
       const task = byTask.get(payload.taskId);
       if (task && task.status !== 'complete') {
@@ -249,7 +249,7 @@ export function replayGsdEventsV2(options: {
     const payload = event.payload;
     if (['task.transition', 'evidence.recorded', 'finding.recorded', 'deviation.recorded',
       'repair.recorded', 'human.decision'].includes(payload.type)) {
-      applyV1Payload(payload as GsdEventPayloadV1, event);
+      applyV1Payload(payload as RelayEventPayloadV1, event);
     } else if (payload.type === 'host.adapter_qualified') hostAdapter = payload.adapter;
     else if (payload.type === 'context.compiled') repositoryContext = payload.context;
     else if (payload.type === 'context.stale' && repositoryContext?.contextId === payload.contextId) {
@@ -409,7 +409,7 @@ export function replayGsdEventsV2(options: {
   const pathfinderValues = [...pathfinderResults.values()]
     .sort((left, right) => left.pathfinderId.localeCompare(right.pathfinderId));
   const reviewValues = [...planReviews.values()].sort((left, right) => left.reviewId.localeCompare(right.reviewId));
-  const assurance = GsdAssuranceV2Schema.parse({
+  const assurance = RelayAssuranceV2Schema.parse({
     version: 2,
     runId: store.runId,
     changeName: store.changeName,
@@ -439,7 +439,7 @@ export function replayGsdEventsV2(options: {
     ...(planApproval ? { planApproval } : {}),
     planStale,
   });
-  const run = GsdRunV2Schema.parse({
+  const run = RelayRunV2Schema.parse({
     version: 2,
     runId: store.runId,
     changeName: store.changeName,
@@ -468,11 +468,11 @@ export function replayGsdEventsV2(options: {
 
 export async function writeReplayedProjectionsV2(options: {
   changeDir: string;
-  store: GsdEventStoreV2;
+  store: RelayEventStoreV2;
   compiled: CompiledOpenSpecChangeV1;
-}): Promise<{ run: GsdRunV2; assurance: GsdAssuranceV2 }> {
-  const projection = replayGsdEventsV2(options);
-  await atomicWriteGsdJson(options.changeDir, assuranceStatePath(options.changeDir), projection.assurance);
-  await atomicWriteGsdJson(options.changeDir, runStatePath(options.changeDir), projection.run);
+}): Promise<{ run: RelayRunV2; assurance: RelayAssuranceV2 }> {
+  const projection = replayRelayEventsV2(options);
+  await atomicWriteRelayJson(options.changeDir, assuranceStatePath(options.changeDir), projection.assurance);
+  await atomicWriteRelayJson(options.changeDir, runStatePath(options.changeDir), projection.run);
   return projection;
 }

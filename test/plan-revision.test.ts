@@ -2,14 +2,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { compileOpenSpecChange } from '../src/artifacts.js';
-import { appendGsdEventV2, createGsdEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
+import { appendRelayEventV2, createRelayEventV2, readEventStoreV2, writeReplayedProjectionsV2 } from '../src/events.js';
 import {
   computeSemanticPlanRevision,
   createPlanApproval,
   isPlanApprovalCurrent,
 } from '../src/planning.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
-import { startGsdRunV2 } from '../src/runner-v2.js';
+import { startRelayRunV2 } from '../src/runner-v2.js';
 
 afterEach(cleanupTemporaryRoots);
 
@@ -72,7 +72,7 @@ describe('semantic plan revisions', () => {
 
   it('replays planning events into replaceable projections without fabricating approval', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    const initial = await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const initial = await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
     expect(initial).toMatchObject({ run: { planApprovalStatus: 'missing' }, assurance: { planStale: false } });
     let store = await readEventStoreV2(changeDir);
     const compiled = await compileOpenSpecChange({ changeDir });
@@ -86,7 +86,7 @@ describe('semantic plan revisions', () => {
       semanticLevels: [{ requirementId: compiled.requirementIds[0], level: 'simple' }],
       evidenceRefs: ['review:1'],
     });
-    await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+    await appendRelayEventV2({ changeDir, event: createRelayEventV2({
       eventId: 'plan-approved', runId: store.runId, changeName: store.changeName,
       occurredAt: approval.approvedAt, sourceDigests,
       actor: { kind: 'plan_reviewer', id: 'reviewer-1' },
@@ -98,7 +98,7 @@ describe('semantic plan revisions', () => {
       run: { planApprovalStatus: 'current', planRevision: semantic.revision },
       assurance: { planApproval: { revision: semantic.revision }, planStale: false },
     });
-    await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+    await appendRelayEventV2({ changeDir, event: createRelayEventV2({
       eventId: 'plan-stale', runId: store.runId, changeName: store.changeName,
       occurredAt: '2026-08-29T12:01:00.000Z', sourceDigests,
       actor: { kind: 'automation' }, provenance: { origin: 'plan-revision-test' },
@@ -114,7 +114,7 @@ describe('semantic plan revisions', () => {
 
   it('automatically preserves approval for checkbox progress and stales semantic edits', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
     const store = await readEventStoreV2(changeDir);
     let compiled = await compileOpenSpecChange({ changeDir });
     const semantic = await computeSemanticPlanRevision({ changeDir, compiled });
@@ -124,7 +124,7 @@ describe('semantic plan revisions', () => {
       independent: true,
       reviewerId: 'reviewer-1',
     });
-    await appendGsdEventV2({ changeDir, event: createGsdEventV2({
+    await appendRelayEventV2({ changeDir, event: createRelayEventV2({
       eventId: 'automatic-plan-approved', runId: store.runId, changeName: store.changeName,
       occurredAt: approval.approvedAt,
       sourceDigests: Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest])),
@@ -135,13 +135,13 @@ describe('semantic plan revisions', () => {
 
     const tasksPath = path.join(changeDir, 'tasks.md');
     await fs.writeFile(tasksPath, (await fs.readFile(tasksPath, 'utf8')).replace('- [ ] 1.1', '- [x] 1.1'));
-    const progressed = await startGsdRunV2({
+    const progressed = await startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: [], now: '2026-08-29T12:01:00.000Z',
     });
     expect(progressed.run.planApprovalStatus).toBe('current');
 
     await fs.writeFile(tasksPath, (await fs.readFile(tasksPath, 'utf8')).replace('Implement behavior', 'Implement durable behavior'));
-    const changed = await startGsdRunV2({
+    const changed = await startRelayRunV2({
       change: 'demo', projectRoot: root, changedFiles: [], now: '2026-08-29T12:02:00.000Z',
     });
     expect(changed).toMatchObject({

@@ -1,14 +1,15 @@
-# openspec-gsd
+# OpenSpec Relay
 
 Risk-aware execution, RED–GREEN–REFACTOR evidence, independent verification,
 specialist checker routing, and archive assurance gates for OpenSpec.
 
-OpenSpec GSD is an independently versioned OpenSpec extension. OpenSpec proposal,
+OpenSpec Relay is an independently versioned OpenSpec extension. OpenSpec proposal,
 delta specs, design, and tasks remain the only human-maintained planning source;
-OpenSpec GSD writes generated evidence under each change's `.openspec-gsd` folder.
+OpenSpec Relay writes generated evidence under each change's `.openspec-relay` folder.
 It never creates `PROJECT.md`, `ROADMAP.md`, `PLAN.md`, or `STATE.md`.
 It selectively adapts GSD skills and harness patterns without installing or
-operating the complete GSD runtime or its project-state model.
+operating the complete GSD runtime or its project-state model. OpenSpec Relay is
+not affiliated with or endorsed by the upstream OpenSpec or GSD projects.
 
 The default is guarded, sequential Tier 0 execution with no automated commits,
 branches, or worktrees. Tier 1 isolated roles and Tier 2 parallel worktrees are
@@ -17,18 +18,20 @@ every tier enforces the same assurance outcomes.
 
 ## Requirements and installation
 
+Public source: <https://github.com/radioflyer28/openspec-relay>
+
 - Node.js 20.19 or newer
 - an API-bearing OpenSpec distribution in the manifest's supported range
 
 Until the generic extension API is released by official OpenSpec, use the
 maintained fork prerelease locally, verify its identity, and then link or
-link a private OpenSpec GSD checkout or unpacked local artifact into the project:
+link a private OpenSpec Relay checkout or unpacked local artifact into the project:
 
 ```bash
-npm install --global github:radioflyer28/OpenSpec#v1.11.0-gsd.1
-openspec --version # 1.11.0-gsd.1
-openspec extension link /absolute/path/to/openspec-gsd
-openspec extension doctor gsd
+npm install --global github:radioflyer28/OpenSpec#v1.11.0-relay.1
+openspec --version # 1.11.0-relay.1
+openspec extension link /absolute/path/to/openspec-relay
+openspec extension doctor relay
 ```
 
 An official `@fission-ai/openspec` release may satisfy the declared semver range
@@ -40,8 +43,8 @@ For companion development against a sibling OpenSpec checkout:
 ```bash
 pnpm install --ignore-scripts
 pnpm build
-openspec extension link ../openspec-gsd
-openspec extension doctor gsd
+openspec extension link ../openspec-relay
+openspec extension doctor relay
 ```
 
 ### Pi 0.84.x
@@ -51,7 +54,7 @@ the local checkout directly and does not publish to a registry:
 
 ```bash
 pnpm build
-pi install /absolute/path/to/openspec-gsd
+pi install /absolute/path/to/openspec-relay
 pi list
 ```
 
@@ -60,7 +63,7 @@ qualification use Pi 0.84.4. This exposes `/opsx-discuss`, `/opsx-plan`, `/opsx-
 `/opsx-status`, `/opsx-debug`, and `/opsx-uat`, plus the corresponding
 `openspec-*` skills. The Pi package includes
 a runtime extension that registers one typed in-process
-`openspec_gsd_workflow` tool and places its bundled `openspec-gsd` CLI on the
+`openspec_relay_workflow` tool and places its bundled `openspec-relay` CLI on the
 `PATH` as the Tier 0 fallback. The in-process adapter live-probes the active
 model, authentication, restricted session lifecycle, structured results,
 cancellation, timeout, and read-only concurrency before advertising them. No
@@ -99,12 +102,12 @@ After OpenSpec reconciles the extension, supported tools receive:
 The generated workflows invoke the portable companion CLI:
 
 ```bash
-openspec-gsd plan add-feature --allow-self-review # Tier 0 only; visibly non-independent
-openspec-gsd do add-feature
-openspec-gsd check add-feature
-openspec-gsd status add-feature --json
-openspec-gsd debug add-feature --finding <id> --json
-openspec-gsd uat add-feature --json
+openspec-relay plan add-feature --allow-self-review # Tier 0 only; visibly non-independent
+openspec-relay do add-feature
+openspec-relay check add-feature
+openspec-relay status add-feature --json
+openspec-relay debug add-feature --finding <id> --json
+openspec-relay uat add-feature --json
 ```
 
 `quick` performs artifact validation, deterministic checks, targeted tests,
@@ -117,7 +120,7 @@ tiers.
 
 The discussion skill starts with Matt Pocock's complete `grilling` instruction
 body, vendored byte-for-byte from commit
-`85f83d3fde1d3a90d5c9a657f6998c79a6c37308`, followed by the OpenSpec GSD
+`85f83d3fde1d3a90d5c9a657f6998c79a6c37308`, followed by the OpenSpec Relay
 supplement. Attribution and the full MIT notice are in
 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md). The supplement preserves
 the design tree, prerequisite-aware frontier, recommendation-bearing rounds,
@@ -170,8 +173,8 @@ audited and remains visible as a warning rather than being reported as complete.
 
 ## Configuration
 
-Project configuration lives at `openspec/gsd.json`; a change may override
-it with `openspec/changes/<change>/gsd.json`. Task overrides have highest
+Project configuration lives at `openspec/relay.json`; a change may override
+it with `openspec/changes/<change>/relay.json`. Task overrides have highest
 precedence:
 
 ```json
@@ -221,22 +224,22 @@ adapter version, Pi version, model reference, capability states, and
 qualification time—never credentials, prompts, private reasoning, or session
 identity.
 
-`openspec extension doctor gsd` validates the static package manifest and core
+`openspec extension doctor relay` validates the static package manifest and core
 compatibility. It intentionally cannot see an ephemeral adapter inside a live
 Pi session; use `/opsx:status <change>` in Pi to inspect live qualification and
 the recorded assurance provenance.
 
 Generated execution evidence is stored under
-`openspec/changes/<change>/.openspec-gsd/events.json`; `run.json`,
-and `assurance.json` are replaceable v2 projections. Only the OpenSpec GSD
+`openspec/changes/<change>/.openspec-relay/events.json`; `run.json`,
+and `assurance.json` are replaceable v2 projections. Only the OpenSpec Relay
 orchestrator writes these files. Automation/executor records may use the CLI;
 read-only reviewer/verifier results must pass through `dispatchRoleV2` and its
 process-local opaque receipt before `recordDispatchedRoleResultV2`,
 `verifyFindingFromDispatchedResultV2`, or technical debug closure can mutate
-the execution records. Structured findings omit caller-selected IDs; OpenSpec GSD derives stable
+the execution records. Structured findings omit caller-selected IDs; OpenSpec Relay derives stable
 IDs from provider, rule, category, and scope. Role adapters return structured
 results through these supported operations instead of appending events directly. The core-owned
-`.openspec-gates.json` records the durable `gsd.assurance` archive
+`.openspec-gates.json` records the durable `relay.assurance` archive
 obligation. Acceptance is digest-bound; stale evidence requires renewed human
 acceptance. Missing, disabled, corrupt, timed-out, or mismatched providers fail
 closed through OpenSpec's archive gate protocol.
@@ -252,23 +255,23 @@ install in a disposable project, and exercise declared installed interfaces. It 
 argument-vector execution, a minimal environment, bounded redacted output, and
 disabled package lifecycle scripts. These are operational safeguards, not a
 filesystem, network, process, or identity sandbox. When a required isolation or
-platform capability is unavailable, OpenSpec GSD records `human_needed`.
+platform capability is unavailable, OpenSpec Relay records `human_needed`.
 
 ## Upgrade and release order
 
 1. Upgrade the maintained fork prerelease and run
-   `openspec extension doctor gsd`.
-2. Upgrade OpenSpec GSD by relinking its checked-out directory. To verify a
+   `openspec extension doctor relay`.
+2. Upgrade OpenSpec Relay by relinking its checked-out directory. To verify a
    private packed artifact, unpack or locally install that artifact first, then
    link its unpacked extension directory with `openspec extension link <path>`;
    the current core `install` command is registry-only.
-3. Run `openspec extension doctor gsd` again and regenerate configured
+3. Run `openspec extension doctor relay` again and regenerate configured
    workflows with `openspec update` if needed.
 4. Finish or explicitly override any active change gate obligations before
    disabling or removing an older package. Disabling an extension does not erase
    existing obligations.
 
-OpenSpec and OpenSpec GSD are packaged and versioned independently. This private
+OpenSpec and OpenSpec Relay are packaged and versioned independently. This private
 increment qualifies both units on macOS through conformance, cross-repository,
 pack, clean-install, and installed-workflow checks. The implementation retains
 portable path handling, but Linux and Windows are not qualified or claimed as
@@ -276,8 +279,8 @@ supported until a future change adds their hosted evidence. Registry publication
 is not part of this workflow.
 
 When official OpenSpec publishes this API, install its first documented
-API-bearing release, run `openspec extension doctor gsd`, and only then
-remove the fork installation. OpenSpec GSD will move its minimum supported version
+API-bearing release, run `openspec extension doctor relay`, and only then
+remove the fork installation. OpenSpec Relay will move its minimum supported version
 to that official release; generated execution records and gate obligations do not change
 during the transition. If doctor reports `api-unavailable`, restore the last
 supported fork prerelease rather than disabling the required gate.

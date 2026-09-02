@@ -31,13 +31,13 @@ describe('in-process Pi workflow adapter', () => {
       operation: 'status', change: 'demo', projectRoot: project.root, runtime: runtime(),
       factory: { create: async () => { throw new Error('disabled adapter must not create a role session'); } },
     });
-    expect(result).toMatchObject({ usedAdapter: false, fallbackCommand: 'openspec-gsd status demo --json' });
+    expect(result).toMatchObject({ usedAdapter: false, fallbackCommand: 'openspec-relay status demo --json' });
     expect(result.adapter.agentDispatch.state).toBe('disabled');
   });
 
   it('passes qualified read-only assurance dispatch into existing planning', async () => {
     const project = await createOpenSpecProject();
-    await fs.writeFile(path.join(project.root, 'openspec', 'gsd.json'), JSON.stringify({
+    await fs.writeFile(path.join(project.root, 'openspec', 'relay.json'), JSON.stringify({
       piHostAdapter: { enabled: true, maxReadOnlyConcurrency: 2 },
       taskOverrides: {
         '1.1': { requirementRefs: [requirementId], scenarioRefs: [scenarioId], expectedVerification: ['targeted-tests', 'compatibility'] },
@@ -52,7 +52,7 @@ describe('in-process Pi workflow adapter', () => {
       childSessionIds.push(childSessionId);
       return {
         sessionId: childSessionId, toolNames: [...toolNames],
-        run: async () => `<openspec-gsd-result>${JSON.stringify({
+        run: async () => `<openspec-relay-result>${JSON.stringify({
           dispatchId: envelope.dispatchId, parentSessionId: envelope.parentSessionId,
           childSessionId, role: envelope.role, changeName: envelope.changeName,
           planRevision: envelope.planRevision,
@@ -68,7 +68,7 @@ describe('in-process Pi workflow adapter', () => {
               routing: 'planner',
             } } : {}),
           },
-        })}</openspec-gsd-result>`,
+        })}</openspec-relay-result>`,
         abort: async () => undefined, dispose: async () => undefined,
       };
     } };
@@ -78,11 +78,11 @@ describe('in-process Pi workflow adapter', () => {
     });
     expect(result).toMatchObject({
       usedAdapter: true,
-      adapter: { adapterId: 'openspec-gsd/pi', piVersion: '0.84.4', modelRef: 'provider/model' },
+      adapter: { adapterId: 'openspec-relay/pi', piVersion: '0.84.4', modelRef: 'provider/model' },
       result: { status: 'pass', review: { independent: true } },
     });
     expect((result.result as { assurance: { hostAdapter?: unknown } }).assurance.hostAdapter).toMatchObject({
-      adapterId: 'openspec-gsd/pi', runtimeVersion: '0.84.4', modelRef: 'provider/model',
+      adapterId: 'openspec-relay/pi', runtimeVersion: '0.84.4', modelRef: 'provider/model',
       agentDispatch: 'available', parallelism: 'available',
     });
     expect(JSON.stringify((result.result as { assurance: unknown }).assurance)).not.toContain('parent-session');
@@ -91,7 +91,7 @@ describe('in-process Pi workflow adapter', () => {
       runtime: runtime(true), factory,
     });
     expect(status.result).toMatchObject({
-      hostAdapter: { adapterId: 'openspec-gsd/pi', runtimeVersion: '0.84.4' },
+      hostAdapter: { adapterId: 'openspec-relay/pi', runtimeVersion: '0.84.4' },
     });
     const tasksPath = path.join(project.changeDir, 'tasks.md');
     await fs.writeFile(tasksPath, (await fs.readFile(tasksPath, 'utf8')).replaceAll('- [ ]', '- [x]'));

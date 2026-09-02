@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GsdAssuranceV1Schema,
-  GsdConfigV1Schema,
-  GsdRunV1Schema,
+  RelayAssuranceV1Schema,
+  RelayConfigV1Schema,
+  RelayRunV1Schema,
 } from '../src/schemas.js';
 
-describe('versioned OpenSpec GSD records', () => {
+describe('versioned OpenSpec Relay records', () => {
   it('applies safe project defaults', () => {
-    expect(GsdConfigV1Schema.parse({})).toEqual({
+    expect(RelayConfigV1Schema.parse({})).toEqual({
       version: 1,
       mode: 'guarded',
       tdd: 'auto',
@@ -22,7 +22,7 @@ describe('versioned OpenSpec GSD records', () => {
   });
 
   it('rejects unversioned or structurally incomplete records', () => {
-    expect(() => GsdRunV1Schema.parse({ version: 2 })).toThrow();
-    expect(() => GsdAssuranceV1Schema.parse({ version: 1 })).toThrow();
+    expect(() => RelayRunV1Schema.parse({ version: 2 })).toThrow();
+    expect(() => RelayAssuranceV1Schema.parse({ version: 1 })).toThrow();
   });
 });

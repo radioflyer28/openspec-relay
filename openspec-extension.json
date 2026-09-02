@@ -1,9 +1,9 @@
 {
   "apiVersion": "openspec.dev/extensions/v1",
-  "id": "gsd",
-  "version": "0.1.0",
+  "id": "relay",
+  "version": "0.2.0",
   "requires": {
-    "openspec": ">=1.11.0-gsd.1 <2.0.0",
+    "openspec": ">=1.11.0-relay.1 <2.0.0",
     "hostCapabilities": {
       "required": ["structuredResults"],
       "optional": ["agentDispatch", "parallelism", "worktrees", "git", "humanInteraction"]
@@ -13,7 +13,7 @@
     "workflows": [
       {
         "id": "discuss",
-        "name": "OpenSpec GSD Discuss",
+        "name": "OpenSpec Relay Discuss",
         "description": "Reach shared understanding of material product intent before proposal or targeted replanning.",
         "entry": "workflows/discuss.generated.md",
         "artifactRequirements": [],
@@ -22,35 +22,35 @@
       },
       {
         "id": "plan",
-        "name": "OpenSpec GSD Plan",
+        "name": "OpenSpec Relay Plan",
         "description": "Refine, review, and approve an OpenSpec change for execution.",
         "entry": "workflows/plan.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["gsd.assurance"],
+        "gateDependencies": ["relay.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "do",
-        "name": "OpenSpec GSD Do",
+        "name": "OpenSpec Relay Do",
         "description": "Implement, review, repair, and verify an approved OpenSpec change.",
         "entry": "workflows/do.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["gsd.assurance"],
+        "gateDependencies": ["relay.assurance"],
         "requiredHostCapabilities": ["structuredResults"],
         "replaces": ["run"]
       },
       {
         "id": "check",
-        "name": "OpenSpec GSD Check",
+        "name": "OpenSpec Relay Check",
         "description": "Evaluate assurance for an OpenSpec change without expanding its scope.",
         "entry": "workflows/check.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["gsd.assurance"],
+        "gateDependencies": ["relay.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "status",
-        "name": "OpenSpec GSD Status",
+        "name": "OpenSpec Relay Status",
         "description": "Report execution, assurance, repair, gate, and human-action state.",
         "entry": "workflows/status.md",
         "artifactRequirements": ["tasks"],
@@ -60,28 +60,28 @@
       },
       {
         "id": "debug",
-        "name": "OpenSpec GSD Debug",
+        "name": "OpenSpec Relay Debug",
         "description": "Start or resume a scientific debugging session for an unresolved finding.",
         "entry": "workflows/debug.md",
         "artifactRequirements": ["proposal", "specs", "design", "tasks"],
-        "gateDependencies": ["gsd.assurance"],
+        "gateDependencies": ["relay.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "uat",
-        "name": "OpenSpec GSD UAT",
-        "description": "Guide scenario-by-scenario human acceptance for an OpenSpec GSD run.",
+        "name": "OpenSpec Relay UAT",
+        "description": "Guide scenario-by-scenario human acceptance for an OpenSpec Relay run.",
         "entry": "workflows/uat.md",
         "artifactRequirements": ["tasks"],
-        "gateDependencies": ["gsd.assurance"],
+        "gateDependencies": ["relay.assurance"],
         "requiredHostCapabilities": ["structuredResults"]
       }
     ],
     "gates": [
       {
-        "id": "gsd.assurance",
+        "id": "relay.assurance",
         "module": "dist/gate.js",
-        "export": "gsdAssuranceGate",
+        "export": "relayAssuranceGate",
         "timeoutMs": 30000,
         "requiredHostCapabilities": ["structuredResults"]
       }

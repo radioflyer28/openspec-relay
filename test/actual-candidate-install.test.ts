@@ -21,9 +21,9 @@ afterEach(async () => {
 
 describe('actual packed companion candidate', () => {
   it('installs with the core seam and exposes all seven workflows through host discovery', async () => {
-    const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd actual candidate '));
-    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd installed host '));
-    const piConfigRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd pi config '));
+    const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'relay actual candidate '));
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'relay installed host '));
+    const piConfigRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'relay pi config '));
     roots.push(artifactRoot, projectRoot, piConfigRoot);
     const packageRoot = process.cwd();
     const coreRoot = process.env.OPENSPEC_CORE_PACKAGE
@@ -40,7 +40,7 @@ describe('actual packed companion candidate', () => {
     expect(fileList).toEqual(expect.arrayContaining([
       'package.json', 'openspec-extension.json', 'dist/cli.js', 'dist/gate.js',
       'dist/pi/sdk-runtime.js', 'dist/pi/workflow.js', 'dist/pi/role-dispatch.js',
-      'pi/extensions/openspec-gsd.ts', 'pi/bin/openspec-gsd',
+      'pi/extensions/openspec-relay.ts', 'pi/bin/openspec-relay',
       'workflows/plan.md', 'workflows/do.md', 'workflows/check.md', 'workflows/status.md',
       'workflows/debug.md', 'workflows/uat.md',
     ]));
@@ -48,17 +48,17 @@ describe('actual packed companion candidate', () => {
 
     await fs.writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
       private: true,
-      name: 'gsd-installed-host',
+      name: 'relay-installed-host',
       dependencies: {
         '@fission-ai/openspec': `file:${coreRoot}`,
-        'openspec-gsd': `file:${candidate}`,
+        'openspec-relay': `file:${candidate}`,
       },
     }));
     execFileSync('npm', [
       'install', '--offline', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
       '--package-lock=false',
     ], { cwd: projectRoot, encoding: 'utf8', timeout: 30_000, env: nonInteractiveEnvironment });
-    const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-gsd');
+    const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-relay');
     const installedManifest = JSON.parse(await fs.readFile(path.join(installedCompanion, 'package.json'), 'utf8')) as {
       name: string;
       version: string;
@@ -66,10 +66,10 @@ describe('actual packed companion candidate', () => {
       files: string[];
     };
     expect(installedManifest).toMatchObject({
-      name: 'openspec-gsd',
+      name: 'openspec-relay',
       version: '0.1.0',
       peerDependencies: {
-        '@fission-ai/openspec': '>=1.11.0-gsd.1 <2.0.0',
+        '@fission-ai/openspec': '>=1.11.0-relay.1 <2.0.0',
         '@earendil-works/pi-ai': '>=0.84.0 <0.85.0',
         '@earendil-works/pi-coding-agent': '>=0.84.0 <0.85.0',
       },
@@ -96,11 +96,11 @@ describe('actual packed companion candidate', () => {
     await Promise.all([
       fs.writeFile(
         legacyRunSkill,
-        'legacy run\n\n<!-- openspec-extension:gsd@0.1.0/run/codex/skill -->\n',
+        'legacy run\n\n<!-- openspec-extension:relay@0.1.0/run/codex/skill -->\n',
       ),
       fs.writeFile(
         legacyStatusSkill,
-        'legacy status\n\n<!-- openspec-extension:gsd@0.1.0/run-status/codex/skill -->\n',
+        'legacy status\n\n<!-- openspec-extension:relay@0.1.0/run-status/codex/skill -->\n',
       ),
       fs.writeFile(similarlyNamedUserSkill, 'user-owned run notes\n'),
     ]);
@@ -111,8 +111,8 @@ describe('actual packed companion candidate', () => {
     const listed = execFileSync(process.execPath, [coreCli, 'extension', 'list'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
-    expect(listed).toMatch(/gsd@0\.1\.0.*compatibility=compatible.*workflows=7/);
-    const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'gsd'], {
+    expect(listed).toMatch(/relay@0\.1\.0.*compatibility=compatible.*workflows=7/);
+    const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'relay'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
     expect(doctor).toMatch(/manifest=valid; compatibility=compatible/);
@@ -126,8 +126,8 @@ describe('actual packed companion candidate', () => {
       const skill = await fs.readFile(path.join(
         projectRoot, '.agents', 'skills', `openspec-${workflow}`, 'SKILL.md',
       ), 'utf8');
-      expect(skill).toContain(`openspec-extension:gsd@0.1.0/${workflow}/codex/skill`);
-      expect(skill).toContain(workflow === 'discuss' ? 'Interview the user relentlessly' : 'openspec-gsd');
+      expect(skill).toContain(`openspec-extension:relay@0.1.0/${workflow}/codex/skill`);
+      expect(skill).toContain(workflow === 'discuss' ? 'Interview the user relentlessly' : 'openspec-relay');
     }
     const help = execFileSync(process.execPath, [
       path.join(installedCompanion, 'dist', 'cli.js'), '--help',
@@ -143,6 +143,6 @@ describe('actual packed companion candidate', () => {
     const piList = execFileSync(piCli, ['list'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: piEnvironment,
     });
-    expect(piList).toContain('openspec-gsd');
+    expect(piList).toContain('openspec-relay');
   }, 60_000);
 });

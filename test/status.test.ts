@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startGsdRunV2 } from '../src/runner-v2.js';
+import { startRelayRunV2 } from '../src/runner-v2.js';
 import { getRunStatusV2 } from '../src/status.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
@@ -11,8 +11,8 @@ afterEach(cleanupTemporaryRoots);
 describe('canonical run status', () => {
   it('reports projection tampering as the primary blocking status in JSON and human output', async () => {
     const { root, changeDir } = await createOpenSpecProject();
-    await startGsdRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-    const runPath = path.join(changeDir, '.openspec-gsd', 'run.json');
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const runPath = path.join(changeDir, '.openspec-relay', 'run.json');
     const run = JSON.parse(await fs.readFile(runPath, 'utf8')) as Record<string, unknown>;
     await fs.writeFile(runPath, JSON.stringify({ ...run, status: 'complete' }));
 

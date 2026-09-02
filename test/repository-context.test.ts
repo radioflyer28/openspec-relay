@@ -14,8 +14,8 @@ describe('repository context', () => {
     await fs.mkdir(path.join(root, 'src'), { recursive: true });
     await fs.writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 1;\n');
     execFileSync('git', ['init', '-b', 'main'], { cwd: root });
-    execFileSync('git', ['config', 'user.email', 'gsd@example.invalid'], { cwd: root });
-    execFileSync('git', ['config', 'user.name', 'OpenSpec GSD Test'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'relay@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'OpenSpec Relay Test'], { cwd: root });
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync('git', ['commit', '-m', 'baseline'], { cwd: root });
     execFileSync('git', ['checkout', '-b', 'feature'], { cwd: root });
@@ -36,8 +36,8 @@ describe('repository context', () => {
   it('reports an unresolved comparison base instead of an empty impact set', async () => {
     const { root } = await createOpenSpecProject();
     execFileSync('git', ['init', '-b', 'topic'], { cwd: root });
-    execFileSync('git', ['config', 'user.email', 'gsd@example.invalid'], { cwd: root });
-    execFileSync('git', ['config', 'user.name', 'OpenSpec GSD Test'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'relay@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'OpenSpec Relay Test'], { cwd: root });
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync('git', ['commit', '-m', 'only revision'], { cwd: root });
 

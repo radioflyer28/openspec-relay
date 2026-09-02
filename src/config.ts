@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
-  GsdConfigV1Schema,
-  GsdConfigV2Schema,
-  type GsdConfigV1,
-  type GsdConfigV2,
+  RelayConfigV1Schema,
+  RelayConfigV2Schema,
+  type RelayConfigV1,
+  type RelayConfigV2,
 } from './schemas.js';
 
 async function readPartialConfig(filename: string): Promise<Record<string, unknown>> {
@@ -16,7 +16,7 @@ async function readPartialConfig(filename: string): Promise<Record<string, unkno
     return value as Record<string, unknown>;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-    throw new Error(`Invalid OpenSpec GSD configuration at ${filename}: ${(error as Error).message}`);
+    throw new Error(`Invalid OpenSpec Relay configuration at ${filename}: ${(error as Error).message}`);
   }
 }
 
@@ -63,26 +63,26 @@ function mergeConfig(
   };
 }
 
-export async function loadGsdConfig(options: {
+export async function loadRelayConfig(options: {
   projectRoot: string;
   changeDir: string;
-  overrides?: Partial<GsdConfigV1>;
-}): Promise<GsdConfigV1> {
-  const project = await readPartialConfig(path.join(options.projectRoot, 'openspec', 'gsd.json'));
-  const change = await readPartialConfig(path.join(options.changeDir, 'gsd.json'));
+  overrides?: Partial<RelayConfigV1>;
+}): Promise<RelayConfigV1> {
+  const project = await readPartialConfig(path.join(options.projectRoot, 'openspec', 'relay.json'));
+  const change = await readPartialConfig(path.join(options.changeDir, 'relay.json'));
   const v1 = mergeConfig(mergeConfig(project, change), options.overrides as Record<string, unknown> ?? {});
   delete v1.features;
-  return GsdConfigV1Schema.parse(v1);
+  return RelayConfigV1Schema.parse(v1);
 }
 
-export async function loadGsdConfigV2(options: {
+export async function loadRelayConfigV2(options: {
   projectRoot: string;
   changeDir: string;
-  overrides?: Partial<GsdConfigV2>;
-}): Promise<GsdConfigV2> {
-  const project = await readPartialConfig(path.join(options.projectRoot, 'openspec', 'gsd.json'));
-  const change = await readPartialConfig(path.join(options.changeDir, 'gsd.json'));
-  return GsdConfigV2Schema.parse(
+  overrides?: Partial<RelayConfigV2>;
+}): Promise<RelayConfigV2> {
+  const project = await readPartialConfig(path.join(options.projectRoot, 'openspec', 'relay.json'));
+  const change = await readPartialConfig(path.join(options.changeDir, 'relay.json'));
+  return RelayConfigV2Schema.parse(
     mergeConfig(mergeConfig(project, change), options.overrides as Record<string, unknown> ?? {}),
   );
 }

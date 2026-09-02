@@ -16,15 +16,15 @@ describe('published package boundary', () => {
   it('exports orchestrated operations without exposing canonical execution-record writers', async () => {
     const api = await import('../src/index.js');
     expect(api).toEqual(expect.objectContaining({
-      startGsdRunV2: expect.any(Function),
-      checkGsdRunV2: expect.any(Function),
+      startRelayRunV2: expect.any(Function),
+      checkRelayRunV2: expect.any(Function),
       getRunStatusV2: expect.any(Function),
       recordWorkflowResultV2: expect.any(Function),
-      gsdAssuranceGate: expect.any(Object),
+      relayAssuranceGate: expect.any(Object),
     }));
     for (const internal of [
-      'appendGsdEventV2',
-      'createGsdEventV2',
+      'appendRelayEventV2',
+      'createRelayEventV2',
       'writeReplayedProjectionsV2',
       'atomicWriteJson',
       'atomicWriteText',
@@ -55,7 +55,7 @@ describe('published package boundary', () => {
       'dist', 'workflows', 'openspec-extension.json', 'README.md',
     ]));
     expect(pkg.peerDependencies['@fission-ai/openspec'])
-      .toBe('>=1.11.0-gsd.1 <2.0.0');
+      .toBe('>=1.11.0-relay.1 <2.0.0');
     expect(pkg.dependencies?.['@fission-ai/openspec']).toBeUndefined();
     expect(pkg.devDependencies['@fission-ai/openspec']).toBe('file:../OpenSpec');
   });

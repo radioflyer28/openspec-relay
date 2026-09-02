@@ -10,7 +10,7 @@ import type { PiHostCapabilityProfileV1 } from '../src/pi/host-adapter.js';
 const revision = 'a'.repeat(64);
 const profile: PiHostCapabilityProfileV1 = {
   version: 1,
-  adapterId: 'openspec-gsd/pi',
+  adapterId: 'openspec-relay/pi',
   piVersion: '0.84.4',
   sessionId: 'parent-session',
   modelRef: 'provider/model',
@@ -70,7 +70,7 @@ function factory(output: (sessionId: string, envelope: Record<string, unknown>) 
 }
 
 function validOutput(sessionId: string, envelope: Record<string, unknown>, overrides: Record<string, unknown> = {}): string {
-  return `diagnostic text\n<openspec-gsd-result>${JSON.stringify({
+  return `diagnostic text\n<openspec-relay-result>${JSON.stringify({
     dispatchId: envelope.dispatchId,
     parentSessionId: envelope.parentSessionId,
     childSessionId: sessionId,
@@ -83,7 +83,7 @@ function validOutput(sessionId: string, envelope: Record<string, unknown>, overr
       evidenceRefs: ['proposal.md'],
       ...overrides,
     },
-  })}</openspec-gsd-result>`;
+  })}</openspec-relay-result>`;
 }
 
 describe('Pi role dispatcher', () => {
@@ -113,9 +113,9 @@ describe('Pi role dispatcher', () => {
     const dispatcher = createPiRoleDispatcher({
       profile,
       factory: factory((sessionId, envelope) => {
-        const parsed = JSON.parse(validOutput(sessionId, envelope).match(/<openspec-gsd-result>(.*)<\/openspec-gsd-result>/s)![1]);
+        const parsed = JSON.parse(validOutput(sessionId, envelope).match(/<openspec-relay-result>(.*)<\/openspec-relay-result>/s)![1]);
         parsed[field] = value;
-        return `<openspec-gsd-result>${JSON.stringify(parsed)}</openspec-gsd-result>`;
+        return `<openspec-relay-result>${JSON.stringify(parsed)}</openspec-relay-result>`;
       }),
       currentRevision: async () => revision,
     });
