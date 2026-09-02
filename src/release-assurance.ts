@@ -226,7 +226,7 @@ export async function detectReleaseApplicability(options: {
 export function assertReleaseCommandSafe(command: string, args: string[]): void {
   const unsafe = new Set(['publish', 'release', 'deprecate', 'dist-tag', 'unpublish']);
   const nestedPublication = /(?:^|[\s;&|])(?:npm|pnpm|yarn\s+npm)?\s*(?:publish|unpublish|deprecate|dist-tag|release)(?:$|[\s;&|])/i;
-  const executable = command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.exe$/, '');
+  const executable = command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.(?:exe|cmd|bat|com)$/, '');
   if (unsafe.has(executable) ||
       args.some((arg) => unsafe.has(arg.toLowerCase()) || nestedPublication.test(arg))) {
     throw new Error(`Release assurance will not run external publication command '${[command, ...args].join(' ')}'.`);
@@ -235,7 +235,7 @@ export function assertReleaseCommandSafe(command: string, args: string[]): void 
 
 function assertConfiguredReleaseCommandSafe(command: string, args: string[]): void {
   assertReleaseCommandSafe(command, args);
-  const executable = command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.exe$/, '');
+  const executable = command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.(?:exe|cmd|bat|com)$/, '');
   const interpretersAndWrappers = new Set([
     'sh', 'bash', 'zsh', 'dash', 'ksh', 'fish', 'cmd', 'powershell', 'pwsh',
     'node', 'deno', 'bun', 'python', 'python3', 'perl', 'ruby', 'env', 'xargs',
@@ -284,8 +284,11 @@ export async function runLocalReleaseCommand(options: ReleaseCommandV2): Promise
       throw new Error('Release command working directory escapes its allowed workspace.');
     }
   }
+  const localCommand = process.platform === 'win32' && ['npm', 'pnpm', 'yarn'].includes(options.command)
+    ? `${options.command}.cmd`
+    : options.command;
   return new Promise((resolve, reject) => {
-    const child = execFile(options.command, options.args, {
+    const child = execFile(localCommand, options.args, {
       cwd: options.cwd,
       env: minimalEnvironment(options.cwd ?? process.cwd(), options.env),
       timeout: options.timeoutMs ?? 120_000,
