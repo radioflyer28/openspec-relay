@@ -3,7 +3,7 @@
   "id": "gsd",
   "version": "0.1.0",
   "requires": {
-    "openspec": ">=1.8.0-gsd.1 <2.0.0",
+    "openspec": ">=1.11.0-gsd.1 <2.0.0",
     "hostCapabilities": {
       "required": ["structuredResults"],
       "optional": ["agentDispatch", "parallelism", "worktrees", "git", "humanInteraction"]
