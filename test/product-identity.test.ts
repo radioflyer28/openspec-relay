@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { RELAY_VERSION } from '../src/version.js';
 
 const root = path.resolve('.');
 
@@ -18,6 +19,7 @@ describe('OpenSpec Relay public identity', () => {
       repository: { url: 'https://github.com/radioflyer28/openspec-relay.git' },
     });
     expect(Object.keys(pkg.bin)).toEqual(['openspec-relay']);
+    expect(RELAY_VERSION).toBe(pkg.version);
     expect(manifest.id).toBe('relay');
     expect(manifest.contributes.gates.map((gate: { id: string }) => gate.id)).toContain('relay.assurance');
     expect(pi).toContain("name: 'openspec_relay_workflow'");
