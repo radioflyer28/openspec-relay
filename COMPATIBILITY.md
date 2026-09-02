@@ -43,3 +43,11 @@ Private installation is qualified on macOS through `openspec extension link
 <path>` or a locally packed artifact. Linux and Windows remain portability
 targets without a support claim in this increment. Package-registry publication
 is intentionally outside this contract.
+
+The Pi adapter supports public Pi SDK versions `>=0.84.0 <0.85.0`; Pi 0.84.4 is
+the macOS qualification baseline. Linux and Windows CI compile, package, and run
+schema, fallback, and path-containment tests as portability evidence only.
+Runtime dispatch is default-off and must pass live capability probes. Static
+`openspec extension doctor` checks cannot observe the active Pi model,
+authentication, session lifecycle, or restricted tool inventory and therefore
+do not qualify the live adapter.
