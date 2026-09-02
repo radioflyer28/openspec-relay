@@ -67,7 +67,11 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return JSON.stringify([...new Set(left)].sort()) === JSON.stringify([...new Set(right)].sort());
 }
 
-function compileRolePrompt(request: RoleRequestV1, envelope: PiDispatchEnvelopeV1): string {
+function compileRolePrompt(
+  request: RoleRequestV1,
+  envelope: PiDispatchEnvelopeV1,
+  childSessionId: string,
+): string {
   const planning = request.planning!;
   return [
     `Role: ${request.role}`,
@@ -79,7 +83,8 @@ function compileRolePrompt(request: RoleRequestV1, envelope: PiDispatchEnvelopeV
     ...(planning.pathfinderQuestion ? [`Focused pathfinder question: ${planning.pathfinderQuestion}`] : []),
     'Use only the provided read-only tools. Do not modify the project or planning artifacts.',
     `Finish with exactly one ${RESULT_START}{JSON}${RESULT_END} envelope.`,
-    `Echo dispatchId=${envelope.dispatchId}, parentSessionId=${envelope.parentSessionId}, role=${envelope.role}, ` +
+    `Echo dispatchId=${envelope.dispatchId}, parentSessionId=${envelope.parentSessionId}, ` +
+      `childSessionId=${childSessionId}, role=${envelope.role}, ` +
       `changeName=${envelope.changeName}, and planRevision=${envelope.planRevision}.`,
   ].join('\n');
 }
@@ -154,7 +159,7 @@ export function createPiRoleDispatcher(options: {
         if (!sameStrings(session.toolNames, toolNames)) {
           return errorResult(`Pi host authority violation: child tools were ${session.toolNames.sort().join(', ') || 'none'}.`);
         }
-        const output = await session.run(compileRolePrompt(request, envelope), controller.signal);
+        const output = await session.run(compileRolePrompt(request, envelope, session.sessionId), controller.signal);
         if (controller.signal.aborted) {
           return errorResult(abortKind === 'timeout' ? 'Pi role dispatch timed out.' : 'Pi role dispatch was cancelled.');
         }
