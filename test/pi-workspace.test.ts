@@ -6,8 +6,16 @@ import {
   createPiExperimentWorkspace,
   resolveContainedPath,
 } from '../src/pi/experiment-workspace.js';
+import { resolvePiRoleSessionRoots } from '../src/pi/sdk-runtime.js';
 
 describe('Pi pathfinder experiment workspace', () => {
+  it('keeps repository reads at the project root while confining experiment writes separately', () => {
+    expect(resolvePiRoleSessionRoots('/project', '/private/tmp/pathfinder')).toEqual({
+      cwd: '/project',
+      experimentRoot: '/private/tmp/pathfinder',
+    });
+  });
+
   it('reads and writes only tracked relative paths inside its disposable root', async () => {
     const workspace = await createPiExperimentWorkspace();
     try {

@@ -16,8 +16,9 @@ function runtime(parallel = false): PiHostProbeRuntimeV1 {
     piVersion: '0.84.4', sessionId: 'parent-session', modelRef: 'provider/model',
     modelAvailable: true, authenticationAvailable: true,
     createReadOnlyProbe: async () => ({
-      toolNames: ['find', 'grep', 'ls', 'read'], supportsCancellation: true,
-      supportsTimeout: true, supportsStructuredResults: true, dispose: async () => undefined,
+      toolNames: ['find', 'grep', 'ls', 'read'],
+      exercise: async () => ({ cancellation: true, timeout: true, structuredResults: true }),
+      dispose: async () => undefined,
     }),
     probeParallelism: async () => parallel,
   };
@@ -100,6 +101,7 @@ describe('in-process Pi workflow adapter', () => {
     });
     expect(roles).toEqual(['pathfinder', 'plan_reviewer', 'reviewer', 'verifier']);
     expect(new Set(childSessionIds).size).toBe(childSessionIds.length);
+    expect((result.result as { pathfinderResults: unknown[] }).pathfinderResults).toHaveLength(1);
     expect(roles).not.toEqual(expect.arrayContaining(['planner', 'executor']));
   });
 });

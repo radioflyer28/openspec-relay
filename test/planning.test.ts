@@ -52,7 +52,10 @@ describe('reusable OpenSpec GSD planning', () => {
     expect(requests[0]).toMatchObject({ readOnly: false, isolated: true });
     expect(requests[1]).toMatchObject({ readOnly: true, isolated: true });
     expect(requests[0].planning?.artifactRefs).toEqual(expect.arrayContaining([
-      'proposal.md', 'design.md', 'tasks.md', 'specs/demo/spec.md',
+      'openspec/changes/demo/proposal.md',
+      'openspec/changes/demo/design.md',
+      'openspec/changes/demo/tasks.md',
+      'openspec/changes/demo/specs/demo/spec.md',
     ]));
     expect(requests[0].planning?.plannerInstructions.join('\n')).toMatch(/only planning truth/i);
   });
@@ -195,6 +198,8 @@ describe('reusable OpenSpec GSD planning', () => {
     expect(requests.filter((item) => item.role === 'planner')).toHaveLength(2);
     expect(requests.every((item) => item.planning?.invocation === 'do_replan')).toBe(true);
     expect(requests.at(-1)?.planning?.findingIds).toContain('finding:original');
+    expect(requests.every((item) => item.planning?.artifactRefs.every((ref) =>
+      ref.startsWith('openspec/changes/demo/')))).toBe(true);
   });
 
   it('stops after repeated unchanged blocking concerns', async () => {

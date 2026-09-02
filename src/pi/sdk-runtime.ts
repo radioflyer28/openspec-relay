@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   VERSION,
   createAgentSession,
@@ -87,6 +88,76 @@ async function createRestrictedSession(options: {
   });
 }
 
+const PROBE_START = '<openspec-gsd-probe>';
+const PROBE_END = '</openspec-gsd-probe>';
+
+function validProbeOutput(output: string, nonce: string): boolean {
+  const matches = [...output.matchAll(/<openspec-gsd-probe>([\s\S]*?)<\/openspec-gsd-probe>/g)];
+  if (matches.length !== 1) return false;
+  try {
+    const parsed = JSON.parse(matches[0]![1]!) as { ok?: unknown; nonce?: unknown };
+    return parsed.ok === true && parsed.nonce === nonce;
+  } catch {
+    return false;
+  }
+}
+
+async function promptForProbe(
+  created: Awaited<ReturnType<typeof createRestrictedSession>>,
+  nonce: string,
+): Promise<string> {
+  let output = '';
+  const unsubscribe = created.session.subscribe((event) => {
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
+      output += event.assistantMessageEvent.delta;
+    }
+  });
+  try {
+    await created.session.prompt(
+      `Return exactly ${PROBE_START}{"ok":true,"nonce":"${nonce}"}${PROBE_END} and no other text.`,
+      { expandPromptTemplates: false, source: 'extension' },
+    );
+    return output;
+  } finally {
+    unsubscribe();
+  }
+}
+
+async function waitForStreaming(session: { isStreaming: boolean }): Promise<boolean> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (session.isStreaming) return true;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return false;
+}
+
+async function exerciseAbort(
+  created: Awaited<ReturnType<typeof createRestrictedSession>>,
+  viaTimeout: boolean,
+): Promise<boolean> {
+  const pending = created.session.prompt('Return the word probe.', {
+    expandPromptTemplates: false,
+    source: 'extension',
+  }).catch(() => undefined);
+  if (!(await waitForStreaming(created.session))) {
+    await pending;
+    return false;
+  }
+  let timeoutFired = false;
+  if (viaTimeout) {
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        timeoutFired = created.session.isStreaming;
+        void created.session.abort().finally(resolve);
+      }, 1);
+    });
+  } else {
+    await created.session.abort();
+  }
+  await pending;
+  return (!viaTimeout || timeoutFired) && created.session.isIdle && !created.session.isStreaming;
+}
+
 export async function createPiSdkProbeRuntime(context: ExtensionContext): Promise<PiHostProbeRuntimeV1> {
   const auth = context.model
     ? await context.modelRegistry.getApiKeyAndHeaders(context.model).catch(() => ({ ok: false as const, error: 'probe failed' }))
@@ -99,9 +170,30 @@ export async function createPiSdkProbeRuntime(context: ExtensionContext): Promis
     });
     return {
       toolNames: created.session.getActiveToolNames(),
-      supportsCancellation: typeof created.session.abort === 'function',
-      supportsTimeout: typeof AbortController === 'function',
-      supportsStructuredResults: true,
+      exercise: async () => {
+        const cancellation = await createRestrictedSession({
+          context,
+          systemPrompt: 'OpenSpec GSD cancellation capability probe.',
+          toolNames: ['find', 'grep', 'ls', 'read'],
+        });
+        const timeout = await createRestrictedSession({
+          context,
+          systemPrompt: 'OpenSpec GSD timeout capability probe.',
+          toolNames: ['find', 'grep', 'ls', 'read'],
+        });
+        try {
+          const nonce = randomUUID();
+          const structuredResults = validProbeOutput(await promptForProbe(created, nonce), nonce);
+          return {
+            structuredResults,
+            cancellation: await exerciseAbort(cancellation, false),
+            timeout: await exerciseAbort(timeout, true),
+          };
+        } finally {
+          cancellation.session.dispose();
+          timeout.session.dispose();
+        }
+      },
       dispose: async () => created.session.dispose(),
     };
   };
@@ -113,14 +205,39 @@ export async function createPiSdkProbeRuntime(context: ExtensionContext): Promis
     authenticationAvailable: auth.ok,
     createReadOnlyProbe: createProbe,
     probeParallelism: async () => {
-      const probes = await Promise.all([createProbe(), createProbe()]);
+      const probes = await Promise.all([0, 1].map(async () => createRestrictedSession({
+        context,
+        systemPrompt: 'OpenSpec GSD concurrent structured capability probe.',
+        toolNames: ['find', 'grep', 'ls', 'read'],
+      })));
+      let active = 0;
+      let maximum = 0;
+      const unsubscribes = probes.map((created) => created.session.subscribe((event) => {
+        if (event.type === 'agent_start') {
+          active += 1;
+          maximum = Math.max(maximum, active);
+        }
+        if (event.type === 'agent_end') active -= 1;
+      }));
       try {
-        return probes.every((probe) => probe.toolNames.join(',') === 'read,grep,find,ls' ||
-          [...probe.toolNames].sort().join(',') === 'find,grep,ls,read');
+        const nonces = [randomUUID(), randomUUID()];
+        const outputs = await Promise.all(probes.map((created, index) => promptForProbe(created, nonces[index]!)));
+        return maximum >= 2 && outputs.every((output, index) => validProbeOutput(output, nonces[index]!));
       } finally {
-        await Promise.all(probes.map((probe) => probe.dispose()));
+        unsubscribes.forEach((unsubscribe) => unsubscribe());
+        probes.forEach((created) => created.session.dispose());
       }
     },
+  };
+}
+
+export function resolvePiRoleSessionRoots(contextCwd: string, workspace?: string): {
+  cwd: string;
+  experimentRoot?: string;
+} {
+  return {
+    cwd: contextCwd,
+    ...(workspace ? { experimentRoot: workspace } : {}),
   };
 }
 
@@ -132,12 +249,12 @@ export function createPiSdkRoleSessionFactory(context: ExtensionContext): PiRole
       toolNames: readonly string[];
       workspace?: string;
     }>): Promise<PiRoleSessionV1> {
+      const roots = resolvePiRoleSessionRoots(context.cwd, options.workspace);
       const created = await createRestrictedSession({
         context,
         systemPrompt: options.systemPrompt,
         toolNames: options.toolNames,
-        cwd: options.workspace ?? context.cwd,
-        ...(options.workspace ? { experimentRoot: options.workspace } : {}),
+        ...roots,
       });
       const session = created.session;
       return {
