@@ -44,23 +44,36 @@ describe('in-process Pi workflow adapter', () => {
       },
     }));
     const roles: string[] = [];
+    const childSessionIds: string[] = [];
     const factory: PiRoleSessionFactoryV1 = { create: async ({ envelope, toolNames }) => {
       roles.push(envelope.role);
       const childSessionId = `child-${roles.length}`;
+      childSessionIds.push(childSessionId);
       return {
         sessionId: childSessionId, toolNames: [...toolNames],
         run: async () => `<openspec-gsd-result>${JSON.stringify({
           dispatchId: envelope.dispatchId, parentSessionId: envelope.parentSessionId,
           childSessionId, role: envelope.role, changeName: envelope.changeName,
           planRevision: envelope.planRevision,
-          result: { status: 'pass', summary: `${envelope.role} passed`, evidenceRefs: [`evidence:${envelope.role}`] },
+          result: {
+            status: 'pass', summary: `${envelope.role} passed`, evidenceRefs: [`evidence:${envelope.role}`],
+            ...(envelope.role === 'pathfinder' ? { pathfinder: {
+              assumptions: ['The existing task mapping is authoritative.'],
+              experiments: ['Inspected the referenced OpenSpec artifacts.'],
+              observations: ['The planned files match the focused uncertainty.'],
+              counterexamples: [],
+              conclusion: 'The focused uncertainty is resolved within the existing plan.',
+              confidence: 'high',
+              routing: 'planner',
+            } } : {}),
+          },
         })}</openspec-gsd-result>`,
         abort: async () => undefined, dispose: async () => undefined,
       };
     } };
     const result = await executePiWorkflowOperationV1({
       operation: 'plan', change: 'demo', projectRoot: project.root,
-      runtime: runtime(true), factory,
+      runtime: runtime(true), factory, pathfinderQuestions: ['Which existing module should own the behavior?'],
     });
     expect(result).toMatchObject({
       usedAdapter: true,
@@ -85,7 +98,8 @@ describe('in-process Pi workflow adapter', () => {
       operation: 'do', change: 'demo', projectRoot: project.root,
       runtime: runtime(true), factory,
     });
-    expect(roles).toEqual(['plan_reviewer', 'reviewer', 'verifier']);
+    expect(roles).toEqual(['pathfinder', 'plan_reviewer', 'reviewer', 'verifier']);
+    expect(new Set(childSessionIds).size).toBe(childSessionIds.length);
     expect(roles).not.toEqual(expect.arrayContaining(['planner', 'executor']));
   });
 });
