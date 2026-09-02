@@ -26,7 +26,8 @@ describe('actual packed companion candidate', () => {
     const piConfigRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd pi config '));
     roots.push(artifactRoot, projectRoot, piConfigRoot);
     const packageRoot = process.cwd();
-    const coreRoot = path.resolve(packageRoot, '..', 'OpenSpec');
+    const coreRoot = process.env.OPENSPEC_CORE_PACKAGE
+      ?? path.resolve(packageRoot, '..', 'OpenSpec');
     const packed = JSON.parse(execFileSync('npm', [
       'pack', '--json', '--ignore-scripts', '--pack-destination', artifactRoot,
     ], { cwd: packageRoot, encoding: 'utf8' })) as Array<{
@@ -68,7 +69,7 @@ describe('actual packed companion candidate', () => {
       name: 'openspec-gsd',
       version: '0.1.0',
       peerDependencies: {
-        '@fission-ai/openspec': '>=1.8.0-gsd.1 <2.0.0',
+        '@fission-ai/openspec': '>=1.11.0-gsd.1 <2.0.0',
         '@earendil-works/pi-ai': '>=0.84.0 <0.85.0',
         '@earendil-works/pi-coding-agent': '>=0.84.0 <0.85.0',
       },
