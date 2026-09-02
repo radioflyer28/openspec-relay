@@ -4,7 +4,8 @@ description: "Report execution, assurance, repair, gate, and human-action state.
 
 Inspect an OpenSpec GSD lifecycle.
 
-Invoke `openspec-gsd status <change> --json` and summarize the active execution,
+In Pi, invoke `openspec_gsd_workflow` with operation `status`; use its exact CLI
+fallback with `--json` when the adapter is disabled or unqualified. Summarize the active execution,
 planner triage, repair or replan, semantic approval freshness, plan-review
 provenance, code review, goal verification, task progress, readiness,
 repository-context freshness, findings, debug sessions, UAT, release assurance,
