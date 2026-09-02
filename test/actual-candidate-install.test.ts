@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const roots: string[] = [];
+const npmCli = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const nonInteractiveEnvironment = {
   ...process.env,
   CI: 'true',
@@ -28,7 +29,7 @@ describe('actual packed companion candidate', () => {
     const packageRoot = process.cwd();
     const coreRoot = process.env.OPENSPEC_CORE_PACKAGE
       ?? path.resolve(packageRoot, '..', 'OpenSpec');
-    const packed = JSON.parse(execFileSync('npm', [
+    const packed = JSON.parse(execFileSync(npmCli, [
       'pack', '--json', '--ignore-scripts', '--pack-destination', artifactRoot,
     ], { cwd: packageRoot, encoding: 'utf8' })) as Array<{
       filename: string;
@@ -54,7 +55,7 @@ describe('actual packed companion candidate', () => {
         'openspec-relay': `file:${candidate}`,
       },
     }));
-    execFileSync('npm', [
+    execFileSync(npmCli, [
       'install', ...(process.env.RELAY_TEST_NPM_OFFLINE === '1' ? ['--offline'] : []),
       '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
       '--package-lock=false',
