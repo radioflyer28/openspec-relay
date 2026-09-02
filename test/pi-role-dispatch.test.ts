@@ -43,13 +43,15 @@ function factory(output: (sessionId: string, envelope: Record<string, unknown>) 
   tools?: string[];
   delayMs?: number;
   onAbort?: () => void;
+  onPrompt?: (prompt: string) => void;
 } = {}): PiRoleSessionFactoryV1 {
   return {
     create: async (input) => {
       const session: PiRoleSessionV1 = {
         sessionId: 'child-session',
         toolNames: options.tools ?? ['find', 'grep', 'ls', 'read'],
-        run: async (_prompt, signal) => {
+        run: async (prompt, signal) => {
+          options.onPrompt?.(prompt);
           if (options.delayMs) await new Promise<void>((resolve, reject) => {
             const timer = setTimeout(resolve, options.delayMs);
             signal.addEventListener('abort', () => {
@@ -86,14 +88,18 @@ function validOutput(sessionId: string, envelope: Record<string, unknown>, overr
 
 describe('Pi role dispatcher', () => {
   it('returns a validated result from a fresh read-only child session', async () => {
+    let prompt = '';
     const dispatcher = createPiRoleDispatcher({
       profile,
-      factory: factory((sessionId, envelope) => validOutput(sessionId, envelope)),
+      factory: factory((sessionId, envelope) => validOutput(sessionId, envelope), {
+        onPrompt: (value) => { prompt = value; },
+      }),
       currentRevision: async () => revision,
     });
     await expect(dispatcher.dispatch(request())).resolves.toMatchObject({
       status: 'pass', summary: 'Independent review passed.', evidenceRefs: ['proposal.md'],
     });
+    expect(prompt).toContain('childSessionId=child-session');
   });
 
   it.each([
