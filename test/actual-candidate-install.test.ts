@@ -6,7 +6,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const roots: string[] = [];
-const npmCli = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npmCommand = process.platform === 'win32' ? process.execPath : 'npm';
+const npmPrefix = process.platform === 'win32'
+  ? [path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')]
+  : [];
 const nonInteractiveEnvironment = {
   ...process.env,
   CI: 'true',
@@ -29,7 +32,7 @@ describe('actual packed companion candidate', () => {
     const packageRoot = process.cwd();
     const coreRoot = process.env.OPENSPEC_CORE_PACKAGE
       ?? path.resolve(packageRoot, '..', 'OpenSpec');
-    const packed = JSON.parse(execFileSync(npmCli, [
+    const packed = JSON.parse(execFileSync(npmCommand, [...npmPrefix,
       'pack', '--json', '--ignore-scripts', '--pack-destination', artifactRoot,
     ], { cwd: packageRoot, encoding: 'utf8' })) as Array<{
       filename: string;
@@ -55,7 +58,7 @@ describe('actual packed companion candidate', () => {
         'openspec-relay': `file:${candidate}`,
       },
     }));
-    execFileSync(npmCli, [
+    execFileSync(npmCommand, [...npmPrefix,
       'install', ...(process.env.RELAY_TEST_NPM_OFFLINE === '1' ? ['--offline'] : []),
       '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
       '--package-lock=false',
@@ -137,12 +140,12 @@ describe('actual packed companion candidate', () => {
     for (const command of ['plan', 'do', 'check', 'status', 'debug', 'uat']) expect(help).toContain(command);
     expect(help).not.toMatch(/^\s+run(?:-status)?\s/m);
 
-    const piCli = path.join(packageRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'pi.cmd' : 'pi');
+    const piCli = path.join(packageRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'bundle', 'cli.js');
     const piEnvironment = { ...nonInteractiveEnvironment, PI_CODING_AGENT_DIR: piConfigRoot, PI_OFFLINE: '1' };
-    execFileSync(piCli, ['install', installedCompanion], {
+    execFileSync(process.execPath, [piCli, 'install', installedCompanion], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: piEnvironment,
     });
-    const piList = execFileSync(piCli, ['list'], {
+    const piList = execFileSync(process.execPath, [piCli, 'list'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: piEnvironment,
     });
     expect(piList).toContain('openspec-relay');

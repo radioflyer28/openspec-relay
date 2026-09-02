@@ -284,11 +284,14 @@ export async function runLocalReleaseCommand(options: ReleaseCommandV2): Promise
       throw new Error('Release command working directory escapes its allowed workspace.');
     }
   }
-  const localCommand = process.platform === 'win32' && ['npm', 'pnpm', 'yarn'].includes(options.command)
-    ? `${options.command}.cmd`
-    : options.command;
+  const executable = options.command.split(/[\\/]/).at(-1)!.toLowerCase().replace(/\.(?:exe|cmd|bat|com)$/, '');
+  const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const localCommand = process.platform === 'win32' && executable === 'npm' ? process.execPath : options.command;
+  const localArgs = process.platform === 'win32' && executable === 'npm'
+    ? [npmCli, ...options.args]
+    : options.args;
   return new Promise((resolve, reject) => {
-    const child = execFile(localCommand, options.args, {
+    const child = execFile(localCommand, localArgs, {
       cwd: options.cwd,
       env: minimalEnvironment(options.cwd ?? process.cwd(), options.env),
       timeout: options.timeoutMs ?? 120_000,
