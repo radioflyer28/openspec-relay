@@ -59,6 +59,8 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.84.0 <0.85.0",
+    "@earendil-works/pi-coding-agent": ">=0.84.0 <0.85.0",
     "@fission-ai/openspec": ">=1.8.0-gsd.1 <2.0.0"
   },
   "dependencies": {
@@ -67,6 +69,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.4",
+    "@earendil-works/pi-coding-agent": "0.84.4",
     "@fission-ai/openspec": "file:../OpenSpec",
     "@types/node": "20.19.43",
     "@types/semver": "^7.8.0",

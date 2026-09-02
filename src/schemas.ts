@@ -422,8 +422,17 @@ export const GsdFeatureConfigV2Schema = z.object({
   }),
 }).strict();
 
+export const PiHostAdapterConfigV1Schema = z.object({
+  enabled: z.boolean().default(false),
+  forceTier0: z.boolean().default(false),
+  maxReadOnlyConcurrency: z.number().int().min(1).max(4).default(2),
+}).strict();
+
 export const GsdConfigV2Schema = GsdConfigV1Schema.omit({ version: true }).extend({
   version: z.literal(GSD_STATE_VERSION).default(GSD_STATE_VERSION),
+  piHostAdapter: PiHostAdapterConfigV1Schema.default({
+    enabled: false, forceTier0: false, maxReadOnlyConcurrency: 2,
+  }),
   features: GsdFeatureConfigV2Schema.default({
     repositoryContext: { enabled: true, boundaries: [] },
     readiness: { rollout: 'required', independentRequired: true },
@@ -645,7 +654,18 @@ export const GsdEventActorV2Schema = z.object({
   id: z.string().min(1).optional(),
 }).strict();
 
+export const HostAdapterProvenanceV1Schema = z.object({
+  adapterId: z.string().min(1),
+  adapterVersion: z.number().int().positive(),
+  runtimeVersion: z.string().min(1),
+  modelRef: z.string().min(1).optional(),
+  agentDispatch: z.enum(['available', 'disabled', 'probe_failed', 'unsupported_version']),
+  parallelism: z.enum(['available', 'disabled', 'probe_failed', 'unsupported_version']),
+  qualifiedAt: z.string().datetime(),
+}).strict();
+
 export const GsdEventPayloadV2Schema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('host.adapter_qualified'), adapter: HostAdapterProvenanceV1Schema }).strict(),
   z.object({
     type: z.literal('task.transition'),
     taskId: z.string().min(1),
@@ -745,6 +765,7 @@ export const GsdAssuranceV2Schema = GsdAssuranceV1Schema.omit({
   planReviews: z.array(PlanReviewResultV1Schema).default([]),
   findingRoutes: z.array(FindingRouteV1Schema).default([]),
   planApproval: PlanApprovalV1Schema.optional(),
+  hostAdapter: HostAdapterProvenanceV1Schema.optional(),
   planStale: z.boolean().default(false),
 }).strict();
 
@@ -793,6 +814,7 @@ export type DebugSessionV2 = z.infer<typeof DebugSessionV2Schema>;
 export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;
 export type GsdEventPayloadV2 = z.infer<typeof GsdEventPayloadV2Schema>;
+export type HostAdapterProvenanceV1 = z.infer<typeof HostAdapterProvenanceV1Schema>;
 export type GsdEventActorV2 = z.infer<typeof GsdEventActorV2Schema>;
 export type GsdEventEnvelopeV2 = z.infer<typeof GsdEventEnvelopeV2Schema>;
 export type GsdRunV2 = z.infer<typeof GsdRunV2Schema>;

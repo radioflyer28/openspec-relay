@@ -49,7 +49,8 @@ export const DEFAULT_HOST_CAPABILITIES: HostCapabilitiesV1 = {
 };
 
 function legacyConfig(config: GsdConfigV2) {
-  const legacy = Object.fromEntries(Object.entries(config).filter(([key]) => key !== 'features'));
+  const legacy = Object.fromEntries(Object.entries(config)
+    .filter(([key]) => key !== 'features' && key !== 'piHostAdapter'));
   return GsdConfigV1Schema.parse({ ...legacy, version: 1 });
 }
 

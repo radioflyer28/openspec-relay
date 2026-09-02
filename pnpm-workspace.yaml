@@ -3,4 +3,6 @@ packages:
 
 allowBuilds:
   '@fission-ai/openspec@file:../OpenSpec': false
+  '@google/genai': false
   esbuild: false
+  protobufjs: false

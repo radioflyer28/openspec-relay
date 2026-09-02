@@ -23,7 +23,8 @@ describe('actual packed companion candidate', () => {
   it('installs with the core seam and exposes all seven workflows through host discovery', async () => {
     const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd actual candidate '));
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd installed host '));
-    roots.push(artifactRoot, projectRoot);
+    const piConfigRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gsd pi config '));
+    roots.push(artifactRoot, projectRoot, piConfigRoot);
     const packageRoot = process.cwd();
     const coreRoot = path.resolve(packageRoot, '..', 'OpenSpec');
     const packed = JSON.parse(execFileSync('npm', [
@@ -37,6 +38,8 @@ describe('actual packed companion candidate', () => {
     const fileList = packed[0].files.map((item) => item.path).sort();
     expect(fileList).toEqual(expect.arrayContaining([
       'package.json', 'openspec-extension.json', 'dist/cli.js', 'dist/gate.js',
+      'dist/pi/sdk-runtime.js', 'dist/pi/workflow.js', 'dist/pi/role-dispatch.js',
+      'pi/extensions/openspec-gsd.ts', 'pi/bin/openspec-gsd',
       'workflows/plan.md', 'workflows/do.md', 'workflows/check.md', 'workflows/status.md',
       'workflows/debug.md', 'workflows/uat.md',
     ]));
@@ -64,7 +67,11 @@ describe('actual packed companion candidate', () => {
     expect(installedManifest).toMatchObject({
       name: 'openspec-gsd',
       version: '0.1.0',
-      peerDependencies: { '@fission-ai/openspec': '>=1.8.0-gsd.1 <2.0.0' },
+      peerDependencies: {
+        '@fission-ai/openspec': '>=1.8.0-gsd.1 <2.0.0',
+        '@earendil-works/pi-ai': '>=0.84.0 <0.85.0',
+        '@earendil-works/pi-coding-agent': '>=0.84.0 <0.85.0',
+      },
     });
 
     const coreCli = path.join(projectRoot, 'node_modules', '@fission-ai', 'openspec', 'bin', 'openspec.js');
@@ -126,5 +133,15 @@ describe('actual packed companion candidate', () => {
     ], { cwd: projectRoot, encoding: 'utf8' });
     for (const command of ['plan', 'do', 'check', 'status', 'debug', 'uat']) expect(help).toContain(command);
     expect(help).not.toMatch(/^\s+run(?:-status)?\s/m);
+
+    const piCli = path.join(packageRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'pi.cmd' : 'pi');
+    const piEnvironment = { ...nonInteractiveEnvironment, PI_CODING_AGENT_DIR: piConfigRoot, PI_OFFLINE: '1' };
+    execFileSync(piCli, ['install', installedCompanion], {
+      cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: piEnvironment,
+    });
+    const piList = execFileSync(piCli, ['list'], {
+      cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: piEnvironment,
+    });
+    expect(piList).toContain('openspec-gsd');
   }, 60_000);
 });

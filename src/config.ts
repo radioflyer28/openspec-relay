@@ -32,6 +32,10 @@ function mergeConfig(
       ...(base.taskOverrides as object | undefined),
       ...(update.taskOverrides as object | undefined),
     },
+    piHostAdapter: {
+      ...(base.piHostAdapter as object | undefined),
+      ...(update.piHostAdapter as object | undefined),
+    },
     features: {
       ...(base.features as object | undefined),
       ...(update.features as object | undefined),

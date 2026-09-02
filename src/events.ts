@@ -17,6 +17,7 @@ import {
   type GsdEventStoreV2,
   type GsdEventPayloadV1,
   type GsdRunV2,
+  type HostAdapterProvenanceV1,
   type FindingRouteV1,
   type PathfinderResultV1,
   type PlanApprovalV1,
@@ -189,7 +190,8 @@ export function replayGsdEventsV2(options: {
 }): { run: GsdRunV2; assurance: GsdAssuranceV2 } {
   const store = eventStoreV2(options.store);
   const legacyConfigInput = Object.fromEntries(
-    Object.entries(store.seed.config).filter(([key]) => key !== 'features'),
+    Object.entries(store.seed.config)
+      .filter(([key]) => key !== 'features' && key !== 'piHostAdapter'),
   );
   const legacyConfig = GsdConfigV1Schema.parse({ ...legacyConfigInput, version: 1 });
   const tasks = materializeCompiledTasks(options.compiled, legacyConfig);
@@ -210,6 +212,7 @@ export function replayGsdEventsV2(options: {
   let planStale = false;
   let repositoryContext: RepositoryContextV2 | undefined;
   let readiness: ReadinessResultV2 | undefined;
+  let hostAdapter: HostAdapterProvenanceV1 | undefined;
   let scenarioCoverage = store.seed.scenarioCoverage;
   let runStatus = store.seed.status;
   let checks = store.seed.checks.map((check) => AssuranceCheckV2Schema.parse(check));
@@ -247,7 +250,8 @@ export function replayGsdEventsV2(options: {
     if (['task.transition', 'evidence.recorded', 'finding.recorded', 'deviation.recorded',
       'repair.recorded', 'human.decision'].includes(payload.type)) {
       applyV1Payload(payload as GsdEventPayloadV1, event);
-    } else if (payload.type === 'context.compiled') repositoryContext = payload.context;
+    } else if (payload.type === 'host.adapter_qualified') hostAdapter = payload.adapter;
+    else if (payload.type === 'context.compiled') repositoryContext = payload.context;
     else if (payload.type === 'context.stale' && repositoryContext?.contextId === payload.contextId) {
       repositoryContext = {
         ...repositoryContext,
@@ -423,6 +427,7 @@ export function replayGsdEventsV2(options: {
     unresolvedHumanActions: [...new Set(humanActions)].sort(),
     ...(repositoryContext ? { repositoryContext } : {}),
     ...(readiness ? { readiness } : {}),
+    ...(hostAdapter ? { hostAdapter } : {}),
     debugSessions: debugValues,
     uatScenarios: uatValues,
     releaseCandidates: releaseValues,
