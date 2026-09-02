@@ -93,6 +93,7 @@ describe('conditional release assurance', () => {
     expect(plan.commands.flatMap((item) => item.args)).not.toContain('publish');
     const assertSafe = api.assertReleaseCommandSafe as (command: string, args: string[]) => void;
     expect(() => assertSafe('npm', ['publish'])).toThrow(/publish/i);
+    expect(() => assertSafe('npm.cmd', ['publish'])).toThrow(/publish/i);
     expect(() => assertSafe('C:\\tools\\release.exe', [])).toThrow(/publication/i);
   });
 
