@@ -13,9 +13,7 @@ function runtime(overrides: Partial<PiHostProbeRuntimeV1> = {}): PiHostProbeRunt
     authenticationAvailable: true,
     createReadOnlyProbe: async () => ({
       toolNames: ['find', 'grep', 'ls', 'read'],
-      supportsCancellation: true,
-      supportsTimeout: true,
-      supportsStructuredResults: true,
+      exercise: async () => ({ cancellation: true, timeout: true, structuredResults: true }),
       dispose: async () => undefined,
     }),
     probeParallelism: async () => true,
@@ -25,7 +23,19 @@ function runtime(overrides: Partial<PiHostProbeRuntimeV1> = {}): PiHostProbeRunt
 
 describe('Pi host capability qualification', () => {
   it('advertises isolated dispatch and parallelism only after live probes pass', async () => {
-    const profile = await qualifyPiHostAdapter({ enabled: true, runtime: runtime() });
+    let exercised = 0;
+    let parallelProbes = 0;
+    const profile = await qualifyPiHostAdapter({ enabled: true, runtime: runtime({
+      createReadOnlyProbe: async () => ({
+        toolNames: ['find', 'grep', 'ls', 'read'],
+        exercise: async () => {
+          exercised += 1;
+          return { cancellation: true, timeout: true, structuredResults: true };
+        },
+        dispose: async () => undefined,
+      }),
+      probeParallelism: async () => { parallelProbes += 1; return true; },
+    }) });
     expect(profile).toMatchObject({
       version: 1,
       adapterId: 'openspec-gsd/pi',
@@ -43,6 +53,8 @@ describe('Pi host capability qualification', () => {
         humanInteraction: true,
       },
     });
+    expect(exercised).toBe(1);
+    expect(parallelProbes).toBe(1);
   });
 
   it('qualifies dispatch independently when the concurrency probe fails', async () => {
@@ -78,14 +90,24 @@ describe('Pi host capability qualification', () => {
     const profile = await qualifyPiHostAdapter({ enabled: true, runtime: runtime({
       createReadOnlyProbe: async () => ({
         toolNames: ['bash', 'find', 'grep', 'ls', 'read'],
-        supportsCancellation: true,
-        supportsTimeout: true,
-        supportsStructuredResults: true,
+        exercise: async () => ({ cancellation: true, timeout: true, structuredResults: true }),
         dispose: async () => undefined,
       }),
     }) });
     expect(profile.agentDispatch).toMatchObject({ state: 'probe_failed' });
     expect(profile.agentDispatch.reason).toMatch(/tool inventory/i);
+  });
+
+  it('rejects asserted tool inventory when the live behavior probe does not pass', async () => {
+    const profile = await qualifyPiHostAdapter({ enabled: true, runtime: runtime({
+      createReadOnlyProbe: async () => ({
+        toolNames: ['find', 'grep', 'ls', 'read'],
+        exercise: async () => ({ cancellation: true, timeout: false, structuredResults: true }),
+        dispose: async () => undefined,
+      }),
+    }) });
+    expect(profile.agentDispatch).toMatchObject({ state: 'probe_failed' });
+    expect(profile.hostCapabilities.agentDispatch).toBe(false);
   });
 
   it('does not infer capabilities from installed-tool or environment hints', async () => {

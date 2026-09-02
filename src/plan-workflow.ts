@@ -195,6 +195,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
     overrides: options.config,
   });
   let compiled = await compileOpenSpecChange({ changeDir: resolved.changeDir, taskMetadata: loadedConfig.taskOverrides });
+  const authoritativeArtifactRefs = () => compiled.artifacts.map((item) => `${resolved.changeRef}/${item.path}`);
   let semanticRevision = await computeSemanticPlanRevision({ changeDir: resolved.changeDir, compiled });
   let classifications = classifySemanticRequirements(compiled.requirements);
   const baseInstructions = [
@@ -212,7 +213,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
         role: 'planner', readOnly: false, isolated: true,
         planning: planningContext({
           changeName: resolved.changeName, revision: semanticRevision.revision, invocation,
-          artifactRefs: compiled.artifacts.map((item) => item.path), plannerInstructions: baseInstructions,
+          artifactRefs: authoritativeArtifactRefs(), plannerInstructions: baseInstructions,
           classifications, findingIds: options.findingIds,
         }),
       },
@@ -281,7 +282,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
             role: 'pathfinder', readOnly: true, isolated: true, workspace,
             planning: planningContext({
               changeName: resolved.changeName, revision: semanticRevision.revision, invocation,
-              artifactRefs: compiled.artifacts.map((item) => item.path), plannerInstructions: baseInstructions,
+              artifactRefs: authoritativeArtifactRefs(), plannerInstructions: baseInstructions,
               classifications, pathfinderQuestion: question, disposableExperimentWorkspace: true,
             }),
           } });
@@ -335,7 +336,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       role: 'plan_reviewer', readOnly: true, isolated: true,
       planning: planningContext({
         changeName: resolved.changeName, revision: semanticRevision.revision, invocation,
-        artifactRefs: compiled.artifacts.map((item) => item.path), plannerInstructions: baseInstructions,
+        artifactRefs: authoritativeArtifactRefs(), plannerInstructions: baseInstructions,
         classifications, findingIds: options.findingIds,
       }),
     } });
@@ -366,7 +367,7 @@ export async function planGsdChangeV1(options: PlanGsdChangeOptionsV1): Promise<
       role: 'planner', readOnly: false, isolated: true,
       planning: planningContext({
         changeName: resolved.changeName, revision: semanticRevision.revision, invocation: 'do_replan',
-        artifactRefs: compiled.artifacts.map((item) => item.path),
+        artifactRefs: authoritativeArtifactRefs(),
         plannerInstructions: [...baseInstructions, `Repair only these stable planning findings: ${findingIds.join(', ') || signature}`],
         classifications, findingIds,
       }),
