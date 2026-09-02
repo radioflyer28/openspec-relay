@@ -29,9 +29,9 @@ path containment, and atomic replacement protect assurance consistency and
 accidental corruption; they are not a tamper-proof ledger or a sandbox. Strong
 identity and isolation remain host capabilities.
 
-This increment deliberately excludes deferred context-management mechanisms,
-future specialist-checker categories, phases, milestones, roadmaps, workstreams,
-and persistent project-management state. None of those artifacts or runtime
+This increment deliberately excludes deferred Little Coder mechanisms, future
+specialist-checker categories, phases, milestones, roadmaps, workstreams, and
+persistent project-management state. None of those artifacts or runtime
 requirements is introduced by OpenSpec Relay v2, and the companion neither
 installs nor requires the complete GSD runtime.
 
