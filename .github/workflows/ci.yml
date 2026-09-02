@@ -63,6 +63,12 @@ jobs:
           OPENSPEC_TELEMETRY: '0'
         run: pnpm build
 
+      - name: Verify Git source-install artifacts
+        working-directory: openspec-relay
+        run: |
+          git ls-files --error-unmatch dist/cli.js dist/pi/sdk-runtime.js dist/pi/workflow.js
+          git diff --exit-code -- dist
+
       - name: Type-check Relay
         working-directory: openspec-relay
         run: pnpm typecheck

@@ -1,0 +1,130 @@
+import { AssuranceCheckV2Schema } from './schemas.js';
+import { evaluateFindingObligations } from './findings.js';
+import { validateTddEvidence } from './tdd.js';
+import { mapScenarioCoverage } from './verification.js';
+function independentEvidence(input, checkId) {
+    return input.evidence.filter((item) => item.checkId === checkId && item.result === 'pass' &&
+        item.origin !== 'executor' && !input.staleEvidenceIds.includes(item.evidenceId)).map((item) => item.evidenceId);
+}
+function overall(checks, assurance) {
+    if (checks.some((item) => item.status === 'error'))
+        return 'error';
+    if (checks.some((item) => item.status === 'fail'))
+        return 'fail';
+    if (checks.some((item) => item.status === 'human_needed'))
+        return 'human_needed';
+    if (checks.some((item) => item.status === 'pending'))
+        return 'pending';
+    if (evaluateFindingObligations({ findings: assurance.findings, scenarios: assurance.uatScenarios }).blocking.length > 0)
+        return 'fail';
+    if (assurance.debugSessions.some((item) => item.status !== 'resolved' || !item.verification))
+        return 'human_needed';
+    if (assurance.uatScenarios.some((item) => ['awaiting_human', 'awaiting_retest', 'failed', 'blocked', 'stale'].includes(item.status)))
+        return 'human_needed';
+    if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'error'))
+        return 'error';
+    if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'fail'))
+        return 'fail';
+    if (assurance.releaseCandidates.some((item) => item.applicable && item.status === 'human_needed'))
+        return 'human_needed';
+    if (checks.some((item) => item.status === 'warn'))
+        return 'warn';
+    return 'pass';
+}
+/** Evaluate deterministic evidence and preserve the lifecycle, UAT, readiness,
+ * and release obligations that are already projected from the event history. */
+export function evaluateAssuranceV2(run, input) {
+    const scenarios = run.artifacts.flatMap((artifact) => artifact.ids).filter((id) => id.includes('/scenario:'));
+    const humanNeeded = Object.fromEntries(input.uatScenarios.filter((scenario) => ['awaiting_human', 'awaiting_retest', 'blocked', 'stale'].includes(scenario.status))
+        .map((scenario) => [scenario.scenarioId, scenario.action]));
+    const scenarioCoverage = mapScenarioCoverage({
+        scenarioIds: scenarios,
+        evidence: input.evidence.filter((item) => !input.staleEvidenceIds.includes(item.evidenceId)),
+        humanNeeded,
+    });
+    const checks = input.checks.map((check) => {
+        if (check.kind === 'artifact-validation')
+            return AssuranceCheckV2Schema.parse({
+                ...check,
+                status: run.artifacts.some((artifact) => artifact.kind === 'tasks') ? 'pass' : 'fail',
+                summary: run.artifacts.some((artifact) => artifact.kind === 'tasks')
+                    ? 'Required OpenSpec artifacts were compiled.' : 'Required OpenSpec tasks artifact is missing.',
+            });
+        if (check.kind === 'repository-context')
+            return AssuranceCheckV2Schema.parse({
+                ...check,
+                status: input.repositoryContext?.status === 'current' ? 'pass' : 'error',
+                summary: input.repositoryContext?.status === 'current' ? 'Repository context is current.' : 'Repository context is unavailable or stale.',
+            });
+        if (check.kind === 'plan-readiness') {
+            const ready = input.readiness?.status === 'pass';
+            const required = run.config.features.readiness.rollout === 'required';
+            return AssuranceCheckV2Schema.parse({
+                ...check,
+                status: ready ? 'pass' : required ? 'fail' : 'warn',
+                summary: ready ? 'Independent plan readiness passed.' : required
+                    ? 'Required independent plan readiness is unresolved.' : 'Plan readiness is report-only and unresolved.',
+            });
+        }
+        if (check.kind === 'planning-assurance') {
+            const requirementIds = run.artifacts.flatMap((artifact) => artifact.ids)
+                .filter((id) => id.includes('#requirement:') && !id.includes('/scenario:'));
+            const classified = new Set(input.semanticClassifications.map((item) => item.requirementId));
+            const missing = requirementIds.filter((id) => !classified.has(id));
+            const unresolvedDowngrades = input.semanticDowngrades.filter((item) => item.status !== 'accepted');
+            const currentReview = input.planReviews.filter((item) => item.revision === input.planApproval?.revision).at(-1);
+            const status = run.planApprovalStatus !== 'current' || input.planStale || missing.length > 0 || !currentReview
+                ? 'fail'
+                : unresolvedDowngrades.length > 0 ? 'human_needed'
+                    : !currentReview.independent || input.semanticDowngrades.length > 0 ? 'warn' : 'pass';
+            const summary = run.planApprovalStatus !== 'current' || input.planStale
+                ? 'Semantic plan approval is absent or stale.'
+                : missing.length > 0 ? `Semantic classifications are missing for: ${missing.join(', ')}.`
+                    : !currentReview ? 'No passing plan review is bound to the approved revision.'
+                        : unresolvedDowngrades.length > 0 ? 'Required semantic assurance has unresolved human downgrades.'
+                            : !currentReview.independent ? 'Plan is current with explicitly accepted Tier 0 self-review provenance.'
+                                : input.semanticDowngrades.length > 0 ? 'Plan is current with audited accepted semantic downgrades.'
+                                    : 'Semantic classifications, plan review, and revision-bound approval are current.';
+            return AssuranceCheckV2Schema.parse({ ...check, status, summary,
+                independent: Boolean(currentReview?.independent),
+                evidenceIds: currentReview?.evidenceRefs ?? [],
+                remediation: status === 'pass' || status === 'warn' ? []
+                    : ['Resolve semantic obligations and run /opsx:plan for the current artifact revision.'] });
+        }
+        if (check.kind === 'release-assurance') {
+            const applicable = input.releaseCandidates.filter((item) => item.applicable);
+            const status = !applicable.length ? 'skipped' : applicable.some((item) => item.status === 'error') ? 'error'
+                : applicable.some((item) => item.status === 'fail') ? 'fail'
+                    : applicable.some((item) => item.status === 'human_needed') ? 'human_needed'
+                        : applicable.some((item) => item.status === 'pending') ? 'pending' : 'pass';
+            return AssuranceCheckV2Schema.parse({ ...check, status, summary: !applicable.length
+                    ? 'No release surface is applicable.' : `Release assurance is ${status}.` });
+        }
+        if (check.kind === 'tdd') {
+            const results = run.tasks.filter((task) => task.tddRequired).map((task) => validateTddEvidence(task, input.evidence));
+            return AssuranceCheckV2Schema.parse({ ...check, status: results.every((item) => item.valid) ? 'pass' : 'fail',
+                summary: results.every((item) => item.valid) ? 'Required RED–GREEN–REFACTOR evidence is valid.'
+                    : results.flatMap((item) => item.diagnostics).join(' '), evidenceIds: results.flatMap((item) => item.evidenceIds) });
+        }
+        if (check.kind === 'scenario-coverage') {
+            const missing = scenarioCoverage.filter((item) => item.status === 'missing');
+            const human = scenarioCoverage.filter((item) => item.status === 'human_needed');
+            return AssuranceCheckV2Schema.parse({ ...check, status: missing.length ? 'fail' : human.length ? 'human_needed' : 'pass',
+                summary: missing.length ? `Missing scenario coverage: ${missing.map((item) => item.scenarioId).join(', ')}.`
+                    : human.length ? `Human validation required: ${human.map((item) => item.scenarioId).join(', ')}.`
+                        : 'Every declared scenario has observable coverage.', evidenceIds: scenarioCoverage.flatMap((item) => item.evidenceIds) });
+        }
+        const evidenceIds = independentEvidence(input, check.kind);
+        return AssuranceCheckV2Schema.parse({ ...check, status: evidenceIds.length ? 'pass' : 'fail',
+            summary: evidenceIds.length ? `${check.kind} has independent passing evidence.`
+                : `${check.kind} lacks independent passing evidence.`, evidenceIds,
+            remediation: evidenceIds.length ? [] : [`Run and record independent ${check.kind} evidence.`] });
+    });
+    const unresolvedHumanActions = [
+        ...input.unresolvedHumanActions,
+        ...checks.filter((item) => item.status === 'human_needed').map((item) => item.summary),
+    ];
+    const assurance = { ...input, checks, scenarioCoverage, unresolvedHumanActions };
+    return { checks, scenarioCoverage, status: overall(checks, assurance), unresolvedHumanActions: [...new Set(unresolvedHumanActions)].sort() };
+}
+//# sourceMappingURL=assurance-v2.js.map
