@@ -10,6 +10,7 @@ export interface RunStatusV2 {
   tasks: { total: number; complete: number; blocked: number };
   checks: GsdAssuranceV2['checks'];
   assuranceStatus: GsdAssuranceV2['status'];
+  hostAdapter?: GsdAssuranceV2['hostAdapter'];
   repositoryContext: { status: 'current' | 'stale' | 'unavailable' | 'missing' };
   readiness: { status: NonNullable<GsdAssuranceV2['readiness']>['status'] | 'missing'; issueCount: number };
   planning: {
@@ -71,6 +72,7 @@ export async function getRunStatusV2(options: {
     },
     checks: assurance.checks,
     assuranceStatus: integrityError ? 'error' : assurance.status,
+    ...(assurance.hostAdapter ? { hostAdapter: assurance.hostAdapter } : {}),
     repositoryContext: { status: assurance.repositoryContext?.status ?? 'missing' },
     readiness: { status: assurance.readiness?.status ?? 'missing', issueCount: assurance.readiness?.issues.length ?? 0 },
     planning: {
