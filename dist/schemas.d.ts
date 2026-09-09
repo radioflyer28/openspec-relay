@@ -2389,6 +2389,137 @@ export declare const HostAdapterProvenanceV1Schema: z.ZodObject<{
     }>;
     qualifiedAt: z.ZodString;
 }, z.core.$strict>;
+export declare const ResumeRouteV1Schema: z.ZodEnum<{
+    check: "check";
+    debug: "debug";
+    uat: "uat";
+    select: "select";
+    discuss: "discuss";
+    propose: "propose";
+    update: "update";
+    plan: "plan";
+    do: "do";
+    archive: "archive";
+}>;
+export declare const LifecycleStageV1Schema: z.ZodEnum<{
+    discussion: "discussion";
+    proposal: "proposal";
+    review: "review";
+    verification: "verification";
+    repair: "repair";
+    debug: "debug";
+    uat: "uat";
+    archive: "archive";
+    planning: "planning";
+    implementation: "implementation";
+}>;
+export declare const DispatchPauseStateV1Schema: z.ZodEnum<{
+    unknown: "unknown";
+    running: "running";
+    stopped: "stopped";
+    interrupted: "interrupted";
+}>;
+export declare const WorkspaceEntryV1Schema: z.ZodObject<{
+    path: z.ZodString;
+    status: z.ZodEnum<{
+        unknown: "unknown";
+        modified: "modified";
+        added: "added";
+        deleted: "deleted";
+        renamed: "renamed";
+        untracked: "untracked";
+    }>;
+    digest: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
+export declare const PauseDispatchV1Schema: z.ZodObject<{
+    dispatchId: z.ZodString;
+    state: z.ZodEnum<{
+        unknown: "unknown";
+        running: "running";
+        stopped: "stopped";
+        interrupted: "interrupted";
+    }>;
+    readOnly: z.ZodBoolean;
+    sessionId: z.ZodOptional<z.ZodString>;
+    requestRevision: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
+export declare const PauseCheckpointV1Schema: z.ZodObject<{
+    version: z.ZodLiteral<1>;
+    pauseId: z.ZodString;
+    changeName: z.ZodString;
+    runId: z.ZodString;
+    createdAt: z.ZodString;
+    planRevision: z.ZodOptional<z.ZodString>;
+    stage: z.ZodEnum<{
+        discussion: "discussion";
+        proposal: "proposal";
+        review: "review";
+        verification: "verification";
+        repair: "repair";
+        debug: "debug";
+        uat: "uat";
+        archive: "archive";
+        planning: "planning";
+        implementation: "implementation";
+    }>;
+    activity: z.ZodObject<{
+        kind: z.ZodEnum<{
+            external: "external";
+            task: "task";
+            workflow: "workflow";
+            artifact_write: "artifact_write";
+            state_write: "state_write";
+            dispatch: "dispatch";
+        }>;
+        id: z.ZodString;
+        mutationCapable: z.ZodBoolean;
+    }, z.core.$strict>;
+    taskIds: z.ZodArray<z.ZodString>;
+    repositoryRevision: z.ZodOptional<z.ZodString>;
+    workspace: z.ZodArray<z.ZodObject<{
+        path: z.ZodString;
+        status: z.ZodEnum<{
+            unknown: "unknown";
+            modified: "modified";
+            added: "added";
+            deleted: "deleted";
+            renamed: "renamed";
+            untracked: "untracked";
+        }>;
+        digest: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    dispatches: z.ZodArray<z.ZodObject<{
+        dispatchId: z.ZodString;
+        state: z.ZodEnum<{
+            unknown: "unknown";
+            running: "running";
+            stopped: "stopped";
+            interrupted: "interrupted";
+        }>;
+        readOnly: z.ZodBoolean;
+        sessionId: z.ZodOptional<z.ZodString>;
+        requestRevision: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    findingIds: z.ZodArray<z.ZodString>;
+    humanActionIds: z.ZodArray<z.ZodString>;
+    resumeRoute: z.ZodEnum<{
+        check: "check";
+        debug: "debug";
+        uat: "uat";
+        select: "select";
+        discuss: "discuss";
+        propose: "propose";
+        update: "update";
+        plan: "plan";
+        do: "do";
+        archive: "archive";
+    }>;
+    stateFingerprint: z.ZodString;
+    quiescence: z.ZodEnum<{
+        safe: "safe";
+        incomplete: "incomplete";
+    }>;
+}, z.core.$strict>;
 export declare const RelayEventPayloadV2Schema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"host.adapter_qualified">;
     adapter: z.ZodObject<{
@@ -3530,6 +3661,102 @@ export declare const RelayEventPayloadV2Schema: z.ZodDiscriminatedUnion<[z.ZodOb
     reason: z.ZodString;
     scope: z.ZodString;
     expiry: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>, z.ZodObject<{
+    type: z.ZodLiteral<"workflow.paused">;
+    checkpoint: z.ZodObject<{
+        version: z.ZodLiteral<1>;
+        pauseId: z.ZodString;
+        changeName: z.ZodString;
+        runId: z.ZodString;
+        createdAt: z.ZodString;
+        planRevision: z.ZodOptional<z.ZodString>;
+        stage: z.ZodEnum<{
+            discussion: "discussion";
+            proposal: "proposal";
+            review: "review";
+            verification: "verification";
+            repair: "repair";
+            debug: "debug";
+            uat: "uat";
+            archive: "archive";
+            planning: "planning";
+            implementation: "implementation";
+        }>;
+        activity: z.ZodObject<{
+            kind: z.ZodEnum<{
+                external: "external";
+                task: "task";
+                workflow: "workflow";
+                artifact_write: "artifact_write";
+                state_write: "state_write";
+                dispatch: "dispatch";
+            }>;
+            id: z.ZodString;
+            mutationCapable: z.ZodBoolean;
+        }, z.core.$strict>;
+        taskIds: z.ZodArray<z.ZodString>;
+        repositoryRevision: z.ZodOptional<z.ZodString>;
+        workspace: z.ZodArray<z.ZodObject<{
+            path: z.ZodString;
+            status: z.ZodEnum<{
+                unknown: "unknown";
+                modified: "modified";
+                added: "added";
+                deleted: "deleted";
+                renamed: "renamed";
+                untracked: "untracked";
+            }>;
+            digest: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        dispatches: z.ZodArray<z.ZodObject<{
+            dispatchId: z.ZodString;
+            state: z.ZodEnum<{
+                unknown: "unknown";
+                running: "running";
+                stopped: "stopped";
+                interrupted: "interrupted";
+            }>;
+            readOnly: z.ZodBoolean;
+            sessionId: z.ZodOptional<z.ZodString>;
+            requestRevision: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        findingIds: z.ZodArray<z.ZodString>;
+        humanActionIds: z.ZodArray<z.ZodString>;
+        resumeRoute: z.ZodEnum<{
+            check: "check";
+            debug: "debug";
+            uat: "uat";
+            select: "select";
+            discuss: "discuss";
+            propose: "propose";
+            update: "update";
+            plan: "plan";
+            do: "do";
+            archive: "archive";
+        }>;
+        stateFingerprint: z.ZodString;
+        quiescence: z.ZodEnum<{
+            safe: "safe";
+            incomplete: "incomplete";
+        }>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    type: z.ZodLiteral<"workflow.resumed">;
+    pauseId: z.ZodString;
+    checkpointFingerprint: z.ZodString;
+    route: z.ZodEnum<{
+        check: "check";
+        debug: "debug";
+        uat: "uat";
+        select: "select";
+        discuss: "discuss";
+        propose: "propose";
+        update: "update";
+        plan: "plan";
+        do: "do";
+        archive: "archive";
+    }>;
+    reconstructed: z.ZodBoolean;
 }, z.core.$strict>], "type">;
 export declare const RelayEventEnvelopeV2Schema: z.ZodObject<{
     version: z.ZodLiteral<2>;
@@ -4701,6 +4928,102 @@ export declare const RelayEventEnvelopeV2Schema: z.ZodObject<{
         reason: z.ZodString;
         scope: z.ZodString;
         expiry: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"workflow.paused">;
+        checkpoint: z.ZodObject<{
+            version: z.ZodLiteral<1>;
+            pauseId: z.ZodString;
+            changeName: z.ZodString;
+            runId: z.ZodString;
+            createdAt: z.ZodString;
+            planRevision: z.ZodOptional<z.ZodString>;
+            stage: z.ZodEnum<{
+                discussion: "discussion";
+                proposal: "proposal";
+                review: "review";
+                verification: "verification";
+                repair: "repair";
+                debug: "debug";
+                uat: "uat";
+                archive: "archive";
+                planning: "planning";
+                implementation: "implementation";
+            }>;
+            activity: z.ZodObject<{
+                kind: z.ZodEnum<{
+                    external: "external";
+                    task: "task";
+                    workflow: "workflow";
+                    artifact_write: "artifact_write";
+                    state_write: "state_write";
+                    dispatch: "dispatch";
+                }>;
+                id: z.ZodString;
+                mutationCapable: z.ZodBoolean;
+            }, z.core.$strict>;
+            taskIds: z.ZodArray<z.ZodString>;
+            repositoryRevision: z.ZodOptional<z.ZodString>;
+            workspace: z.ZodArray<z.ZodObject<{
+                path: z.ZodString;
+                status: z.ZodEnum<{
+                    unknown: "unknown";
+                    modified: "modified";
+                    added: "added";
+                    deleted: "deleted";
+                    renamed: "renamed";
+                    untracked: "untracked";
+                }>;
+                digest: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>>;
+            dispatches: z.ZodArray<z.ZodObject<{
+                dispatchId: z.ZodString;
+                state: z.ZodEnum<{
+                    unknown: "unknown";
+                    running: "running";
+                    stopped: "stopped";
+                    interrupted: "interrupted";
+                }>;
+                readOnly: z.ZodBoolean;
+                sessionId: z.ZodOptional<z.ZodString>;
+                requestRevision: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>>;
+            findingIds: z.ZodArray<z.ZodString>;
+            humanActionIds: z.ZodArray<z.ZodString>;
+            resumeRoute: z.ZodEnum<{
+                check: "check";
+                debug: "debug";
+                uat: "uat";
+                select: "select";
+                discuss: "discuss";
+                propose: "propose";
+                update: "update";
+                plan: "plan";
+                do: "do";
+                archive: "archive";
+            }>;
+            stateFingerprint: z.ZodString;
+            quiescence: z.ZodEnum<{
+                safe: "safe";
+                incomplete: "incomplete";
+            }>;
+        }, z.core.$strict>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"workflow.resumed">;
+        pauseId: z.ZodString;
+        checkpointFingerprint: z.ZodString;
+        route: z.ZodEnum<{
+            check: "check";
+            debug: "debug";
+            uat: "uat";
+            select: "select";
+            discuss: "discuss";
+            propose: "propose";
+            update: "update";
+            plan: "plan";
+            do: "do";
+            archive: "archive";
+        }>;
+        reconstructed: z.ZodBoolean;
     }, z.core.$strict>], "type">;
 }, z.core.$strict>;
 export declare const RelayRunV2Schema: z.ZodObject<{
@@ -4900,6 +5223,83 @@ export declare const RelayRunV2Schema: z.ZodObject<{
         current: "current";
         stale: "stale";
     }>>;
+    effectivePause: z.ZodOptional<z.ZodObject<{
+        version: z.ZodLiteral<1>;
+        pauseId: z.ZodString;
+        changeName: z.ZodString;
+        runId: z.ZodString;
+        createdAt: z.ZodString;
+        planRevision: z.ZodOptional<z.ZodString>;
+        stage: z.ZodEnum<{
+            discussion: "discussion";
+            proposal: "proposal";
+            review: "review";
+            verification: "verification";
+            repair: "repair";
+            debug: "debug";
+            uat: "uat";
+            archive: "archive";
+            planning: "planning";
+            implementation: "implementation";
+        }>;
+        activity: z.ZodObject<{
+            kind: z.ZodEnum<{
+                external: "external";
+                task: "task";
+                workflow: "workflow";
+                artifact_write: "artifact_write";
+                state_write: "state_write";
+                dispatch: "dispatch";
+            }>;
+            id: z.ZodString;
+            mutationCapable: z.ZodBoolean;
+        }, z.core.$strict>;
+        taskIds: z.ZodArray<z.ZodString>;
+        repositoryRevision: z.ZodOptional<z.ZodString>;
+        workspace: z.ZodArray<z.ZodObject<{
+            path: z.ZodString;
+            status: z.ZodEnum<{
+                unknown: "unknown";
+                modified: "modified";
+                added: "added";
+                deleted: "deleted";
+                renamed: "renamed";
+                untracked: "untracked";
+            }>;
+            digest: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        dispatches: z.ZodArray<z.ZodObject<{
+            dispatchId: z.ZodString;
+            state: z.ZodEnum<{
+                unknown: "unknown";
+                running: "running";
+                stopped: "stopped";
+                interrupted: "interrupted";
+            }>;
+            readOnly: z.ZodBoolean;
+            sessionId: z.ZodOptional<z.ZodString>;
+            requestRevision: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        findingIds: z.ZodArray<z.ZodString>;
+        humanActionIds: z.ZodArray<z.ZodString>;
+        resumeRoute: z.ZodEnum<{
+            check: "check";
+            debug: "debug";
+            uat: "uat";
+            select: "select";
+            discuss: "discuss";
+            propose: "propose";
+            update: "update";
+            plan: "plan";
+            do: "do";
+            archive: "archive";
+        }>;
+        stateFingerprint: z.ZodString;
+        quiescence: z.ZodEnum<{
+            safe: "safe";
+            incomplete: "incomplete";
+        }>;
+    }, z.core.$strict>>;
 }, z.core.$strict>;
 export declare const RelayAssuranceV2Schema: z.ZodObject<{
     status: z.ZodEnum<{
@@ -6989,6 +7389,102 @@ export declare const RelayEventStoreV2Schema: z.ZodObject<{
             reason: z.ZodString;
             scope: z.ZodString;
             expiry: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"workflow.paused">;
+            checkpoint: z.ZodObject<{
+                version: z.ZodLiteral<1>;
+                pauseId: z.ZodString;
+                changeName: z.ZodString;
+                runId: z.ZodString;
+                createdAt: z.ZodString;
+                planRevision: z.ZodOptional<z.ZodString>;
+                stage: z.ZodEnum<{
+                    discussion: "discussion";
+                    proposal: "proposal";
+                    review: "review";
+                    verification: "verification";
+                    repair: "repair";
+                    debug: "debug";
+                    uat: "uat";
+                    archive: "archive";
+                    planning: "planning";
+                    implementation: "implementation";
+                }>;
+                activity: z.ZodObject<{
+                    kind: z.ZodEnum<{
+                        external: "external";
+                        task: "task";
+                        workflow: "workflow";
+                        artifact_write: "artifact_write";
+                        state_write: "state_write";
+                        dispatch: "dispatch";
+                    }>;
+                    id: z.ZodString;
+                    mutationCapable: z.ZodBoolean;
+                }, z.core.$strict>;
+                taskIds: z.ZodArray<z.ZodString>;
+                repositoryRevision: z.ZodOptional<z.ZodString>;
+                workspace: z.ZodArray<z.ZodObject<{
+                    path: z.ZodString;
+                    status: z.ZodEnum<{
+                        unknown: "unknown";
+                        modified: "modified";
+                        added: "added";
+                        deleted: "deleted";
+                        renamed: "renamed";
+                        untracked: "untracked";
+                    }>;
+                    digest: z.ZodOptional<z.ZodString>;
+                }, z.core.$strict>>;
+                dispatches: z.ZodArray<z.ZodObject<{
+                    dispatchId: z.ZodString;
+                    state: z.ZodEnum<{
+                        unknown: "unknown";
+                        running: "running";
+                        stopped: "stopped";
+                        interrupted: "interrupted";
+                    }>;
+                    readOnly: z.ZodBoolean;
+                    sessionId: z.ZodOptional<z.ZodString>;
+                    requestRevision: z.ZodOptional<z.ZodString>;
+                }, z.core.$strict>>;
+                findingIds: z.ZodArray<z.ZodString>;
+                humanActionIds: z.ZodArray<z.ZodString>;
+                resumeRoute: z.ZodEnum<{
+                    check: "check";
+                    debug: "debug";
+                    uat: "uat";
+                    select: "select";
+                    discuss: "discuss";
+                    propose: "propose";
+                    update: "update";
+                    plan: "plan";
+                    do: "do";
+                    archive: "archive";
+                }>;
+                stateFingerprint: z.ZodString;
+                quiescence: z.ZodEnum<{
+                    safe: "safe";
+                    incomplete: "incomplete";
+                }>;
+            }, z.core.$strict>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"workflow.resumed">;
+            pauseId: z.ZodString;
+            checkpointFingerprint: z.ZodString;
+            route: z.ZodEnum<{
+                check: "check";
+                debug: "debug";
+                uat: "uat";
+                select: "select";
+                discuss: "discuss";
+                propose: "propose";
+                update: "update";
+                plan: "plan";
+                do: "do";
+                archive: "archive";
+            }>;
+            reconstructed: z.ZodBoolean;
         }, z.core.$strict>], "type">;
     }, z.core.$strict>>;
 }, z.core.$strict>;
@@ -7018,6 +7514,12 @@ export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;
 export type RelayEventPayloadV2 = z.infer<typeof RelayEventPayloadV2Schema>;
 export type HostAdapterProvenanceV1 = z.infer<typeof HostAdapterProvenanceV1Schema>;
+export type ResumeRouteV1 = z.infer<typeof ResumeRouteV1Schema>;
+export type LifecycleStageV1 = z.infer<typeof LifecycleStageV1Schema>;
+export type DispatchPauseStateV1 = z.infer<typeof DispatchPauseStateV1Schema>;
+export type WorkspaceEntryV1 = z.infer<typeof WorkspaceEntryV1Schema>;
+export type PauseDispatchV1 = z.infer<typeof PauseDispatchV1Schema>;
+export type PauseCheckpointV1 = z.infer<typeof PauseCheckpointV1Schema>;
 export type RelayEventActorV2 = z.infer<typeof RelayEventActorV2Schema>;
 export type RelayEventEnvelopeV2 = z.infer<typeof RelayEventEnvelopeV2Schema>;
 export type RelayRunV2 = z.infer<typeof RelayRunV2Schema>;

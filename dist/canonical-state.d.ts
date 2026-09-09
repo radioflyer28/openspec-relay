@@ -796,6 +796,47 @@ export declare function loadCanonicalRelayState(changeDir: string): Promise<{
                 reason: string;
                 scope: string;
                 expiry?: string | undefined;
+            } | {
+                type: "workflow.paused";
+                checkpoint: {
+                    version: 1;
+                    pauseId: string;
+                    changeName: string;
+                    runId: string;
+                    createdAt: string;
+                    stage: "discussion" | "proposal" | "review" | "verification" | "repair" | "debug" | "uat" | "archive" | "planning" | "implementation";
+                    activity: {
+                        kind: "external" | "task" | "workflow" | "artifact_write" | "state_write" | "dispatch";
+                        id: string;
+                        mutationCapable: boolean;
+                    };
+                    taskIds: string[];
+                    workspace: {
+                        path: string;
+                        status: "unknown" | "modified" | "added" | "deleted" | "renamed" | "untracked";
+                        digest?: string | undefined;
+                    }[];
+                    dispatches: {
+                        dispatchId: string;
+                        state: "unknown" | "running" | "stopped" | "interrupted";
+                        readOnly: boolean;
+                        sessionId?: string | undefined;
+                        requestRevision?: string | undefined;
+                    }[];
+                    findingIds: string[];
+                    humanActionIds: string[];
+                    resumeRoute: "check" | "debug" | "uat" | "select" | "discuss" | "propose" | "update" | "plan" | "do" | "archive";
+                    stateFingerprint: string;
+                    quiescence: "safe" | "incomplete";
+                    planRevision?: string | undefined;
+                    repositoryRevision?: string | undefined;
+                };
+            } | {
+                type: "workflow.resumed";
+                pauseId: string;
+                checkpointFingerprint: string;
+                route: "check" | "debug" | "uat" | "select" | "discuss" | "propose" | "update" | "plan" | "do" | "archive";
+                reconstructed: boolean;
             };
         }[];
     };
@@ -928,6 +969,39 @@ export declare function loadCanonicalRelayRecords(changeDir: string): Promise<{
         repositoryContextId?: string | undefined;
         readinessResultId?: string | undefined;
         planRevision?: string | undefined;
+        effectivePause?: {
+            version: 1;
+            pauseId: string;
+            changeName: string;
+            runId: string;
+            createdAt: string;
+            stage: "discussion" | "proposal" | "review" | "verification" | "repair" | "debug" | "uat" | "archive" | "planning" | "implementation";
+            activity: {
+                kind: "external" | "task" | "workflow" | "artifact_write" | "state_write" | "dispatch";
+                id: string;
+                mutationCapable: boolean;
+            };
+            taskIds: string[];
+            workspace: {
+                path: string;
+                status: "unknown" | "modified" | "added" | "deleted" | "renamed" | "untracked";
+                digest?: string | undefined;
+            }[];
+            dispatches: {
+                dispatchId: string;
+                state: "unknown" | "running" | "stopped" | "interrupted";
+                readOnly: boolean;
+                sessionId?: string | undefined;
+                requestRevision?: string | undefined;
+            }[];
+            findingIds: string[];
+            humanActionIds: string[];
+            resumeRoute: "check" | "debug" | "uat" | "select" | "discuss" | "propose" | "update" | "plan" | "do" | "archive";
+            stateFingerprint: string;
+            quiescence: "safe" | "incomplete";
+            planRevision?: string | undefined;
+            repositoryRevision?: string | undefined;
+        } | undefined;
     };
     assurance: {
         status: "pass" | "error" | "human_needed" | "fail" | "pending" | "warn";
@@ -2121,6 +2195,47 @@ export declare function loadCanonicalRelayRecords(changeDir: string): Promise<{
                 reason: string;
                 scope: string;
                 expiry?: string | undefined;
+            } | {
+                type: "workflow.paused";
+                checkpoint: {
+                    version: 1;
+                    pauseId: string;
+                    changeName: string;
+                    runId: string;
+                    createdAt: string;
+                    stage: "discussion" | "proposal" | "review" | "verification" | "repair" | "debug" | "uat" | "archive" | "planning" | "implementation";
+                    activity: {
+                        kind: "external" | "task" | "workflow" | "artifact_write" | "state_write" | "dispatch";
+                        id: string;
+                        mutationCapable: boolean;
+                    };
+                    taskIds: string[];
+                    workspace: {
+                        path: string;
+                        status: "unknown" | "modified" | "added" | "deleted" | "renamed" | "untracked";
+                        digest?: string | undefined;
+                    }[];
+                    dispatches: {
+                        dispatchId: string;
+                        state: "unknown" | "running" | "stopped" | "interrupted";
+                        readOnly: boolean;
+                        sessionId?: string | undefined;
+                        requestRevision?: string | undefined;
+                    }[];
+                    findingIds: string[];
+                    humanActionIds: string[];
+                    resumeRoute: "check" | "debug" | "uat" | "select" | "discuss" | "propose" | "update" | "plan" | "do" | "archive";
+                    stateFingerprint: string;
+                    quiescence: "safe" | "incomplete";
+                    planRevision?: string | undefined;
+                    repositoryRevision?: string | undefined;
+                };
+            } | {
+                type: "workflow.resumed";
+                pauseId: string;
+                checkpointFingerprint: string;
+                route: "check" | "debug" | "uat" | "select" | "discuss" | "propose" | "update" | "plan" | "do" | "archive";
+                reconstructed: boolean;
             };
         }[];
     };

@@ -149,6 +149,7 @@ export function replayRelayEventsV2(options) {
     let runStatus = store.seed.status;
     let checks = store.seed.checks.map((check) => AssuranceCheckV2Schema.parse(check));
     const humanActions = [];
+    let effectivePause;
     const applyV1Payload = (payload, event) => {
         if (payload.type === 'task.transition') {
             const task = byTask.get(payload.taskId);
@@ -372,6 +373,14 @@ export function replayRelayEventsV2(options) {
         else if (payload.type === 'human.disposition_recorded' && payload.disposition === 'human_needed') {
             humanActions.push(`${payload.subjectId}: ${payload.reason}`);
         }
+        else if (payload.type === 'workflow.paused') {
+            effectivePause = payload.checkpoint;
+        }
+        else if (payload.type === 'workflow.resumed' &&
+            effectivePause?.pauseId === payload.pauseId &&
+            effectivePause.stateFingerprint === payload.checkpointFingerprint) {
+            effectivePause = undefined;
+        }
     }
     const updatedAt = store.events.at(-1)?.occurredAt ?? store.createdAt;
     const currentDigests = new Map(options.compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]));
@@ -440,6 +449,7 @@ export function replayRelayEventsV2(options) {
         ...(readiness ? { readinessResultId: readiness.resultId } : {}),
         ...(planApproval ? { planRevision: planApproval.revision } : {}),
         planApprovalStatus: !planApproval ? 'missing' : planStale ? 'stale' : 'current',
+        ...(effectivePause ? { effectivePause } : {}),
     });
     return { run, assurance };
 }
