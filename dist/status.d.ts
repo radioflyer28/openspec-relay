@@ -1,4 +1,5 @@
 import type { RelayAssuranceV2, RelayRunV2 } from './schemas.js';
+import { type ResumeRouteDecisionV1 } from './resume-route.js';
 export interface RunStatusV2 {
     changeName: string;
     mode: RelayRunV2['mode'];
@@ -27,6 +28,16 @@ export interface RunStatusV2 {
         activeRoute?: string;
         resume: 'plan' | 'do' | 'none';
     };
+    pause?: {
+        state: 'paused' | 'incomplete_quiescence';
+        pauseId: string;
+        stage: NonNullable<RelayRunV2['effectivePause']>['stage'];
+        activityId: string;
+        interruptedDispatches: string[];
+        runningDispatches: string[];
+        unknownDispatches: string[];
+    };
+    resume: ResumeRouteDecisionV1;
     findings: Record<string, number>;
     debugSessions: {
         active: string[];

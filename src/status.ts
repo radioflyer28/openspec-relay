@@ -1,6 +1,7 @@
 import { loadCanonicalRelayRecords } from './canonical-state.js';
 import type { RelayAssuranceV2, RelayRunV2 } from './schemas.js';
 import { resolveChangeDirectory } from './state.js';
+import { evaluateResumeRouteV1, type ResumeRouteDecisionV1 } from './resume-route.js';
 
 export interface RunStatusV2 {
   changeName: string;
@@ -21,6 +22,16 @@ export interface RunStatusV2 {
     activeRoute?: string;
     resume: 'plan' | 'do' | 'none';
   };
+  pause?: {
+    state: 'paused' | 'incomplete_quiescence';
+    pauseId: string;
+    stage: NonNullable<RelayRunV2['effectivePause']>['stage'];
+    activityId: string;
+    interruptedDispatches: string[];
+    runningDispatches: string[];
+    unknownDispatches: string[];
+  };
+  resume: ResumeRouteDecisionV1;
   findings: Record<string, number>;
   debugSessions: { active: string[]; humanNeeded: string[] };
   uat: { pending: string[]; acceptedLimitations: string[] };
@@ -46,6 +57,25 @@ export async function getRunStatusV2(options: {
     ['awaiting_human', 'awaiting_retest', 'failed', 'blocked', 'stale'].includes(scenario.status));
   const unresolvedRelease = assurance.releaseCandidates.filter((candidate) =>
     ['pending', 'fail', 'human_needed', 'error'].includes(candidate.status));
+  const pause = run.effectivePause;
+  const activeDebug = assurance.debugSessions.some((session) => session.status === 'active');
+  const pendingWork = run.tasks.some((task) => task.status !== 'complete') ||
+    assurance.findings.some((finding) => finding.blocking &&
+      !['independently_verified', 'accepted_risk'].includes(finding.state));
+  const resume = evaluateResumeRouteV1({
+    integrity: integrityError ? 'error' : 'pass',
+    candidateIds: [run.changeName],
+    artifactState: 'complete',
+    artifactsChanged: Boolean(pause?.planRevision && pause.planRevision !== run.planRevision),
+    discussionOpen: false,
+    planApproval: run.planApprovalStatus,
+    activeDebug,
+    pendingWork,
+    pendingUat: pendingUat.length > 0,
+    archiveReady: run.status === 'complete' && ['pass', 'warn'].includes(assurance.status),
+    requiredAuthority: [],
+    hasCheckpoint: Boolean(pause),
+  });
   const nextActions = [
     ...(integrityError
       ? ['Regenerate projections from canonical OpenSpec Relay history with openspec-relay check.'] : []),
@@ -53,6 +83,9 @@ export async function getRunStatusV2(options: {
     ...(assurance.readiness && assurance.readiness.status !== 'pass'
       ? assurance.readiness.issues.filter((issue) => issue.blocking).flatMap((issue) => issue.remediation) : []),
     ...(run.planApprovalStatus !== 'current' ? [`Run /opsx:plan ${run.changeName} before implementation.`] : []),
+    ...(pause && pause.quiescence === 'incomplete'
+      ? [`Stop or reconcile ${pause.dispatches.filter((item) => item.state === 'running' || item.state === 'unknown')
+        .map((item) => item.dispatchId).join(', ')} before mutation resumes.`] : []),
     ...assurance.findings.filter((finding) => finding.blocking &&
       !['independently_verified', 'accepted_risk'].includes(finding.state))
       .map((finding) => `Resolve finding ${finding.findingId}.`),
@@ -85,6 +118,16 @@ export async function getRunStatusV2(options: {
       resume: run.planApprovalStatus !== 'current' ? 'plan'
         : run.status === 'complete' ? 'none' : 'do',
     },
+    ...(pause ? { pause: {
+      state: pause.quiescence === 'safe' ? 'paused' : 'incomplete_quiescence',
+      pauseId: pause.pauseId,
+      stage: pause.stage,
+      activityId: pause.activity.id,
+      interruptedDispatches: pause.dispatches.filter((item) => item.state === 'interrupted').map((item) => item.dispatchId),
+      runningDispatches: pause.dispatches.filter((item) => item.state === 'running').map((item) => item.dispatchId),
+      unknownDispatches: pause.dispatches.filter((item) => item.state === 'unknown').map((item) => item.dispatchId),
+    } } : {}),
+    resume,
     findings,
     debugSessions: {
       active: assurance.debugSessions.filter((session) => session.status === 'active').map((session) => session.sessionId),
