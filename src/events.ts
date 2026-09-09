@@ -29,6 +29,7 @@ import {
   type VerificationFindingV1,
   type SemanticClassificationV1,
   type SemanticDowngradeV1,
+  type PauseCheckpointV1,
 } from './schemas.js';
 import {
   assuranceStatePath,
@@ -217,6 +218,7 @@ export function replayRelayEventsV2(options: {
   let runStatus = store.seed.status;
   let checks = store.seed.checks.map((check) => AssuranceCheckV2Schema.parse(check));
   const humanActions: string[] = [];
+  let effectivePause: PauseCheckpointV1 | undefined;
 
   const applyV1Payload = (payload: RelayEventPayloadV1, event: RelayEventEnvelopeV2) => {
     if (payload.type === 'task.transition') {
@@ -390,6 +392,12 @@ export function replayRelayEventsV2(options: {
     else if (payload.type === 'run.status_updated') runStatus = payload.status;
     else if (payload.type === 'human.disposition_recorded' && payload.disposition === 'human_needed') {
       humanActions.push(`${payload.subjectId}: ${payload.reason}`);
+    } else if (payload.type === 'workflow.paused') {
+      effectivePause = payload.checkpoint;
+    } else if (payload.type === 'workflow.resumed' &&
+      effectivePause?.pauseId === payload.pauseId &&
+      effectivePause.stateFingerprint === payload.checkpointFingerprint) {
+      effectivePause = undefined;
     }
   }
 
@@ -462,6 +470,7 @@ export function replayRelayEventsV2(options: {
     ...(readiness ? { readinessResultId: readiness.resultId } : {}),
     ...(planApproval ? { planRevision: planApproval.revision } : {}),
     planApprovalStatus: !planApproval ? 'missing' : planStale ? 'stale' : 'current',
+    ...(effectivePause ? { effectivePause } : {}),
   });
   return { run, assurance };
 }

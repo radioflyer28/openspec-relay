@@ -245,6 +245,39 @@ export declare function startOrResumeDebugV2(options: {
         repositoryContextId?: string | undefined;
         readinessResultId?: string | undefined;
         planRevision?: string | undefined;
+        effectivePause?: {
+            version: 1;
+            pauseId: string;
+            changeName: string;
+            runId: string;
+            createdAt: string;
+            stage: "discussion" | "proposal" | "review" | "verification" | "repair" | "debug" | "uat" | "archive" | "planning" | "implementation";
+            activity: {
+                kind: "external" | "task" | "workflow" | "artifact_write" | "state_write" | "dispatch";
+                id: string;
+                mutationCapable: boolean;
+            };
+            taskIds: string[];
+            workspace: {
+                path: string;
+                status: "unknown" | "modified" | "added" | "deleted" | "renamed" | "untracked";
+                digest?: string | undefined;
+            }[];
+            dispatches: {
+                dispatchId: string;
+                state: "unknown" | "running" | "stopped" | "interrupted";
+                readOnly: boolean;
+                sessionId?: string | undefined;
+                requestRevision?: string | undefined;
+            }[];
+            findingIds: string[];
+            humanActionIds: string[];
+            resumeRoute: "check" | "debug" | "uat" | "select" | "discuss" | "propose" | "update" | "plan" | "do" | "archive";
+            stateFingerprint: string;
+            quiescence: "safe" | "incomplete";
+            planRevision?: string | undefined;
+            repositoryRevision?: string | undefined;
+        } | undefined;
     };
 }>;
 /**
@@ -1521,7 +1554,7 @@ export declare function acceptRelayGateV2(options: {
     accepted: boolean;
     appended: boolean;
     eventId: string;
-    eventType: "task.transition" | "evidence.recorded" | "finding.recorded" | "deviation.recorded" | "repair.recorded" | "human.decision" | "host.adapter_qualified" | "context.compiled" | "context.stale" | "readiness.evaluated" | "readiness.stale" | "semantic.classified" | "semantic.downgrade_recorded" | "pathfinder.completed" | "plan.reviewed" | "finding.routed" | "plan.approved" | "plan.stale" | "finding.discovered" | "finding.transitioned" | "finding.stale" | "debug.session_started" | "debug.hypothesis_recorded" | "debug.experiment_recorded" | "debug.conclusion_recorded" | "debug.reference_changed" | "debug.question_recorded" | "debug.next_action_recorded" | "debug.verification_recorded" | "debug.verification_stale" | "debug.session_resolved" | "debug.session_updated" | "uat.scenario_recorded" | "uat.scenario_retest" | "uat.scenario_stale" | "scenario.coverage_reconciled" | "uat.disposition_recorded" | "release.evaluated" | "checks.evaluated" | "run.status_updated" | "human.disposition_recorded";
+    eventType: "task.transition" | "evidence.recorded" | "finding.recorded" | "deviation.recorded" | "repair.recorded" | "human.decision" | "host.adapter_qualified" | "context.compiled" | "context.stale" | "readiness.evaluated" | "readiness.stale" | "semantic.classified" | "semantic.downgrade_recorded" | "pathfinder.completed" | "plan.reviewed" | "finding.routed" | "plan.approved" | "plan.stale" | "finding.discovered" | "finding.transitioned" | "finding.stale" | "debug.session_started" | "debug.hypothesis_recorded" | "debug.experiment_recorded" | "debug.conclusion_recorded" | "debug.reference_changed" | "debug.question_recorded" | "debug.next_action_recorded" | "debug.verification_recorded" | "debug.verification_stale" | "debug.session_resolved" | "debug.session_updated" | "uat.scenario_recorded" | "uat.scenario_retest" | "uat.scenario_stale" | "scenario.coverage_reconciled" | "uat.disposition_recorded" | "release.evaluated" | "checks.evaluated" | "run.status_updated" | "human.disposition_recorded" | "workflow.paused" | "workflow.resumed";
     runId: string;
     changeName: string;
     projectionRepaired: boolean;

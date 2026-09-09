@@ -664,6 +664,57 @@ export const HostAdapterProvenanceV1Schema = z.object({
   qualifiedAt: z.string().datetime(),
 }).strict();
 
+const PortableCheckpointPathSchema = z.string().min(1).max(1024).refine(
+  (value) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value) &&
+    value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..') &&
+    !value.includes('\\'),
+  'checkpoint path must be a contained portable project-relative path',
+);
+
+export const ResumeRouteV1Schema = z.enum([
+  'check', 'select', 'discuss', 'propose', 'update', 'plan', 'debug', 'do', 'uat', 'archive',
+]);
+export const LifecycleStageV1Schema = z.enum([
+  'discussion', 'proposal', 'planning', 'implementation', 'review', 'repair',
+  'verification', 'debug', 'uat', 'archive',
+]);
+export const DispatchPauseStateV1Schema = z.enum(['stopped', 'running', 'interrupted', 'unknown']);
+export const WorkspaceEntryV1Schema = z.object({
+  path: PortableCheckpointPathSchema,
+  status: z.enum(['modified', 'added', 'deleted', 'renamed', 'untracked', 'unknown']),
+  digest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+}).strict();
+export const PauseDispatchV1Schema = z.object({
+  dispatchId: z.string().min(1).max(256),
+  state: DispatchPauseStateV1Schema,
+  readOnly: z.boolean(),
+  sessionId: z.string().min(1).max(256).optional(),
+  requestRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+}).strict();
+export const PauseCheckpointV1Schema = z.object({
+  version: z.literal(1),
+  pauseId: z.string().min(1).max(256),
+  changeName: z.string().min(1).max(256),
+  runId: z.string().min(1).max(256),
+  createdAt: z.string().datetime(),
+  planRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  stage: LifecycleStageV1Schema,
+  activity: z.object({
+    kind: z.enum(['workflow', 'task', 'artifact_write', 'state_write', 'dispatch', 'external']),
+    id: z.string().min(1).max(256),
+    mutationCapable: z.boolean(),
+  }).strict(),
+  taskIds: z.array(z.string().min(1).max(256)).max(500),
+  repositoryRevision: z.string().min(1).max(256).optional(),
+  workspace: z.array(WorkspaceEntryV1Schema).max(2000),
+  dispatches: z.array(PauseDispatchV1Schema).max(500),
+  findingIds: z.array(z.string().min(1).max(256)).max(500),
+  humanActionIds: z.array(z.string().min(1).max(512)).max(500),
+  resumeRoute: ResumeRouteV1Schema,
+  stateFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  quiescence: z.enum(['safe', 'incomplete']),
+}).strict();
+
 export const RelayEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('host.adapter_qualified'), adapter: HostAdapterProvenanceV1Schema }).strict(),
   z.object({
@@ -723,6 +774,14 @@ export const RelayEventPayloadV2Schema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('checks.evaluated'), checks: z.array(AssuranceCheckV2Schema) }).strict(),
   z.object({ type: z.literal('run.status_updated'), status: z.enum(['planned', 'running', 'checking', 'blocked', 'complete', 'error']) }).strict(),
   z.object({ type: z.literal('human.disposition_recorded'), subjectId: z.string().min(1), disposition: z.enum(['accepted_risk', 'human_needed']), actor: z.string().min(1), reason: z.string().min(1), scope: z.string().min(1), expiry: z.string().datetime().optional() }).strict(),
+  z.object({ type: z.literal('workflow.paused'), checkpoint: PauseCheckpointV1Schema }).strict(),
+  z.object({
+    type: z.literal('workflow.resumed'),
+    pauseId: z.string().min(1).max(256),
+    checkpointFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    route: ResumeRouteV1Schema,
+    reconstructed: z.boolean(),
+  }).strict(),
 ]);
 
 export const RelayEventEnvelopeV2Schema = z.object({
@@ -746,6 +805,7 @@ export const RelayRunV2Schema = RelayRunV1Schema.omit({ version: true, config: t
   readinessResultId: z.string().min(1).optional(),
   planRevision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   planApprovalStatus: z.enum(['missing', 'current', 'stale']).default('missing'),
+  effectivePause: PauseCheckpointV1Schema.optional(),
 }).strict();
 
 export const RelayAssuranceV2Schema = RelayAssuranceV1Schema.omit({
@@ -815,6 +875,12 @@ export type UatScenarioV2 = z.infer<typeof UatScenarioV2Schema>;
 export type ReleaseCandidateV2 = z.infer<typeof ReleaseCandidateV2Schema>;
 export type RelayEventPayloadV2 = z.infer<typeof RelayEventPayloadV2Schema>;
 export type HostAdapterProvenanceV1 = z.infer<typeof HostAdapterProvenanceV1Schema>;
+export type ResumeRouteV1 = z.infer<typeof ResumeRouteV1Schema>;
+export type LifecycleStageV1 = z.infer<typeof LifecycleStageV1Schema>;
+export type DispatchPauseStateV1 = z.infer<typeof DispatchPauseStateV1Schema>;
+export type WorkspaceEntryV1 = z.infer<typeof WorkspaceEntryV1Schema>;
+export type PauseDispatchV1 = z.infer<typeof PauseDispatchV1Schema>;
+export type PauseCheckpointV1 = z.infer<typeof PauseCheckpointV1Schema>;
 export type RelayEventActorV2 = z.infer<typeof RelayEventActorV2Schema>;
 export type RelayEventEnvelopeV2 = z.infer<typeof RelayEventEnvelopeV2Schema>;
 export type RelayRunV2 = z.infer<typeof RelayRunV2Schema>;
