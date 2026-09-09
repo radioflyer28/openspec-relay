@@ -4,11 +4,38 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startRelayRunV2 } from '../src/runner-v2.js';
 import { getRunStatusV2 } from '../src/status.js';
+import { appendRelayEventV2, createRelayEventV2, readCanonicalEventStore, writeReplayedProjectionsV2 } from '../src/events.js';
+import { compileOpenSpecChange } from '../src/artifacts.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
 
 describe('canonical run status', () => {
+  it('reports a deliberate pause separately from reconstructed routing', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const before = await getRunStatusV2({ change: 'demo', projectRoot: root });
+    expect(before.resume).toMatchObject({ restored: false, route: 'plan' });
+    const store = await readCanonicalEventStore(changeDir);
+    const checkpoint = {
+      version: 1 as const, pauseId: 'pause-1', changeName: 'demo', runId: store.runId,
+      createdAt: '2026-09-09T12:00:00.000Z', stage: 'planning' as const,
+      activity: { kind: 'workflow' as const, id: 'plan', mutationCapable: false }, taskIds: [],
+      workspace: [], dispatches: [{ dispatchId: 'review', state: 'interrupted' as const, readOnly: true }],
+      findingIds: [], humanActionIds: [], resumeRoute: 'plan' as const,
+      stateFingerprint: 'a'.repeat(64), quiescence: 'safe' as const,
+    };
+    const next = (await appendRelayEventV2({ changeDir, event: createRelayEventV2({
+      eventId: 'pause-event', runId: store.runId, changeName: store.changeName,
+      occurredAt: checkpoint.createdAt, sourceDigests: {}, actor: { kind: 'host' },
+      provenance: { origin: 'status-test' }, payload: { type: 'workflow.paused', checkpoint },
+    }) })).store;
+    await writeReplayedProjectionsV2({ changeDir, store: next, compiled: await compileOpenSpecChange({ changeDir }) });
+    await expect(getRunStatusV2({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+      pause: { state: 'paused', stage: 'planning', interruptedDispatches: ['review'] },
+      resume: { restored: true, route: 'plan' },
+    });
+  });
   it('reports projection tampering as the primary blocking status in JSON and human output', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
