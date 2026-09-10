@@ -39,7 +39,7 @@ export async function createOpenSpecProject(name = 'demo'): Promise<{
 
 export async function cleanupTemporaryRoots(): Promise<void> {
   await Promise.all(temporaryRoots.splice(0)
-    .map((root) => fs.rm(root, { recursive: true, force: true })));
+    .map((root) => fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })));
 }
 
 export function evidence(options: Partial<EvidenceV1> & Pick<EvidenceV1, 'evidenceId' | 'phase' | 'checkId' | 'result' | 'origin'>): EvidenceV1 {
