@@ -19,6 +19,7 @@ export declare function pauseRelayChangeV1(options: {
 }): Promise<PauseRelayResultV1>;
 export interface ResumeRelayResultV1 {
     resumed: boolean;
+    released: boolean;
     continued: boolean;
     reconstructed: boolean;
     decision: ResumeRouteDecisionV1;

@@ -144,7 +144,8 @@ checkpoint it reconstructs and labels the safest route. It never selects among
 multiple changes or discussions by recency. Resume uses a preview/enter
 handshake: the first call returns the current route, and the second echoes that
 route with `--enter` immediately before the host enters the existing workflow.
-Relay rejects the handoff if current evidence selects a different route.
+The response distinguishes route release from actual routed invocation; Relay
+rejects the handoff if current evidence selects a different route.
 
 Pre-proposal discussion checkpoints live in
 `openspec/.openspec-relay/discussions.json`. They are ephemeral and become

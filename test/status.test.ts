@@ -80,6 +80,15 @@ describe('canonical run status', () => {
       dispatches: [{ dispatchId: 'reader', state: 'stopped', readOnly: true }],
     });
     expect(observed.resume.requiredAuthority).not.toEqual(expect.arrayContaining([expect.stringMatching(/dispatch/i)]));
+    const newlyRunning = await getRunStatusV2({
+      change: 'demo', projectRoot: root,
+      dispatches: [
+        { dispatchId: 'reader', state: 'stopped', readOnly: true },
+        { dispatchId: 'new-writer', state: 'running', readOnly: false },
+      ],
+    });
+    expect(newlyRunning.resume).toMatchObject({ automatic: false,
+      requiredAuthority: expect.arrayContaining([expect.stringMatching(/new-writer/)]) });
     await fs.writeFile(path.join(root, 'new-work.txt'), 'changed while paused\n');
     const drifted = await getRunStatusV2({
       change: 'demo', projectRoot: root,

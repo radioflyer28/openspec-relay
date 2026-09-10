@@ -188,7 +188,7 @@ program.command('resume')
     }
     const enterRoute = options.enter ? ResumeRouteV1Schema.parse(options.enter) : undefined;
     const result = await resumeRelayChangeV1({ ...selected, ...(enterRoute ? { enterRoute } : {}) });
-    print(options.json ? result : `OpenSpec Relay resume route for '${selected.change}': ${result.decision.route} (${result.reconstructed ? 'reconstructed' : 'checkpoint restored'}${result.continued ? ', entered' : ', preview'}).`,
+    print(options.json ? result : `OpenSpec Relay resume route for '${selected.change}': ${result.decision.route} (${result.reconstructed ? 'reconstructed' : 'checkpoint restored'}${result.released ? ', released to host' : ', preview'}).`,
       Boolean(options.json));
   });
 

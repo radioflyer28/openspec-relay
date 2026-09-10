@@ -72,7 +72,7 @@ export async function executePiWorkflowOperationV1(options) {
             ...(options.enterRoute ? { enterRoute: options.enterRoute } : {}),
             ...(control ? { dispatches: control.snapshot() } : {}),
         });
-        if (result.continued)
+        if (result.released)
             control?.resumeScheduling();
         return { operation: options.operation, adapter, usedAdapter: adapter.agentDispatch.state === 'available', result };
     }

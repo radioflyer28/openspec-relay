@@ -155,6 +155,19 @@ describe('change pause and resume', () => {
     });
   });
 
+  it('blocks a newly observed mutation-capable dispatch that was absent at pause', async () => {
+    const { root } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true, dispatches: [] });
+    await expect(resumeRelayChangeV1({
+      change: 'demo', projectRoot: root,
+      dispatches: [{ dispatchId: 'new-writer', state: 'running', readOnly: false }],
+    })).resolves.toMatchObject({
+      resumed: false, released: false,
+      drift: expect.arrayContaining([expect.stringMatching(/new-writer/)]),
+    });
+  });
+
   it('reconstructs a safe route when no checkpoint exists', async () => {
     const { root } = await createOpenSpecProject();
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
