@@ -71,11 +71,11 @@ describe('companion CLI', () => {
     const preview = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'resume', '--project', root, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(preview).toMatchObject({ resumed: false, continued: false, decision: { restored: true } });
+    expect(preview).toMatchObject({ resumed: false, released: false, continued: false, decision: { restored: true } });
     const resumed = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'resume', '--project', root, '--enter', preview.decision.route, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(resumed).toMatchObject({ resumed: true, continued: true, decision: { restored: true } });
+    expect(resumed).toMatchObject({ resumed: true, released: true, continued: false, decision: { restored: true } });
   });
 
   it('returns non-zero for an unsafe pause and rejects ambiguous omitted selection', async () => {

@@ -14,8 +14,10 @@ For a change, use the current host's `openspec_relay_workflow` operation `resume
 once to preview the route, then call it again with `enterRoute` set to that exact
 route. Otherwise run `openspec-relay resume [change] --json`, then immediately
 run `openspec-relay resume [change] --enter <returned-route> --json` when the
-preview is automatic. The second call revalidates current evidence before
-recording continuation. If no checkpoint exists, label the route reconstructed.
+preview is automatic. The second call revalidates current evidence, releases
+the route to the host, and records the checkpoint as resumed; it does not claim
+that the routed workflow has already run. Enter that existing workflow
+immediately after release. If no checkpoint exists, label the route reconstructed.
 Never infer among multiple changes or discussions from recency.
 
 Honor the returned route exactly:

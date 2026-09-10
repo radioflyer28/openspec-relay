@@ -144,6 +144,7 @@ export async function pauseRelayChangeV1(options: {
 
 export interface ResumeRelayResultV1 {
   resumed: boolean;
+  released: boolean;
   continued: boolean;
   reconstructed: boolean;
   decision: ResumeRouteDecisionV1;
@@ -167,9 +168,12 @@ export async function resumeRelayChangeV1(options: {
     if (options.enterRoute && options.enterRoute !== decision.route) {
       throw new Error(`Resume route changed: expected '${options.enterRoute}', current route is '${decision.route}'.`);
     }
-    const continued = Boolean(options.enterRoute && decision.automatic);
-    const invocation = continued && options.invoke ? await options.invoke(decision.route) : undefined;
-    return { resumed: false, continued, reconstructed: true, decision, drift: [], ...(invocation !== undefined ? { invocation } : {}) };
+    const released = Boolean((options.enterRoute || options.invoke) && decision.automatic);
+    const invocation = released && options.invoke ? await options.invoke(decision.route) : undefined;
+    return {
+      resumed: false, released, continued: released && Boolean(options.invoke), reconstructed: true, decision, drift: [],
+      ...(invocation !== undefined ? { invocation } : {}),
+    };
   }
   const drift: string[] = [];
   if (checkpoint.planRevision !== artifactRevision(canonical)) drift.push('OpenSpec artifact revision changed.');
@@ -199,17 +203,24 @@ export async function resumeRelayChangeV1(options: {
       drift.push(`Dispatch '${dispatch.dispatchId}' revision identity changed.`);
     }
   }
+  for (const dispatch of options.dispatches ?? []) {
+    if (!dispatch.readOnly && (dispatch.state === 'running' || dispatch.state === 'unknown')) {
+      drift.push(`Current mutation-capable dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
+    }
+  }
   const decision = routeDecision(canonical, {
     hasCheckpoint: true,
     artifactsChanged: drift.some((reason) => /artifact/i.test(reason)),
     requiredAuthority: drift,
   });
-  if (drift.length > 0) return { resumed: false, continued: false, reconstructed: false, decision, drift: [...new Set(drift)] };
+  if (drift.length > 0) return {
+    resumed: false, released: false, continued: false, reconstructed: false, decision, drift: [...new Set(drift)],
+  };
   if (options.enterRoute && options.enterRoute !== decision.route) {
     throw new Error(`Resume route changed: expected '${options.enterRoute}', current route is '${decision.route}'.`);
   }
   if (!options.enterRoute && !options.invoke) {
-    return { resumed: false, continued: false, reconstructed: false, decision, drift: [] };
+    return { resumed: false, released: false, continued: false, reconstructed: false, decision, drift: [] };
   }
   const occurredAt = options.now ?? new Date().toISOString();
   const result = await appendRelayEventV2({
@@ -230,5 +241,8 @@ export async function resumeRelayChangeV1(options: {
   });
   await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store: result.store, compiled: canonical.compiled });
   const invocation = options.invoke ? await options.invoke(decision.route) : undefined;
-  return { resumed: true, continued: true, reconstructed: false, decision, drift: [], ...(invocation !== undefined ? { invocation } : {}) };
+  return {
+    resumed: true, released: true, continued: Boolean(options.invoke), reconstructed: false, decision, drift: [],
+    ...(invocation !== undefined ? { invocation } : {}),
+  };
 }

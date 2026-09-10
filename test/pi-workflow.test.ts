@@ -44,13 +44,13 @@ describe('in-process Pi workflow adapter', () => {
       operation: 'resume', change: 'demo', projectRoot: project.root,
       runtime: runtime(), factory: unusedFactory,
     });
-    expect(preview).toMatchObject({ usedAdapter: true, result: { resumed: false, continued: false } });
+    expect(preview).toMatchObject({ usedAdapter: true, result: { resumed: false, released: false, continued: false } });
     const route = (preview.result as { decision: { route: 'plan' } }).decision.route;
     const resumed = await executePiWorkflowOperationV1({
       operation: 'resume', change: 'demo', projectRoot: project.root,
       runtime: runtime(), factory: unusedFactory, enterRoute: route,
     });
-    expect(resumed).toMatchObject({ usedAdapter: true, result: { resumed: true, continued: true } });
+    expect(resumed).toMatchObject({ usedAdapter: true, result: { resumed: true, released: true, continued: false } });
   });
 
   it('reports the CLI/Tier 0 fallback without creating a second workflow', async () => {
