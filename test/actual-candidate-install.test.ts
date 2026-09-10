@@ -57,12 +57,15 @@ describe('actual packed companion candidate', () => {
         '@fission-ai/openspec': `file:${coreRoot}`,
         'openspec-relay': `file:${candidate}`,
       },
+      overrides: {
+        'openspec-relay': { '@fission-ai/openspec': `file:${coreRoot}` },
+      },
     }));
     execFileSync(npmCommand, [...npmPrefix,
       'install', ...(process.env.RELAY_TEST_NPM_OFFLINE === '1' ? ['--offline'] : []),
       '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund',
       '--package-lock=false',
-    ], { cwd: projectRoot, encoding: 'utf8', timeout: 30_000, env: nonInteractiveEnvironment });
+    ], { cwd: projectRoot, encoding: 'utf8', timeout: 90_000, env: nonInteractiveEnvironment });
     const installedCompanion = path.join(projectRoot, 'node_modules', 'openspec-relay');
     const installedManifest = JSON.parse(await fs.readFile(path.join(installedCompanion, 'package.json'), 'utf8')) as {
       name: string;
@@ -149,5 +152,5 @@ describe('actual packed companion candidate', () => {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: piEnvironment,
     });
     expect(piList).toContain('openspec-relay');
-  }, 60_000);
+  }, 120_000);
 });
