@@ -14,10 +14,12 @@ export declare function pauseRelayChangeV1(options: {
     activity?: PauseCheckpointV1['activity'];
     taskIds?: string[];
     dispatches?: PauseDispatchV1[];
+    quiescenceObserved?: boolean;
     now?: string;
 }): Promise<PauseRelayResultV1>;
 export interface ResumeRelayResultV1 {
     resumed: boolean;
+    continued: boolean;
     reconstructed: boolean;
     decision: ResumeRouteDecisionV1;
     drift: string[];
@@ -27,6 +29,8 @@ export declare function resumeRelayChangeV1(options: {
     change: string;
     projectRoot?: string;
     invoke?: (route: ResumeRouteV1) => Promise<unknown>;
+    enterRoute?: ResumeRouteV1;
+    dispatches?: PauseDispatchV1[];
     now?: string;
 }): Promise<ResumeRelayResultV1>;
 //# sourceMappingURL=pause-resume.d.ts.map

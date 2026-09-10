@@ -6,6 +6,7 @@ import {
   type PiRoleSessionV1,
 } from '../src/pi/role-dispatch.js';
 import type { PiHostCapabilityProfileV1 } from '../src/pi/host-adapter.js';
+import { DispatchQuiescenceControllerV1 } from '../src/dispatch-quiescence.js';
 
 const revision = 'a'.repeat(64);
 const profile: PiHostCapabilityProfileV1 = {
@@ -224,5 +225,27 @@ describe('Pi role dispatcher', () => {
     expect(observedTools).toEqual([
       'find', 'grep', 'ls', 'read', 'experiment_read', 'experiment_write',
     ]);
+  });
+
+  it('quiesces experiment-confined pathfinders as mutation-capable dispatches', async () => {
+    const quiescence = new DispatchQuiescenceControllerV1();
+    const sessionFactory: PiRoleSessionFactoryV1 = { create: async (input) =>
+      factory((sessionId, envelope) => validOutput(sessionId, envelope), {
+        delayMs: 1_000, tools: [...input.toolNames],
+      }).create(input) };
+    const dispatcher = createPiRoleDispatcher({
+      profile,
+      factory: sessionFactory,
+      currentRevision: async () => revision,
+      quiescence,
+    });
+    const pathfinder = request('pathfinder');
+    pathfinder.workspace = '/tmp/disposable-pathfinder';
+    pathfinder.planning!.disposableExperimentWorkspace = true;
+    const pending = dispatcher.dispatch(pathfinder);
+    await vi.waitFor(() => expect(quiescence.snapshot()).toHaveLength(1));
+    const paused = await quiescence.pause({ timeoutMs: 50 });
+    expect(paused).toEqual([expect.objectContaining({ readOnly: false, state: 'stopped' })]);
+    await expect(pending).resolves.toMatchObject({ status: 'error', summary: expect.stringMatching(/cancelled/i) });
   });
 });

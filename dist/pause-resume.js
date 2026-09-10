@@ -36,26 +36,30 @@ export async function pauseRelayChangeV1(options) {
     if (!canonical.projectionsMatch)
         throw new Error('Cannot pause while canonical history and generated projections disagree.');
     const activeCheckpoint = canonical.projection.run.effectivePause;
-    if (activeCheckpoint)
-        return {
-            checkpoint: activeCheckpoint, appended: false, safe: activeCheckpoint.quiescence === 'safe',
-            run: canonical.projection.run, assurance: canonical.projection.assurance,
-        };
     const workspace = await snapshotWorkspaceV1({ projectRoot: resolved.projectRoot });
-    const dispatches = options.dispatches ?? [];
+    const dispatches = options.dispatches ?? activeCheckpoint?.dispatches ?? [];
+    const activity = options.activity ?? activeCheckpoint?.activity ?? {
+        kind: 'workflow', id: 'pause-boundary', mutationCapable: false,
+    };
     const unsafeDispatches = dispatches.filter((dispatch) => !dispatch.readOnly &&
         (dispatch.state === 'running' || dispatch.state === 'unknown'));
+    const quiescenceObserved = options.quiescenceObserved ?? false;
+    const quiescenceIncomplete = !quiescenceObserved || activity.mutationCapable || unsafeDispatches.length > 0;
     const decision = routeDecision(canonical, {
         hasCheckpoint: true,
-        requiredAuthority: unsafeDispatches.map((dispatch) => `dispatch:${dispatch.dispatchId}`),
+        requiredAuthority: [
+            ...(!quiescenceObserved ? ['quiescence:unobserved'] : []),
+            ...(activity.mutationCapable ? [`activity:${activity.id}`] : []),
+            ...unsafeDispatches.map((dispatch) => `dispatch:${dispatch.dispatchId}`),
+        ],
     });
     const stable = {
         version: 1,
         changeName: canonical.projection.run.changeName,
         runId: canonical.projection.run.runId,
         planRevision: artifactRevision(canonical),
-        stage: options.stage ?? 'implementation',
-        activity: options.activity ?? { kind: 'workflow', id: decision.route, mutationCapable: true },
+        stage: options.stage ?? activeCheckpoint?.stage ?? 'implementation',
+        activity,
         taskIds: options.taskIds ?? canonical.projection.run.tasks
             .filter((task) => task.status === 'in_progress' || task.status === 'blocked').map((task) => task.taskId),
         ...(workspace.repositoryRevision ? { repositoryRevision: workspace.repositoryRevision } : {}),
@@ -65,9 +69,23 @@ export async function pauseRelayChangeV1(options) {
             !['independently_verified', 'accepted_risk'].includes(finding.state)).map((finding) => finding.findingId),
         humanActionIds: canonical.projection.assurance.unresolvedHumanActions,
         resumeRoute: decision.route,
-        quiescence: unsafeDispatches.length === 0 ? 'safe' : 'incomplete',
+        quiescence: quiescenceIncomplete ? 'incomplete' : 'safe',
     };
     const stateFingerprint = digestJson(stable);
+    const repeatedFingerprint = activeCheckpoint
+        ? digestJson({ ...stable, quiescence: activeCheckpoint.quiescence })
+        : undefined;
+    if (activeCheckpoint && options.quiescenceObserved === undefined &&
+        activeCheckpoint.stateFingerprint === repeatedFingerprint)
+        return {
+            checkpoint: activeCheckpoint, appended: false, safe: activeCheckpoint.quiescence === 'safe',
+            run: canonical.projection.run, assurance: canonical.projection.assurance,
+        };
+    if (activeCheckpoint?.stateFingerprint === stateFingerprint)
+        return {
+            checkpoint: activeCheckpoint, appended: false, safe: activeCheckpoint.quiescence === 'safe',
+            run: canonical.projection.run, assurance: canonical.projection.assurance,
+        };
     const checkpoint = PauseCheckpointV1Schema.parse({
         ...stable,
         pauseId: `pause-${stateFingerprint.slice(0, 16)}`,
@@ -98,8 +116,12 @@ export async function resumeRelayChangeV1(options) {
     const checkpoint = canonical.projection.run.effectivePause;
     if (!checkpoint) {
         const decision = routeDecision(canonical);
-        const invocation = decision.automatic && options.invoke ? await options.invoke(decision.route) : undefined;
-        return { resumed: false, reconstructed: true, decision, drift: [], ...(invocation !== undefined ? { invocation } : {}) };
+        if (options.enterRoute && options.enterRoute !== decision.route) {
+            throw new Error(`Resume route changed: expected '${options.enterRoute}', current route is '${decision.route}'.`);
+        }
+        const continued = Boolean(options.enterRoute && decision.automatic);
+        const invocation = continued && options.invoke ? await options.invoke(decision.route) : undefined;
+        return { resumed: false, continued, reconstructed: true, decision, drift: [], ...(invocation !== undefined ? { invocation } : {}) };
     }
     const drift = [];
     if (checkpoint.planRevision !== artifactRevision(canonical))
@@ -117,13 +139,37 @@ export async function resumeRelayChangeV1(options) {
         drift.push('Canonical history and generated projections disagree.');
     if (checkpoint.quiescence === 'incomplete')
         drift.push('Mutation-capable dispatch quiescence is incomplete.');
+    if (JSON.stringify([...checkpoint.humanActionIds].sort()) !==
+        JSON.stringify([...canonical.projection.assurance.unresolvedHumanActions].sort())) {
+        drift.push('Unresolved human actions changed while paused.');
+    }
+    const observedDispatches = new Map((options.dispatches ?? []).map((dispatch) => [dispatch.dispatchId, dispatch]));
+    for (const dispatch of checkpoint.dispatches) {
+        if (dispatch.state !== 'running' && dispatch.state !== 'unknown')
+            continue;
+        const observed = observedDispatches.get(dispatch.dispatchId);
+        if (!observed)
+            drift.push(`Dispatch '${dispatch.dispatchId}' requires fresh host observation.`);
+        else if (observed.state === 'running' || observed.state === 'unknown') {
+            drift.push(`Dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
+        }
+        else if (dispatch.requestRevision && observed.requestRevision !== dispatch.requestRevision) {
+            drift.push(`Dispatch '${dispatch.dispatchId}' revision identity changed.`);
+        }
+    }
     const decision = routeDecision(canonical, {
         hasCheckpoint: true,
         artifactsChanged: drift.some((reason) => /artifact/i.test(reason)),
         requiredAuthority: drift,
     });
     if (drift.length > 0)
-        return { resumed: false, reconstructed: false, decision, drift: [...new Set(drift)] };
+        return { resumed: false, continued: false, reconstructed: false, decision, drift: [...new Set(drift)] };
+    if (options.enterRoute && options.enterRoute !== decision.route) {
+        throw new Error(`Resume route changed: expected '${options.enterRoute}', current route is '${decision.route}'.`);
+    }
+    if (!options.enterRoute && !options.invoke) {
+        return { resumed: false, continued: false, reconstructed: false, decision, drift: [] };
+    }
     const occurredAt = options.now ?? new Date().toISOString();
     const result = await appendRelayEventV2({
         changeDir: resolved.changeDir,
@@ -143,6 +189,6 @@ export async function resumeRelayChangeV1(options) {
     });
     await writeReplayedProjectionsV2({ changeDir: resolved.changeDir, store: result.store, compiled: canonical.compiled });
     const invocation = options.invoke ? await options.invoke(decision.route) : undefined;
-    return { resumed: true, reconstructed: false, decision, drift: [], ...(invocation !== undefined ? { invocation } : {}) };
+    return { resumed: true, continued: true, reconstructed: false, decision, drift: [], ...(invocation !== undefined ? { invocation } : {}) };
 }
 //# sourceMappingURL=pause-resume.js.map

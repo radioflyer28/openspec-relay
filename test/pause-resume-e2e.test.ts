@@ -20,9 +20,11 @@ describe('Tier 0 pause/resume lifecycle', () => {
     for (const stage of stages) {
       const { root } = await createOpenSpecProject();
       await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-      const paused = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage });
+      const paused = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage, quiescenceObserved: true });
       expect(paused.checkpoint.stage).toBe(stage);
-      expect((await resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resumed).toBe(true);
+      expect((await resumeRelayChangeV1({
+        change: 'demo', projectRoot: root, enterRoute: paused.checkpoint.resumeRoute,
+      })).resumed).toBe(true);
       for (const excluded of ['PROJECT.md', 'ROADMAP.md', 'PLAN.md', 'STATE.md']) {
         await expect(fs.access(path.join(root, excluded))).rejects.toMatchObject({ code: 'ENOENT' });
       }
@@ -49,7 +51,7 @@ describe('Tier 0 pause/resume lifecycle', () => {
     const source = path.join(root, 'keep.txt');
     await fs.writeFile(source, 'keep me\n');
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true });
     const runPath = path.join(changeDir, '.openspec-relay', 'run.json');
     const run = JSON.parse(await fs.readFile(runPath, 'utf8'));
     await fs.writeFile(runPath, JSON.stringify({ ...run, status: 'complete' }));

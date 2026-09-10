@@ -19,6 +19,11 @@ const workflowTool = defineTool({
       Type.Literal('pause'), Type.Literal('resume'),
     ]),
     change: Type.String({ description: 'OpenSpec change name.' }),
+    enterRoute: Type.Optional(Type.Union([
+      Type.Literal('check'), Type.Literal('select'), Type.Literal('discuss'), Type.Literal('propose'),
+      Type.Literal('update'), Type.Literal('plan'), Type.Literal('debug'), Type.Literal('do'),
+      Type.Literal('uat'), Type.Literal('archive'),
+    ], { description: 'For resume only: enter the route returned by a prior preview when it still matches.' })),
     pathfinderQuestions: Type.Optional(Type.Array(Type.String())),
   }),
   async execute(_toolCallId, params, signal, _onUpdate, context) {
@@ -30,6 +35,7 @@ const workflowTool = defineTool({
       runtime: await createPiSdkProbeRuntime(context),
       factory: createPiSdkRoleSessionFactory(context),
       ...(params.pathfinderQuestions ? { pathfinderQuestions: params.pathfinderQuestions } : {}),
+      ...(params.enterRoute ? { enterRoute: params.enterRoute } : {}),
       ...(parentSignal ? { parentSignal } : {}),
     });
     return {

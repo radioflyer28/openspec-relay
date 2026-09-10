@@ -26,8 +26,11 @@ function runtime(parallel = false): PiHostProbeRuntimeV1 {
 }
 
 describe('in-process Pi workflow adapter', () => {
-  it('uses the same pause/resume orchestrator with honest Tier 0 fallback', async () => {
+  it('uses the same pause/resume orchestrator after qualified quiescence observation', async () => {
     const project = await createOpenSpecProject();
+    await fs.writeFile(path.join(project.root, 'openspec', 'relay.json'), JSON.stringify({
+      piHostAdapter: { enabled: true },
+    }));
     await startRelayRunV2({ change: 'demo', projectRoot: project.root, changedFiles: [] });
     const unusedFactory: PiRoleSessionFactoryV1 = {
       create: async () => { throw new Error('Tier 0 pause must not create a role session'); },
@@ -36,12 +39,18 @@ describe('in-process Pi workflow adapter', () => {
       operation: 'pause', change: 'demo', projectRoot: project.root,
       runtime: runtime(), factory: unusedFactory,
     });
-    expect(paused).toMatchObject({ usedAdapter: false, result: { safe: true, checkpoint: { dispatches: [] } } });
-    const resumed = await executePiWorkflowOperationV1({
+    expect(paused).toMatchObject({ usedAdapter: true, result: { safe: true, checkpoint: { dispatches: [] } } });
+    const preview = await executePiWorkflowOperationV1({
       operation: 'resume', change: 'demo', projectRoot: project.root,
       runtime: runtime(), factory: unusedFactory,
     });
-    expect(resumed).toMatchObject({ usedAdapter: false, result: { resumed: true } });
+    expect(preview).toMatchObject({ usedAdapter: true, result: { resumed: false, continued: false } });
+    const route = (preview.result as { decision: { route: 'plan' } }).decision.route;
+    const resumed = await executePiWorkflowOperationV1({
+      operation: 'resume', change: 'demo', projectRoot: project.root,
+      runtime: runtime(), factory: unusedFactory, enterRoute: route,
+    });
+    expect(resumed).toMatchObject({ usedAdapter: true, result: { resumed: true, continued: true } });
   });
 
   it('reports the CLI/Tier 0 fallback without creating a second workflow', async () => {

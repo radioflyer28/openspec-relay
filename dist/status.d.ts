@@ -1,4 +1,4 @@
-import type { RelayAssuranceV2, RelayRunV2 } from './schemas.js';
+import type { PauseDispatchV1, RelayAssuranceV2, RelayRunV2 } from './schemas.js';
 import { type ResumeRouteDecisionV1 } from './resume-route.js';
 export interface RunStatusV2 {
     changeName: string;
@@ -63,5 +63,6 @@ export interface RunStatusV2 {
 export declare function getRunStatusV2(options: {
     change: string;
     projectRoot?: string;
+    dispatches?: PauseDispatchV1[];
 }): Promise<RunStatusV2>;
 //# sourceMappingURL=status.d.ts.map

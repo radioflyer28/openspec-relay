@@ -197,7 +197,7 @@ export function createPiRoleDispatcher(options: {
       const dispatchSettlement: { settle?: DispatchHandleV1['settle'] } = {};
       const dispatchHandle = options.quiescence?.begin({
         dispatchId: envelope.dispatchId,
-        readOnly: true,
+        readOnly: envelope.authority === 'read_only',
         sessionId: envelope.parentSessionId,
         requestRevision: envelope.planRevision,
         abort: async () => {
