@@ -62,7 +62,7 @@ async function gitSnapshot(projectRoot) {
         const code = record.slice(0, 2);
         let portable = record.slice(3);
         if (code.includes('R') || code.includes('C'))
-            portable = records[++index] ?? portable;
+            index += 1; // -z emits destination first, then source.
         portable = portable.split(path.sep).join('/');
         if (portable.split('/').includes('.openspec-relay'))
             continue;

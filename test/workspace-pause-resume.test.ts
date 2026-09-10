@@ -31,6 +31,19 @@ describe('bounded workspace evidence', () => {
     await expect(validateWorkspaceSnapshotV1({ projectRoot: root, expected: snapshot })).resolves.toMatchObject({ matches: false });
   });
 
+  it('records a renamed file by its current destination path', async () => {
+    const { root } = await createOpenSpecProject();
+    git(root, 'init'); git(root, 'config', 'user.email', 'relay@example.invalid'); git(root, 'config', 'user.name', 'Relay');
+    await fs.writeFile(path.join(root, 'old name.ts'), 'export const value = 1;\n');
+    git(root, 'add', '.'); git(root, 'commit', '-m', 'initial');
+    await fs.rename(path.join(root, 'old name.ts'), path.join(root, 'new name.ts'));
+    git(root, 'add', '-A');
+    const snapshot = await snapshotWorkspaceV1({ projectRoot: root });
+    expect(snapshot.entries).toEqual([
+      expect.objectContaining({ path: 'new name.ts', status: 'renamed', digest: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+    ]);
+  });
+
   it('supports non-Git evidence and rejects traversal aliases', async () => {
     const { root } = await createOpenSpecProject();
     await expect(snapshotWorkspaceV1({ projectRoot: root, relevantPaths: ['../outside'] })).rejects.toThrow(/contained|relative/i);
