@@ -171,6 +171,14 @@ describe('change pause and resume', () => {
   it('reconstructs a safe route when no checkpoint exists', async () => {
     const { root } = await createOpenSpecProject();
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await expect(resumeRelayChangeV1({
+      change: 'demo', projectRoot: root, enterRoute: 'plan',
+      dispatches: [{ dispatchId: 'new-writer', state: 'running', readOnly: false }],
+    })).resolves.toMatchObject({
+      resumed: false, released: false, reconstructed: true,
+      drift: expect.arrayContaining([expect.stringMatching(/new-writer/)]),
+      decision: { automatic: false },
+    });
     await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
       resumed: false, decision: { restored: false, route: 'plan' },
     });

@@ -15,6 +15,14 @@ describe('canonical run status', () => {
   it('reports a deliberate pause separately from reconstructed routing', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const blockedBefore = await getRunStatusV2({
+      change: 'demo', projectRoot: root,
+      dispatches: [{ dispatchId: 'new-writer', state: 'running', readOnly: false }],
+    });
+    expect(blockedBefore.resume).toMatchObject({
+      automatic: false,
+      requiredAuthority: expect.arrayContaining([expect.stringMatching(/new-writer/)]),
+    });
     const before = await getRunStatusV2({ change: 'demo', projectRoot: root });
     expect(before.resume).toMatchObject({ restored: false, route: 'plan' });
     const store = await readCanonicalEventStore(changeDir);

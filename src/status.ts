@@ -68,6 +68,11 @@ export async function getRunStatusV2(options: {
     assurance.findings.some((finding) => finding.blocking &&
       !['independently_verified', 'accepted_risk'].includes(finding.state));
   const resumeAuthority: string[] = [];
+  for (const dispatch of options.dispatches ?? []) {
+    if (!dispatch.readOnly && (dispatch.state === 'running' || dispatch.state === 'unknown')) {
+      resumeAuthority.push(`Current mutation-capable dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
+    }
+  }
   let workspaceDrift = false;
   if (pause) {
     const workspace = await validateWorkspaceSnapshotV1({
@@ -93,11 +98,6 @@ export async function getRunStatusV2(options: {
         resumeAuthority.push(`Dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
       } else if (dispatch.requestRevision && current.requestRevision !== dispatch.requestRevision) {
         resumeAuthority.push(`Dispatch '${dispatch.dispatchId}' revision identity changed.`);
-      }
-    }
-    for (const dispatch of options.dispatches ?? []) {
-      if (!dispatch.readOnly && (dispatch.state === 'running' || dispatch.state === 'unknown')) {
-        resumeAuthority.push(`Current mutation-capable dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
       }
     }
     if (pause.quiescence === 'incomplete') resumeAuthority.push('Pause quiescence remains incomplete.');
