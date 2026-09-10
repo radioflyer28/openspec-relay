@@ -1,0 +1,115 @@
+import { execFileSync } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { readCanonicalEventStore } from '../src/events.js';
+import { pauseRelayChangeV1, resumeRelayChangeV1 } from '../src/pause-resume.js';
+import { snapshotWorkspaceV1, validateWorkspaceSnapshotV1 } from '../src/workspace.js';
+import { startRelayRunV2 } from '../src/runner-v2.js';
+import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
+
+afterEach(cleanupTemporaryRoots);
+
+function git(root: string, ...args: string[]) {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+}
+
+describe('bounded workspace evidence', () => {
+  it('captures paths and digests without contents and never mutates Git state', async () => {
+    const { root } = await createOpenSpecProject();
+    git(root, 'init'); git(root, 'config', 'user.email', 'relay@example.invalid'); git(root, 'config', 'user.name', 'Relay');
+    git(root, 'add', '.'); git(root, 'commit', '-m', 'initial');
+    const file = path.join(root, 'src file.ts');
+    await fs.writeFile(file, 'const secret = "not checkpoint prose";\n');
+    const before = git(root, 'status', '--porcelain=v1', '--untracked-files=all');
+    const snapshot = await snapshotWorkspaceV1({ projectRoot: root });
+    expect(snapshot.repositoryRevision).toMatch(/^[a-f0-9]{40,64}$/);
+    expect(snapshot.entries).toEqual([expect.objectContaining({ path: 'src file.ts', status: 'untracked' })]);
+    expect(JSON.stringify(snapshot)).not.toContain('not checkpoint prose');
+    expect(git(root, 'status', '--porcelain=v1', '--untracked-files=all')).toBe(before);
+    await fs.writeFile(file, 'changed\n');
+    await expect(validateWorkspaceSnapshotV1({ projectRoot: root, expected: snapshot })).resolves.toMatchObject({ matches: false });
+  });
+
+  it('supports non-Git evidence and rejects traversal aliases', async () => {
+    const { root } = await createOpenSpecProject();
+    await expect(snapshotWorkspaceV1({ projectRoot: root, relevantPaths: ['../outside'] })).rejects.toThrow(/contained|relative/i);
+    await expect(snapshotWorkspaceV1({ projectRoot: root, relevantPaths: ['proposal.md'] })).resolves.toMatchObject({
+      revisionAvailable: false,
+    });
+  });
+});
+
+describe('change pause and resume', () => {
+  it('preserves task and assurance state and makes repeated pause idempotent', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const first = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning' });
+    const eventCount = (await readCanonicalEventStore(changeDir)).events.length;
+    const second = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning' });
+    expect(first.checkpoint.pauseId).toBe(second.checkpoint.pauseId);
+    expect(second.appended).toBe(false);
+    expect((await readCanonicalEventStore(changeDir)).events).toHaveLength(eventCount);
+    expect(first.run.tasks.every((task) => task.status !== 'complete')).toBe(true);
+    expect(first.assurance.status).not.toBe('pass');
+  });
+
+  it('reports incomplete quiescence for mutation-capable unknown work', async () => {
+    const { root } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const result = await pauseRelayChangeV1({ change: 'demo', projectRoot: root,
+      dispatches: [{ dispatchId: 'executor-1', state: 'unknown', readOnly: false }] });
+    expect(result.safe).toBe(false);
+    expect(result.checkpoint.quiescence).toBe('incomplete');
+  });
+
+  it('binds resume to matching state and refuses workspace or artifact drift', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const paused = await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    const routed: string[] = [];
+    const resumed = await resumeRelayChangeV1({ change: 'demo', projectRoot: root,
+      invoke: async (route) => { routed.push(route); return 'ok'; } });
+    expect(resumed.resumed).toBe(true);
+    expect(routed).toEqual([paused.checkpoint.resumeRoute]);
+
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await fs.appendFile(path.join(changeDir, 'design.md'), '\nChanged intent.\n');
+    await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+      resumed: false, drift: expect.arrayContaining([expect.stringMatching(/artifact/i)]),
+    });
+  });
+
+  it('keeps the resume event visible when the routed workflow fails', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await expect(resumeRelayChangeV1({
+      change: 'demo', projectRoot: root,
+      invoke: async () => { throw new Error('routed workflow failed'); },
+    })).rejects.toThrow('routed workflow failed');
+    const events = (await readCanonicalEventStore(changeDir)).events;
+    expect(events.at(-1)?.payload.type).toBe('workflow.resumed');
+  });
+
+  it('refuses resume after the Git repository revision moves', async () => {
+    const { root } = await createOpenSpecProject();
+    git(root, 'init'); git(root, 'config', 'user.email', 'relay@example.invalid'); git(root, 'config', 'user.name', 'Relay');
+    git(root, 'add', '.'); git(root, 'commit', '-m', 'initial');
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await fs.writeFile(path.join(root, 'after-pause.txt'), 'movement\n');
+    git(root, 'add', 'after-pause.txt'); git(root, 'commit', '-m', 'move revision');
+    await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+      resumed: false, drift: expect.arrayContaining([expect.stringMatching(/revision/i)]),
+    });
+  });
+
+  it('reconstructs a safe route when no checkpoint exists', async () => {
+    const { root } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+      resumed: false, decision: { restored: false, route: 'plan' },
+    });
+  });
+});

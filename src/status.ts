@@ -1,6 +1,6 @@
 import { loadCanonicalRelayRecords } from './canonical-state.js';
 import type { RelayAssuranceV2, RelayRunV2 } from './schemas.js';
-import { resolveChangeDirectory } from './state.js';
+import { digestJson, resolveChangeDirectory } from './state.js';
 import { evaluateResumeRouteV1, type ResumeRouteDecisionV1 } from './resume-route.js';
 
 export interface RunStatusV2 {
@@ -58,6 +58,9 @@ export async function getRunStatusV2(options: {
   const unresolvedRelease = assurance.releaseCandidates.filter((candidate) =>
     ['pending', 'fail', 'human_needed', 'error'].includes(candidate.status));
   const pause = run.effectivePause;
+  const currentArtifactRevision = digestJson(Object.fromEntries(
+    canonical.compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest]),
+  ));
   const activeDebug = assurance.debugSessions.some((session) => session.status === 'active');
   const pendingWork = run.tasks.some((task) => task.status !== 'complete') ||
     assurance.findings.some((finding) => finding.blocking &&
@@ -66,7 +69,7 @@ export async function getRunStatusV2(options: {
     integrity: integrityError ? 'error' : 'pass',
     candidateIds: [run.changeName],
     artifactState: 'complete',
-    artifactsChanged: Boolean(pause?.planRevision && pause.planRevision !== run.planRevision),
+    artifactsChanged: Boolean(pause?.planRevision && pause.planRevision !== currentArtifactRevision),
     discussionOpen: false,
     planApproval: run.planApprovalStatus,
     activeDebug,
