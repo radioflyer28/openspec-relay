@@ -15,6 +15,7 @@ import {
   PI_READ_ONLY_TOOLS,
   type PiHostCapabilityProfileV1,
 } from './host-adapter.js';
+import { DispatchQuiescenceControllerV1, type DispatchHandleV1 } from '../dispatch-quiescence.js';
 
 const ASSURANCE_ROLES = new Set<ExecutionRole>(['plan_reviewer', 'pathfinder', 'reviewer', 'verifier']);
 const RESULT_START = '<openspec-relay-result>';
@@ -147,6 +148,7 @@ export function createPiRoleDispatcher(options: {
   currentRevision(changeName: string): Promise<string>;
   timeoutMs?: number;
   parentSignal?: AbortSignal;
+  quiescence?: DispatchQuiescenceControllerV1;
   now?: () => Date;
 }): RoleDispatcherV1 {
   return {
@@ -192,6 +194,32 @@ export function createPiRoleDispatcher(options: {
         cancellationId: `pi-cancel:${randomUUID()}`,
       });
       let session: PiRoleSessionV1 | undefined;
+      let dispatchHandle: DispatchHandleV1 | undefined;
+      dispatchHandle = options.quiescence?.begin({
+        dispatchId: envelope.dispatchId,
+        readOnly: true,
+        sessionId: envelope.parentSessionId,
+        requestRevision: envelope.planRevision,
+        abort: async () => {
+          abortKind = 'cancelled';
+          controller.abort(new Error('Pi role dispatch paused.'));
+          if (!session) {
+            dispatchHandle?.settle('interrupted');
+            return;
+          }
+          try {
+            await session.abort();
+            dispatchHandle?.settle('stopped');
+          } catch {
+            dispatchHandle?.settle('interrupted');
+          }
+        },
+      });
+      if (options.quiescence && !dispatchHandle) {
+        clearTimeout(timeout);
+        options.parentSignal?.removeEventListener('abort', cancelFromParent);
+        return errorResult('Pi role dispatch was not scheduled because the workflow is pausing.');
+      }
       try {
         const toolNames = envelope.authority === 'experiment_confined'
           ? [...PI_READ_ONLY_TOOLS, 'experiment_read', 'experiment_write']
@@ -238,6 +266,7 @@ export function createPiRoleDispatcher(options: {
         options.parentSignal?.removeEventListener('abort', cancelFromParent);
         if (controller.signal.aborted) await session?.abort().catch(() => undefined);
         await session?.dispose().catch(() => undefined);
+        dispatchHandle?.settle(controller.signal.aborted ? 'interrupted' : 'stopped');
       }
     },
   };

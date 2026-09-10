@@ -1,6 +1,6 @@
 import { qualifyPiHostAdapter, type PiHostProbeRuntimeV1 } from './host-adapter.js';
 import { type PiRoleSessionFactoryV1 } from './role-dispatch.js';
-export type PiWorkflowOperationV1 = 'plan' | 'do' | 'check' | 'status';
+export type PiWorkflowOperationV1 = 'plan' | 'do' | 'check' | 'status' | 'pause' | 'resume';
 export interface PiWorkflowOperationResultV1 {
     operation: PiWorkflowOperationV1;
     adapter: Awaited<ReturnType<typeof qualifyPiHostAdapter>>;

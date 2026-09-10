@@ -131,6 +131,33 @@ export function createPiRoleDispatcher(options) {
                 cancellationId: `pi-cancel:${randomUUID()}`,
             });
             let session;
+            let dispatchHandle;
+            dispatchHandle = options.quiescence?.begin({
+                dispatchId: envelope.dispatchId,
+                readOnly: true,
+                sessionId: envelope.parentSessionId,
+                requestRevision: envelope.planRevision,
+                abort: async () => {
+                    abortKind = 'cancelled';
+                    controller.abort(new Error('Pi role dispatch paused.'));
+                    if (!session) {
+                        dispatchHandle?.settle('interrupted');
+                        return;
+                    }
+                    try {
+                        await session.abort();
+                        dispatchHandle?.settle('stopped');
+                    }
+                    catch {
+                        dispatchHandle?.settle('interrupted');
+                    }
+                },
+            });
+            if (options.quiescence && !dispatchHandle) {
+                clearTimeout(timeout);
+                options.parentSignal?.removeEventListener('abort', cancelFromParent);
+                return errorResult('Pi role dispatch was not scheduled because the workflow is pausing.');
+            }
             try {
                 const toolNames = envelope.authority === 'experiment_confined'
                     ? [...PI_READ_ONLY_TOOLS, 'experiment_read', 'experiment_write']
@@ -181,6 +208,7 @@ export function createPiRoleDispatcher(options) {
                 if (controller.signal.aborted)
                     await session?.abort().catch(() => undefined);
                 await session?.dispose().catch(() => undefined);
+                dispatchHandle?.settle(controller.signal.aborted ? 'interrupted' : 'stopped');
             }
         },
     };

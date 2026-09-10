@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { PiHostProbeRuntimeV1 } from '../src/pi/host-adapter.js';
 import type { PiRoleSessionFactoryV1 } from '../src/pi/role-dispatch.js';
 import { executePiWorkflowOperationV1 } from '../src/pi/workflow.js';
+import { startRelayRunV2 } from '../src/runner-v2.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
 
 afterEach(cleanupTemporaryRoots);
@@ -25,6 +26,24 @@ function runtime(parallel = false): PiHostProbeRuntimeV1 {
 }
 
 describe('in-process Pi workflow adapter', () => {
+  it('uses the same pause/resume orchestrator with honest Tier 0 fallback', async () => {
+    const project = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: project.root, changedFiles: [] });
+    const unusedFactory: PiRoleSessionFactoryV1 = {
+      create: async () => { throw new Error('Tier 0 pause must not create a role session'); },
+    };
+    const paused = await executePiWorkflowOperationV1({
+      operation: 'pause', change: 'demo', projectRoot: project.root,
+      runtime: runtime(), factory: unusedFactory,
+    });
+    expect(paused).toMatchObject({ usedAdapter: false, result: { safe: true, checkpoint: { dispatches: [] } } });
+    const resumed = await executePiWorkflowOperationV1({
+      operation: 'resume', change: 'demo', projectRoot: project.root,
+      runtime: runtime(), factory: unusedFactory,
+    });
+    expect(resumed).toMatchObject({ usedAdapter: false, result: { resumed: true } });
+  });
+
   it('reports the CLI/Tier 0 fallback without creating a second workflow', async () => {
     const project = await createOpenSpecProject();
     const result = await executePiWorkflowOperationV1({
