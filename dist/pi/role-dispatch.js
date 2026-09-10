@@ -131,8 +131,8 @@ export function createPiRoleDispatcher(options) {
                 cancellationId: `pi-cancel:${randomUUID()}`,
             });
             let session;
-            let dispatchHandle;
-            dispatchHandle = options.quiescence?.begin({
+            const dispatchSettlement = {};
+            const dispatchHandle = options.quiescence?.begin({
                 dispatchId: envelope.dispatchId,
                 readOnly: true,
                 sessionId: envelope.parentSessionId,
@@ -141,18 +141,20 @@ export function createPiRoleDispatcher(options) {
                     abortKind = 'cancelled';
                     controller.abort(new Error('Pi role dispatch paused.'));
                     if (!session) {
-                        dispatchHandle?.settle('interrupted');
+                        dispatchSettlement.settle?.('interrupted');
                         return;
                     }
                     try {
                         await session.abort();
-                        dispatchHandle?.settle('stopped');
+                        dispatchSettlement.settle?.('stopped');
                     }
                     catch {
-                        dispatchHandle?.settle('interrupted');
+                        dispatchSettlement.settle?.('interrupted');
                     }
                 },
             });
+            if (dispatchHandle)
+                dispatchSettlement.settle = dispatchHandle.settle;
             if (options.quiescence && !dispatchHandle) {
                 clearTimeout(timeout);
                 options.parentSignal?.removeEventListener('abort', cancelFromParent);
