@@ -1,5 +1,6 @@
 import type { RoleDispatcherV1 } from '../execution-adapters.js';
 import { type PiHostCapabilityProfileV1 } from './host-adapter.js';
+import { DispatchQuiescenceControllerV1 } from '../dispatch-quiescence.js';
 export interface PiDispatchEnvelopeV1 {
     readonly version: 1;
     readonly dispatchId: string;
@@ -33,6 +34,7 @@ export declare function createPiRoleDispatcher(options: {
     currentRevision(changeName: string): Promise<string>;
     timeoutMs?: number;
     parentSignal?: AbortSignal;
+    quiescence?: DispatchQuiescenceControllerV1;
     now?: () => Date;
 }): RoleDispatcherV1;
 //# sourceMappingURL=role-dispatch.d.ts.map

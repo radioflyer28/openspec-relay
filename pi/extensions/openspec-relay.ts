@@ -10,12 +10,13 @@ const binDirectory = fileURLToPath(new URL('../bin/', import.meta.url));
 const workflowTool = defineTool({
   name: 'openspec_relay_workflow',
   label: 'OpenSpec Relay workflow',
-  description: 'Run an existing OpenSpec Relay plan, do, check, or status operation with live Pi capability qualification and isolated read-only assurance roles.',
+  description: 'Run an existing OpenSpec Relay plan, do, check, status, pause, or resume operation with live Pi capability qualification and isolated read-only assurance roles.',
   promptSnippet: 'Use openspec_relay_workflow for OpenSpec Relay lifecycle operations when available; honor its CLI fallback response.',
   executionMode: 'sequential',
   parameters: Type.Object({
     operation: Type.Union([
       Type.Literal('plan'), Type.Literal('do'), Type.Literal('check'), Type.Literal('status'),
+      Type.Literal('pause'), Type.Literal('resume'),
     ]),
     change: Type.String({ description: 'OpenSpec change name.' }),
     pathfinderQuestions: Type.Optional(Type.Array(Type.String())),
