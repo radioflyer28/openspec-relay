@@ -62,16 +62,20 @@ describe('companion CLI', () => {
       'dist/cli.js', 'plan', 'demo', '--project', root, '--allow-self-review', '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' });
     const paused = JSON.parse(execFileSync(process.execPath, [
-      'dist/cli.js', 'pause', '--project', root, '--json',
+      'dist/cli.js', 'pause', '--project', root, '--observed-quiescent', '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
     expect(paused).toMatchObject({ safe: true, checkpoint: { changeName: 'demo' } });
     expect(execFileSync(process.execPath, [
-      'dist/cli.js', 'pause', 'demo', '--project', root,
+      'dist/cli.js', 'pause', 'demo', '--project', root, '--observed-quiescent',
     ], { cwd: process.cwd(), encoding: 'utf8' })).toMatch(/paused|already paused/i);
-    const resumed = JSON.parse(execFileSync(process.execPath, [
+    const preview = JSON.parse(execFileSync(process.execPath, [
       'dist/cli.js', 'resume', '--project', root, '--json',
     ], { cwd: process.cwd(), encoding: 'utf8' }));
-    expect(resumed).toMatchObject({ resumed: true, decision: { restored: true } });
+    expect(preview).toMatchObject({ resumed: false, continued: false, decision: { restored: true } });
+    const resumed = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'resume', '--project', root, '--enter', preview.decision.route, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(resumed).toMatchObject({ resumed: true, continued: true, decision: { restored: true } });
   });
 
   it('returns non-zero for an unsafe pause and rejects ambiguous omitted selection', async () => {
@@ -97,6 +101,24 @@ describe('companion CLI', () => {
     expect(ambiguous.status).not.toBe(0);
     expect(ambiguous.stderr).toMatch(/multiple|explicit/i);
   }, 20_000);
+
+  it('auto-selects the sole active pre-proposal discussion without recency guessing', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await fs.rm(changeDir, { recursive: true });
+    const input = path.join(root, 'discussion.json');
+    await fs.writeFile(input, JSON.stringify({
+      workingId: 'one-idea', goal: 'Clarify one idea.',
+      confirmedDecisions: [], rejectedAlternatives: [],
+      openQuestions: [{ questionId: 'Q1', summary: 'Which outcome matters?' }], frontierIds: ['Q1'],
+    }));
+    execFileSync(process.execPath, [
+      'dist/cli.js', 'pause', '--discussion', 'one-idea', '--input', input, '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' });
+    const resumed = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'resume', '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(resumed).toMatchObject({ restored: true, workingId: 'one-idea', nextQuestion: { questionId: 'Q1' } });
+  });
 
   it('does not advertise repair when this host has no repair adapter', () => {
     const help = execFileSync(process.execPath, [

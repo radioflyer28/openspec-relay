@@ -5,8 +5,9 @@ description: "Pause a Relay lifecycle cooperatively at a safe boundary."
 Pause an OpenSpec Relay lifecycle cooperatively at a safe boundary.
 
 For a change, use the current host's `openspec_relay_workflow` operation `pause`
-when available. Otherwise run `openspec-relay pause [change] --json`. Stop
-scheduling new work first. Do not claim full pause while a mutation-capable
+when available. Otherwise stop scheduling new work, establish that no
+mutation-capable activity is running or inaccessible, and run `openspec-relay
+pause [change] --observed-quiescent --json`. Do not claim full pause while a mutation-capable
 dispatch is running or unknown. Report the active stage and task IDs, continuing
 or interrupted dispatches, unresolved findings and human actions, workspace
 paths, and the recorded resume route. Do not mark a task complete, change an

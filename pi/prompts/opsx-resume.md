@@ -5,9 +5,12 @@ description: "Resume paused work through one safe existing workflow."
 Resume paused OpenSpec Relay work from fresh current evidence.
 
 For a change, use the current host's `openspec_relay_workflow` operation `resume`
-when available. Otherwise run `openspec-relay resume [change] --json`. If no
-checkpoint exists, label the route reconstructed. Never infer among multiple
-changes or discussions from recency.
+once to preview the route, then call it again with `enterRoute` set to that exact
+route. Otherwise run `openspec-relay resume [change] --json`, then immediately
+run `openspec-relay resume [change] --enter <returned-route> --json` when the
+preview is automatic. The second call revalidates current evidence before
+recording continuation. If no checkpoint exists, label the route reconstructed.
+Never infer among multiple changes or discussions from recency.
 
 Honor the returned route exactly:
 

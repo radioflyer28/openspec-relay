@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readCanonicalEventStore } from '../src/events.js';
+import { appendRelayEventV2, createRelayEventV2, readCanonicalEventStore, writeReplayedProjectionsV2 } from '../src/events.js';
+import { compileOpenSpecChange } from '../src/artifacts.js';
 import { pauseRelayChangeV1, resumeRelayChangeV1 } from '../src/pause-resume.js';
 import { snapshotWorkspaceV1, validateWorkspaceSnapshotV1 } from '../src/workspace.js';
 import { startRelayRunV2 } from '../src/runner-v2.js';
@@ -56,15 +57,21 @@ describe('bounded workspace evidence', () => {
 describe('change pause and resume', () => {
   it('preserves task and assurance state and makes repeated pause idempotent', async () => {
     const { root, changeDir } = await createOpenSpecProject();
+    git(root, 'init'); git(root, 'config', 'user.email', 'relay@example.invalid'); git(root, 'config', 'user.name', 'Relay');
+    git(root, 'add', '.'); git(root, 'commit', '-m', 'initial');
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-    const first = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning' });
+    const first = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning', quiescenceObserved: true });
     const eventCount = (await readCanonicalEventStore(changeDir)).events.length;
-    const second = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning' });
+    const second = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning', quiescenceObserved: true });
     expect(first.checkpoint.pauseId).toBe(second.checkpoint.pauseId);
     expect(second.appended).toBe(false);
     expect((await readCanonicalEventStore(changeDir)).events).toHaveLength(eventCount);
     expect(first.run.tasks.every((task) => task.status !== 'complete')).toBe(true);
     expect(first.assurance.status).not.toBe('pass');
+    await fs.writeFile(path.join(root, 'progress.txt'), 'changed while paused\n');
+    const progressed = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, stage: 'planning' });
+    expect(progressed).toMatchObject({ appended: true, safe: false });
+    expect(progressed.checkpoint.pauseId).not.toBe(first.checkpoint.pauseId);
   });
 
   it('reports incomplete quiescence for mutation-capable unknown work', async () => {
@@ -76,17 +83,27 @@ describe('change pause and resume', () => {
     expect(result.checkpoint.quiescence).toBe('incomplete');
   });
 
+  it('does not claim safe quiescence while the current activity can mutate', async () => {
+    const { root } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    const result = await pauseRelayChangeV1({
+      change: 'demo', projectRoot: root, quiescenceObserved: true,
+      activity: { kind: 'workflow', id: 'executor', mutationCapable: true },
+    });
+    expect(result).toMatchObject({ safe: false, checkpoint: { quiescence: 'incomplete' } });
+  });
+
   it('binds resume to matching state and refuses workspace or artifact drift', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-    const paused = await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    const paused = await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true });
     const routed: string[] = [];
     const resumed = await resumeRelayChangeV1({ change: 'demo', projectRoot: root,
       invoke: async (route) => { routed.push(route); return 'ok'; } });
     expect(resumed.resumed).toBe(true);
     expect(routed).toEqual([paused.checkpoint.resumeRoute]);
 
-    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true });
     await fs.appendFile(path.join(changeDir, 'design.md'), '\nChanged intent.\n');
     await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
       resumed: false, drift: expect.arrayContaining([expect.stringMatching(/artifact/i)]),
@@ -96,7 +113,7 @@ describe('change pause and resume', () => {
   it('keeps the resume event visible when the routed workflow fails', async () => {
     const { root, changeDir } = await createOpenSpecProject();
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true });
     await expect(resumeRelayChangeV1({
       change: 'demo', projectRoot: root,
       invoke: async () => { throw new Error('routed workflow failed'); },
@@ -110,11 +127,31 @@ describe('change pause and resume', () => {
     git(root, 'init'); git(root, 'config', 'user.email', 'relay@example.invalid'); git(root, 'config', 'user.name', 'Relay');
     git(root, 'add', '.'); git(root, 'commit', '-m', 'initial');
     await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
-    await pauseRelayChangeV1({ change: 'demo', projectRoot: root });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true });
     await fs.writeFile(path.join(root, 'after-pause.txt'), 'movement\n');
     git(root, 'add', 'after-pause.txt'); git(root, 'commit', '-m', 'move revision');
     await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
       resumed: false, drift: expect.arrayContaining([expect.stringMatching(/revision/i)]),
+    });
+  });
+
+  it('requires disposition when unresolved human actions change during pause', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await pauseRelayChangeV1({ change: 'demo', projectRoot: root, quiescenceObserved: true });
+    const store = await readCanonicalEventStore(changeDir);
+    const compiled = await compileOpenSpecChange({ changeDir });
+    const appended = await appendRelayEventV2({ changeDir, event: createRelayEventV2({
+      eventId: 'human-action-after-pause', runId: store.runId, changeName: store.changeName,
+      occurredAt: '2026-09-09T12:00:00.000Z',
+      sourceDigests: Object.fromEntries(compiled.artifacts.map((artifact) => [artifact.path, artifact.sourceDigest])),
+      actor: { kind: 'human' }, provenance: { origin: 'pause-resume-test' },
+      payload: { type: 'human.decision', gateId: 'new-acceptance', decision: 'requested', reason: 'New material decision.' },
+    }) });
+    await writeReplayedProjectionsV2({ changeDir, store: appended.store, compiled });
+    await expect(resumeRelayChangeV1({ change: 'demo', projectRoot: root })).resolves.toMatchObject({
+      resumed: false, continued: false,
+      drift: expect.arrayContaining([expect.stringMatching(/human actions changed/i)]),
     });
   });
 

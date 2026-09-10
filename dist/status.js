@@ -1,6 +1,7 @@
 import { loadCanonicalRelayRecords } from './canonical-state.js';
 import { digestJson, resolveChangeDirectory } from './state.js';
 import { evaluateResumeRouteV1 } from './resume-route.js';
+import { validateWorkspaceSnapshotV1 } from './workspace.js';
 export async function getRunStatusV2(options) {
     const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
     const canonical = await loadCanonicalRelayRecords(resolved.changeDir);
@@ -17,18 +18,52 @@ export async function getRunStatusV2(options) {
     const pendingWork = run.tasks.some((task) => task.status !== 'complete') ||
         assurance.findings.some((finding) => finding.blocking &&
             !['independently_verified', 'accepted_risk'].includes(finding.state));
+    const resumeAuthority = [];
+    let workspaceDrift = false;
+    if (pause) {
+        const workspace = await validateWorkspaceSnapshotV1({
+            projectRoot: resolved.projectRoot,
+            expected: {
+                revisionAvailable: Boolean(pause.repositoryRevision),
+                ...(pause.repositoryRevision ? { repositoryRevision: pause.repositoryRevision } : {}),
+                entries: pause.workspace,
+            },
+        });
+        workspaceDrift = !workspace.matches;
+        resumeAuthority.push(...workspace.reasons);
+        if (JSON.stringify([...pause.humanActionIds].sort()) !==
+            JSON.stringify([...assurance.unresolvedHumanActions].sort())) {
+            resumeAuthority.push('Unresolved human actions changed while paused.');
+        }
+        const observed = new Map((options.dispatches ?? []).map((dispatch) => [dispatch.dispatchId, dispatch]));
+        for (const dispatch of pause.dispatches) {
+            if (dispatch.state !== 'running' && dispatch.state !== 'unknown')
+                continue;
+            const current = observed.get(dispatch.dispatchId);
+            if (!current)
+                resumeAuthority.push(`Dispatch '${dispatch.dispatchId}' requires fresh host observation.`);
+            else if (current.state === 'running' || current.state === 'unknown') {
+                resumeAuthority.push(`Dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
+            }
+            else if (dispatch.requestRevision && current.requestRevision !== dispatch.requestRevision) {
+                resumeAuthority.push(`Dispatch '${dispatch.dispatchId}' revision identity changed.`);
+            }
+        }
+        if (pause.quiescence === 'incomplete')
+            resumeAuthority.push('Pause quiescence remains incomplete.');
+    }
     const resume = evaluateResumeRouteV1({
         integrity: integrityError ? 'error' : 'pass',
         candidateIds: [run.changeName],
         artifactState: 'complete',
-        artifactsChanged: Boolean(pause?.planRevision && pause.planRevision !== currentArtifactRevision),
+        artifactsChanged: Boolean(pause?.planRevision && pause.planRevision !== currentArtifactRevision) || workspaceDrift,
         discussionOpen: false,
         planApproval: run.planApprovalStatus,
         activeDebug,
         pendingWork,
         pendingUat: pendingUat.length > 0,
         archiveReady: run.status === 'complete' && ['pass', 'warn'].includes(assurance.status),
-        requiredAuthority: [],
+        requiredAuthority: resumeAuthority,
         hasCheckpoint: Boolean(pause),
     });
     const nextActions = [
@@ -41,6 +76,7 @@ export async function getRunStatusV2(options) {
         ...(pause && pause.quiescence === 'incomplete'
             ? [`Stop or reconcile ${pause.dispatches.filter((item) => item.state === 'running' || item.state === 'unknown')
                     .map((item) => item.dispatchId).join(', ')} before mutation resumes.`] : []),
+        ...resumeAuthority,
         ...assurance.findings.filter((finding) => finding.blocking &&
             !['independently_verified', 'accepted_risk'].includes(finding.state))
             .map((finding) => `Resolve finding ${finding.findingId}.`),

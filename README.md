@@ -112,8 +112,9 @@ openspec-relay plan add-feature --allow-self-review # Tier 0 only; visibly non-i
 openspec-relay do add-feature
 openspec-relay check add-feature
 openspec-relay status add-feature --json
-openspec-relay pause add-feature --json
+openspec-relay pause add-feature --observed-quiescent --json
 openspec-relay resume add-feature --json
+openspec-relay resume add-feature --enter do --json
 openspec-relay debug add-feature --finding <id> --json
 openspec-relay uat add-feature --json
 ```
@@ -131,14 +132,19 @@ from scheduling new work and records a bounded generated checkpoint only after
 current atomic state writes settle. Host-observed dispatches remain truthfully
 `stopped`, `running`, `interrupted`, or `unknown`; running read-only analysis may
 continue, while running or unknown mutation-capable work makes pause unsafe.
-The CLI exits non-zero for that incomplete quiescence.
+The standalone CLI cannot observe other host activity by itself, so callers use
+`--observed-quiescent` only after they have stopped scheduling and established
+that no inaccessible mutation-capable work remains. Otherwise it exits non-zero.
 
 Checkpoints contain identities, revisions, task/finding references, changed-file
 paths and content digests—not file contents, OpenSpec prose, transcripts, or
 private reasoning. Resume reloads canonical state and refuses mutation after
 artifact, repository, workspace, human-action, or dispatch drift. With no
 checkpoint it reconstructs and labels the safest route. It never selects among
-multiple changes or discussions by recency.
+multiple changes or discussions by recency. Resume uses a preview/enter
+handshake: the first call returns the current route, and the second echoes that
+route with `--enter` immediately before the host enters the existing workflow.
+Relay rejects the handoff if current evidence selects a different route.
 
 Pre-proposal discussion checkpoints live in
 `openspec/.openspec-relay/discussions.json`. They are ephemeral and become

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import { getRunStatusV2 } from '../src/status.js';
 import { appendRelayEventV2, createRelayEventV2, readCanonicalEventStore, writeReplayedProjectionsV2 } from '../src/events.js';
 import { compileOpenSpecChange } from '../src/artifacts.js';
 import { cleanupTemporaryRoots, createOpenSpecProject } from './helpers.js';
+import { pauseRelayChangeV1 } from '../src/pause-resume.js';
 
 afterEach(cleanupTemporaryRoots);
 
@@ -57,5 +58,34 @@ describe('canonical run status', () => {
     expect(cli.status, cli.stderr).toBe(0);
     expect(cli.stdout).toMatch(/execution-record integrity error/i);
     expect(cli.stdout).not.toMatch(/assurance=(?:pass|warn)/i);
+  });
+
+  it('makes current workspace and live dispatch authority part of resume status', async () => {
+    const { root } = await createOpenSpecProject();
+    execFileSync('git', ['init'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'relay@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'Relay'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-m', 'initial'], { cwd: root });
+    await startRelayRunV2({ change: 'demo', projectRoot: root, changedFiles: [] });
+    await pauseRelayChangeV1({
+      change: 'demo', projectRoot: root, quiescenceObserved: true,
+      dispatches: [{ dispatchId: 'reader', state: 'unknown', readOnly: true }],
+    });
+    const unobserved = await getRunStatusV2({ change: 'demo', projectRoot: root });
+    expect(unobserved.resume).toMatchObject({ automatic: false,
+      requiredAuthority: expect.arrayContaining([expect.stringMatching(/fresh host observation/i)]) });
+    const observed = await getRunStatusV2({
+      change: 'demo', projectRoot: root,
+      dispatches: [{ dispatchId: 'reader', state: 'stopped', readOnly: true }],
+    });
+    expect(observed.resume.requiredAuthority).not.toEqual(expect.arrayContaining([expect.stringMatching(/dispatch/i)]));
+    await fs.writeFile(path.join(root, 'new-work.txt'), 'changed while paused\n');
+    const drifted = await getRunStatusV2({
+      change: 'demo', projectRoot: root,
+      dispatches: [{ dispatchId: 'reader', state: 'stopped', readOnly: true }],
+    });
+    expect(drifted.resume).toMatchObject({ automatic: false,
+      requiredAuthority: expect.arrayContaining([expect.stringMatching(/workspace paths or digests changed/i)]) });
   });
 });

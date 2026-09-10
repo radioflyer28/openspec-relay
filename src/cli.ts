@@ -9,6 +9,7 @@ import {
   DeviationV1Schema,
   EvidenceV1Schema,
   RepairAttemptV1Schema,
+  ResumeRouteV1Schema,
 } from './schemas.js';
 import { checkRelayRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
@@ -17,6 +18,7 @@ import { assertCurrentPlanApprovalV1 } from './do-workflow.js';
 import { pauseRelayChangeV1, resumeRelayChangeV1 } from './pause-resume.js';
 import {
   DiscussionCheckpointInputV1Schema,
+  readDiscussionRegistryV1,
   replaceDiscussionCheckpointV1,
   resumeDiscussionCheckpointV1,
 } from './discussion-registry.js';
@@ -78,6 +80,31 @@ async function selectChange(change: string | undefined, projectRoot?: string): P
   return { projectRoot: root, change: candidates[0]! };
 }
 
+async function selectResumeTarget(change: string | undefined, projectRoot?: string): Promise<
+  { kind: 'change'; projectRoot: string; change: string } |
+  { kind: 'discussion'; projectRoot: string; workingId: string }
+> {
+  const root = await resolveProjectRoot(projectRoot ?? process.cwd());
+  if (change) return { kind: 'change', projectRoot: root, change };
+  const changesRoot = path.join(root, 'openspec', 'changes');
+  const changes = (await fs.readdir(changesRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== 'archive' && !entry.name.startsWith('.'))
+    .map((entry) => entry.name).sort();
+  const discussions = (await readDiscussionRegistryV1(root)).discussions
+    .filter((entry) => entry.status === 'active').map((entry) => entry.workingId).sort();
+  const candidates = [
+    ...changes.map((name) => ({ kind: 'change' as const, projectRoot: root, change: name })),
+    ...discussions.map((workingId) => ({ kind: 'discussion' as const, projectRoot: root, workingId })),
+  ];
+  if (candidates.length === 0) throw new Error('No active OpenSpec change or discussion checkpoint exists.');
+  if (candidates.length > 1) {
+    throw new Error(`Multiple active work candidates exist; select one explicitly: ${[
+      ...changes.map((name) => `change:${name}`), ...discussions.map((id) => `discussion:${id}`),
+    ].join(', ')}.`);
+  }
+  return candidates[0]!;
+}
+
 const program = new Command()
   .name('openspec-relay')
   .description('Risk-aware execution and assurance for OpenSpec changes')
@@ -117,6 +144,7 @@ program.command('pause')
   .option('--discussion <id>', 'Pause a pre-proposal discussion using --input')
   .option('--input <json-file|->', 'Bounded discussion checkpoint JSON')
   .option('--project <path>')
+  .option('--observed-quiescent', 'Assert that this host stopped scheduling and observed no inaccessible mutation-capable work')
   .option('--json')
   .action(async (change, options) => {
     if (options.discussion) {
@@ -129,7 +157,7 @@ program.command('pause')
       return;
     }
     const selected = await selectChange(change, options.project);
-    const result = await pauseRelayChangeV1(selected);
+    const result = await pauseRelayChangeV1({ ...selected, quiescenceObserved: Boolean(options.observedQuiescent) });
     print(options.json ? result : result.appended
       ? `OpenSpec Relay '${result.checkpoint.changeName}' ${result.safe ? 'paused' : 'could not reach safe quiescence'}; resume=${result.checkpoint.resumeRoute}.`
       : `OpenSpec Relay '${result.checkpoint.changeName}' is already paused; resume=${result.checkpoint.resumeRoute}.`,
@@ -141,6 +169,7 @@ program.command('resume')
   .argument('[change]')
   .option('--discussion <id>', 'Resume a pre-proposal discussion checkpoint')
   .option('--project <path>')
+  .option('--enter <route>', 'Enter the previously previewed route when current evidence still selects it')
   .option('--json')
   .action(async (change, options) => {
     if (options.discussion) {
@@ -150,9 +179,16 @@ program.command('resume')
       print(options.json ? result : `Resume discussion '${result.workingId}': ${result.nextQuestion?.summary ?? 'proposal handoff is ready'}.`, Boolean(options.json));
       return;
     }
-    const selected = await selectChange(change, options.project);
-    const result = await resumeRelayChangeV1(selected);
-    print(options.json ? result : `OpenSpec Relay resume route for '${selected.change}': ${result.decision.route} (${result.reconstructed ? 'reconstructed' : 'checkpoint restored'}).`,
+    const selected = await selectResumeTarget(change, options.project);
+    if (selected.kind === 'discussion') {
+      if (options.enter) throw new Error('--enter applies only to a change resume route.');
+      const result = await resumeDiscussionCheckpointV1({ projectRoot: selected.projectRoot, workingId: selected.workingId });
+      print(options.json ? result : `Resume discussion '${result.workingId}': ${result.nextQuestion?.summary ?? 'proposal handoff is ready'}.`, Boolean(options.json));
+      return;
+    }
+    const enterRoute = options.enter ? ResumeRouteV1Schema.parse(options.enter) : undefined;
+    const result = await resumeRelayChangeV1({ ...selected, ...(enterRoute ? { enterRoute } : {}) });
+    print(options.json ? result : `OpenSpec Relay resume route for '${selected.change}': ${result.decision.route} (${result.reconstructed ? 'reconstructed' : 'checkpoint restored'}${result.continued ? ', entered' : ', preview'}).`,
       Boolean(options.json));
   });
 

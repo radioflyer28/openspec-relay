@@ -11,6 +11,7 @@ import { resolveChangeDirectory } from '../state.js';
 import { createPiExperimentWorkspace, type PiExperimentWorkspaceV1 } from './experiment-workspace.js';
 import { qualifyPiHostAdapter, type PiHostProbeRuntimeV1 } from './host-adapter.js';
 import { createPiRoleDispatcher, type PiRoleSessionFactoryV1 } from './role-dispatch.js';
+import type { ResumeRouteV1 } from '../schemas.js';
 
 export type PiWorkflowOperationV1 = 'plan' | 'do' | 'check' | 'status' | 'pause' | 'resume';
 
@@ -68,6 +69,7 @@ export async function executePiWorkflowOperationV1(options: {
   runtime: PiHostProbeRuntimeV1;
   factory: PiRoleSessionFactoryV1;
   pathfinderQuestions?: string[];
+  enterRoute?: ResumeRouteV1;
   parentSignal?: AbortSignal;
 }): Promise<PiWorkflowOperationResultV1> {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
@@ -85,12 +87,17 @@ export async function executePiWorkflowOperationV1(options: {
     const result = await pauseRelayChangeV1({
       change: resolved.changeName, projectRoot: resolved.projectRoot,
       stage: 'implementation', dispatches,
+      quiescenceObserved: adapter.agentDispatch.state === 'available' && Boolean(control),
     });
     return { operation: options.operation, adapter, usedAdapter: adapter.agentDispatch.state === 'available', result };
   }
   if (options.operation === 'resume') {
-    const result = await resumeRelayChangeV1({ change: resolved.changeName, projectRoot: resolved.projectRoot });
-    if (result.resumed) control?.resumeScheduling();
+    const result = await resumeRelayChangeV1({
+      change: resolved.changeName, projectRoot: resolved.projectRoot,
+      ...(options.enterRoute ? { enterRoute: options.enterRoute } : {}),
+      ...(control ? { dispatches: control.snapshot() } : {}),
+    });
+    if (result.continued) control?.resumeScheduling();
     return { operation: options.operation, adapter, usedAdapter: adapter.agentDispatch.state === 'available', result };
   }
   if (adapter.agentDispatch.state !== 'available') {
@@ -152,6 +159,9 @@ export async function executePiWorkflowOperationV1(options: {
     const result = await checkRelayRunV2({ change: resolved.changeName, projectRoot: resolved.projectRoot });
     return { operation: options.operation, adapter, usedAdapter: true, result };
   }
-  const result = await getRunStatusV2({ change: resolved.changeName, projectRoot: resolved.projectRoot });
+  const result = await getRunStatusV2({
+    change: resolved.changeName, projectRoot: resolved.projectRoot,
+    ...(control ? { dispatches: control.snapshot() } : {}),
+  });
   return { operation: options.operation, adapter, usedAdapter: true, result };
 }
