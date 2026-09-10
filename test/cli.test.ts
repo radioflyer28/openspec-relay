@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -52,8 +52,50 @@ describe('companion CLI', () => {
     const rootHelp = execFileSync(process.execPath, ['dist/cli.js', '--help'], {
       cwd: process.cwd(), encoding: 'utf8',
     });
-    for (const command of ['plan', 'do', 'check', 'status']) expect(rootHelp).toContain(command);
+    for (const command of ['plan', 'do', 'check', 'status', 'pause', 'resume']) expect(rootHelp).toContain(command);
     expect(rootHelp).not.toMatch(/^\s+run(?:-status)?\s/m);
+  }, 20_000);
+
+  it('pauses and resumes one selected change with JSON and text output', async () => {
+    const { root } = await createOpenSpecProject();
+    execFileSync(process.execPath, [
+      'dist/cli.js', 'plan', 'demo', '--project', root, '--allow-self-review', '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' });
+    const paused = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'pause', '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(paused).toMatchObject({ safe: true, checkpoint: { changeName: 'demo' } });
+    expect(execFileSync(process.execPath, [
+      'dist/cli.js', 'pause', 'demo', '--project', root,
+    ], { cwd: process.cwd(), encoding: 'utf8' })).toMatch(/paused|already paused/i);
+    const resumed = JSON.parse(execFileSync(process.execPath, [
+      'dist/cli.js', 'resume', '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' }));
+    expect(resumed).toMatchObject({ resumed: true, decision: { restored: true } });
+  });
+
+  it('returns non-zero for an unsafe pause and rejects ambiguous omitted selection', async () => {
+    const { root, changeDir } = await createOpenSpecProject();
+    execFileSync(process.execPath, [
+      'dist/cli.js', 'plan', 'demo', '--project', root, '--allow-self-review', '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' });
+    const { pauseRelayChangeV1 } = await import('../src/pause-resume.js');
+    await pauseRelayChangeV1({
+      change: 'demo', projectRoot: root,
+      dispatches: [{ dispatchId: 'opaque-writer', readOnly: false, state: 'unknown' }],
+    });
+    const unsafe = spawnSync(process.execPath, [
+      'dist/cli.js', 'pause', 'demo', '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(unsafe.status).not.toBe(0);
+    expect(JSON.parse(unsafe.stdout)).toMatchObject({ safe: false });
+
+    await fs.cp(changeDir, path.join(root, 'openspec', 'changes', 'second'), { recursive: true });
+    const ambiguous = spawnSync(process.execPath, [
+      'dist/cli.js', 'resume', '--project', root, '--json',
+    ], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(ambiguous.status).not.toBe(0);
+    expect(ambiguous.stderr).toMatch(/multiple|explicit/i);
   }, 20_000);
 
   it('does not advertise repair when this host has no repair adapter', () => {

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires the openspec and openspec-relay CLIs.
 metadata:
   author: openspec-relay
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 Start or resume a focused scientific debugging session for an unresolved

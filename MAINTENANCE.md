@@ -79,6 +79,13 @@ acceptance, or use the explicit `--override-gate` plus `--reason` audit path.
 Preserve `.openspec-relay/` and `.openspec-gates.json` when restoring an active
 change so evidence and decisions remain reviewable.
 
+Before replacing an active development checkout, run
+`openspec-relay pause <change> --json` and require `safe: true`. After the
+upgrade, run `openspec-relay resume <change> --json`; artifact, repository,
+or workspace drift routes back through status/planning instead of discarding
+files. A pre-proposal discussion may be resumed by its explicit working ID.
+These commands do not create WIP commits or grant Git authority.
+
 Do not downgrade generated execution records. If a private development revision changed the
 unpublished schema incompatibly, retain the OpenSpec artifacts, remove only the
 known generated OpenSpec Relay records after reviewing them, regenerate with the

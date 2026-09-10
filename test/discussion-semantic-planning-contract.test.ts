@@ -13,7 +13,7 @@ describe('discussion, semantic planning, and execution convergence contract', ()
       contributes: { workflows: Array<{ id: string; replaces?: string[] }> };
     };
     expect(manifest.contributes.workflows.map((workflow) => workflow.id))
-      .toEqual(['discuss', 'plan', 'do', 'check', 'status', 'debug', 'uat']);
+      .toEqual(['discuss', 'plan', 'do', 'check', 'status', 'pause', 'resume', 'debug', 'uat']);
     expect(manifest.contributes.workflows.find((workflow) => workflow.id === 'do')?.replaces)
       .toEqual(['run']);
     expect(manifest.contributes.workflows.find((workflow) => workflow.id === 'status')?.replaces)

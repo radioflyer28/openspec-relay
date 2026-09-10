@@ -1,7 +1,7 @@
 {
   "apiVersion": "openspec.dev/extensions/v1",
   "id": "relay",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "requires": {
     "openspec": ">=1.11.0-relay.1 <2.0.0",
     "hostCapabilities": {
@@ -57,6 +57,24 @@
         "gateDependencies": [],
         "requiredHostCapabilities": ["structuredResults"],
         "replaces": ["run-status"]
+      },
+      {
+        "id": "pause",
+        "name": "OpenSpec Relay Pause",
+        "description": "Pause a Relay lifecycle cooperatively at a safe boundary.",
+        "entry": "workflows/pause.md",
+        "artifactRequirements": [],
+        "gateDependencies": [],
+        "requiredHostCapabilities": ["structuredResults"]
+      },
+      {
+        "id": "resume",
+        "name": "OpenSpec Relay Resume",
+        "description": "Resume paused work through one safe existing workflow.",
+        "entry": "workflows/resume.md",
+        "artifactRequirements": [],
+        "gateDependencies": [],
+        "requiredHostCapabilities": ["structuredResults"]
       },
       {
         "id": "debug",

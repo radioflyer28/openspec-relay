@@ -56,5 +56,11 @@ their dependents. After confirmation, hand the revisions to the standard
 OpenSpec update workflow; do not persist a transcript or create another planning
 artifact.
 
+If the developer pauses before proposal, write only the bounded discussion
+checkpoint described by `/opsx:pause`: confirmed material decisions, rejected
+major alternatives, material open questions, and frontier IDs. On resume, use
+that checkpoint to avoid repeating settled questions. It remains ephemeral and
+non-authoritative until a confirmed proposal handoff consumes it.
+
 Vendored source and license: `THIRD_PARTY_NOTICES.md`, Matt Pocock `grilling`,
 revision `85f83d3fde1d3a90d5c9a657f6998c79a6c37308`.

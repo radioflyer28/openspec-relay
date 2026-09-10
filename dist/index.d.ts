@@ -9,6 +9,8 @@ export { RELAY_VERSION } from './version.js';
 export { relayAssuranceGate } from './gate.js';
 export { DEFAULT_HOST_CAPABILITIES, checkRelayRunV2, startRelayRunV2, type StartRunResultV2, } from './runner-v2.js';
 export { getRunStatusV2, type RunStatusV2 } from './status.js';
+export { pauseRelayChangeV1, resumeRelayChangeV1, type PauseRelayResultV1, type ResumeRelayResultV1, } from './pause-resume.js';
+export { consumeDiscussionCheckpointV1, readDiscussionRegistryV1, removeDiscussionCheckpointV1, replaceDiscussionCheckpointV1, resumeDiscussionCheckpointV1, selectDiscussionCheckpointV1, type DiscussionCheckpointV1, type DiscussionRegistryV1, } from './discussion-registry.js';
 export { acceptRelayGateV2, observeDebugExperimentV2, planDebugExperimentV2, presentUatV2, recordDebugConclusionV2, recordDebugHypothesisV2, recordDebugNextActionV2, recordDebugQuestionV2, recordDebugReferenceChangeV2, recordDispatchedRoleResultV2, recordUatV2, recordWorkflowResultV2, resolveDebugSessionV2, startOrResumeDebugV2, transitionFindingV2, verifyFindingFromDispatchedResultV2, type FindingWorkflowActionV2, type WorkflowStageV2, } from './v2-operations.js';
 export { dispatchRoleV2, executeWithTier, type DispatchedRoleResultV2, type ExecutionOutcomeV1, type ExecutionRole, type PlanningRoleContextV1, type RoleDispatcherV1, type RoleRequestV1, type RoleResultV1, type ReportedFindingV2, type WorktreeAdapterV1, } from './execution-adapters.js';
 export { negotiateExecutionTier, type TierAdaptersV1, type TierDecisionV1, } from './tiers.js';

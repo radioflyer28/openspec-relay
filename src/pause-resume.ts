@@ -67,6 +67,11 @@ export async function pauseRelayChangeV1(options: {
   const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
   const canonical = await loadCanonicalRelayRecords(resolved.changeDir);
   if (!canonical.projectionsMatch) throw new Error('Cannot pause while canonical history and generated projections disagree.');
+  const activeCheckpoint = canonical.projection.run.effectivePause;
+  if (activeCheckpoint) return {
+    checkpoint: activeCheckpoint, appended: false, safe: activeCheckpoint.quiescence === 'safe',
+    run: canonical.projection.run, assurance: canonical.projection.assurance,
+  };
   const workspace = await snapshotWorkspaceV1({ projectRoot: resolved.projectRoot });
   const dispatches = options.dispatches ?? [];
   const unsafeDispatches = dispatches.filter((dispatch) => !dispatch.readOnly &&
@@ -94,11 +99,6 @@ export async function pauseRelayChangeV1(options: {
     quiescence: unsafeDispatches.length === 0 ? 'safe' as const : 'incomplete' as const,
   };
   const stateFingerprint = digestJson(stable);
-  const existing = canonical.projection.run.effectivePause;
-  if (existing?.stateFingerprint === stateFingerprint) return {
-    checkpoint: existing, appended: false, safe: existing.quiescence === 'safe',
-    run: canonical.projection.run, assurance: canonical.projection.assurance,
-  };
   const checkpoint = PauseCheckpointV1Schema.parse({
     ...stable,
     pauseId: `pause-${stateFingerprint.slice(0, 16)}`,

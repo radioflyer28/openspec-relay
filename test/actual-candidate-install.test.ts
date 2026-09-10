@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe('actual packed companion candidate', () => {
-  it('installs with the core seam and exposes all seven workflows through host discovery', async () => {
+  it('installs with the core seam and exposes all nine workflows through host discovery', async () => {
     const artifactRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'relay actual candidate '));
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'relay installed host '));
     const piConfigRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'relay pi config '));
@@ -46,7 +46,7 @@ describe('actual packed companion candidate', () => {
       'dist/pi/sdk-runtime.js', 'dist/pi/workflow.js', 'dist/pi/role-dispatch.js',
       'pi/extensions/openspec-relay.ts', 'pi/bin/openspec-relay',
       'workflows/plan.md', 'workflows/do.md', 'workflows/check.md', 'workflows/status.md',
-      'workflows/debug.md', 'workflows/uat.md',
+      'workflows/pause.md', 'workflows/resume.md', 'workflows/debug.md', 'workflows/uat.md',
     ]));
     expect(createHash('sha256').update(await fs.readFile(candidate)).digest('hex')).toMatch(/^[a-f0-9]{64}$/);
 
@@ -72,7 +72,7 @@ describe('actual packed companion candidate', () => {
     };
     expect(installedManifest).toMatchObject({
       name: 'openspec-relay',
-      version: '0.2.0',
+      version: '0.3.0',
       peerDependencies: {
         '@fission-ai/openspec': '>=1.11.0-relay.1 <2.0.0',
         '@earendil-works/pi-ai': '>=0.84.0 <0.85.0',
@@ -112,11 +112,11 @@ describe('actual packed companion candidate', () => {
     const linked = execFileSync(process.execPath, [coreCli, 'extension', 'link', installedCompanion], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
-    expect(linked).toContain('workflows=7');
+    expect(linked).toContain('workflows=9');
     const listed = execFileSync(process.execPath, [coreCli, 'extension', 'list'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
-    expect(listed).toMatch(/relay@0\.2\.0.*compatibility=compatible.*workflows=7/);
+    expect(listed).toMatch(/relay@0\.3\.0.*compatibility=compatible.*workflows=9/);
     const doctor = execFileSync(process.execPath, [coreCli, 'extension', 'doctor', 'relay'], {
       cwd: projectRoot, encoding: 'utf8', timeout: 15_000, env: nonInteractiveEnvironment,
     });
@@ -127,17 +127,17 @@ describe('actual packed companion candidate', () => {
     await expect(fs.readFile(similarlyNamedUserSkill, 'utf8'))
       .resolves.toBe('user-owned run notes\n');
 
-    for (const workflow of ['discuss', 'plan', 'do', 'check', 'status', 'debug', 'uat']) {
+    for (const workflow of ['discuss', 'plan', 'do', 'check', 'status', 'pause', 'resume', 'debug', 'uat']) {
       const skill = await fs.readFile(path.join(
         projectRoot, '.agents', 'skills', `openspec-${workflow}`, 'SKILL.md',
       ), 'utf8');
-      expect(skill).toContain(`openspec-extension:relay@0.2.0/${workflow}/codex/skill`);
+      expect(skill).toContain(`openspec-extension:relay@0.3.0/${workflow}/codex/skill`);
       expect(skill).toContain(workflow === 'discuss' ? 'Interview the user relentlessly' : 'openspec-relay');
     }
     const help = execFileSync(process.execPath, [
       path.join(installedCompanion, 'dist', 'cli.js'), '--help',
     ], { cwd: projectRoot, encoding: 'utf8' });
-    for (const command of ['plan', 'do', 'check', 'status', 'debug', 'uat']) expect(help).toContain(command);
+    for (const command of ['plan', 'do', 'check', 'status', 'pause', 'resume', 'debug', 'uat']) expect(help).toContain(command);
     expect(help).not.toMatch(/^\s+run(?:-status)?\s/m);
 
     const piCli = path.join(packageRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'bundle', 'cli.js');
