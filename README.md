@@ -63,7 +63,7 @@ pi list
 
 The supported Pi SDK range is `>=0.84.0 <0.85.0`; development and macOS
 qualification use Pi 0.84.4. This exposes `/opsx-discuss`, `/opsx-plan`, `/opsx-do`, `/opsx-check`,
-`/opsx-status`, `/opsx-debug`, and `/opsx-uat`, plus the corresponding
+`/opsx-status`, `/opsx-pause`, `/opsx-resume`, `/opsx-debug`, and `/opsx-uat`, plus the corresponding
 `openspec-*` skills. The Pi package includes
 a runtime extension that registers one typed in-process
 `openspec_relay_workflow` tool and places its bundled `openspec-relay` CLI on the
@@ -84,6 +84,7 @@ The lifecycle is proportional rather than phase-based:
 discuss → propose → plan → do → check/archive
                      ↑      |
                      └──────┘ blocking review or verification finding
+                     ↕ pause/resume at a cooperative safe boundary
 ```
 
 `discuss` is conversational and may be bypassed for trivial or already-precise
@@ -99,6 +100,8 @@ After OpenSpec reconciles the extension, supported tools receive:
 - `/opsx:do <change>`
 - `/opsx:check <change>`
 - `/opsx:status <change>`
+- `/opsx:pause [<change>]`
+- `/opsx:resume [<change>]`
 - `/opsx:debug <change> [--finding <id>]`
 - `/opsx:uat <change>`
 
@@ -109,6 +112,8 @@ openspec-relay plan add-feature --allow-self-review # Tier 0 only; visibly non-i
 openspec-relay do add-feature
 openspec-relay check add-feature
 openspec-relay status add-feature --json
+openspec-relay pause add-feature --json
+openspec-relay resume add-feature --json
 openspec-relay debug add-feature --finding <id> --json
 openspec-relay uat add-feature --json
 ```
@@ -118,6 +123,29 @@ scenario mapping, and independent goal verification. `guarded` adds risk-aware
 TDD, code review, and applicable specialist checks. `full` requests maximum
 applicable specialist coverage and may use explicitly enabled higher execution
 tiers.
+
+### Pause and resume
+
+Pause is cooperative lifecycle handoff, not a process manager. It stops Relay
+from scheduling new work and records a bounded generated checkpoint only after
+current atomic state writes settle. Host-observed dispatches remain truthfully
+`stopped`, `running`, `interrupted`, or `unknown`; running read-only analysis may
+continue, while running or unknown mutation-capable work makes pause unsafe.
+The CLI exits non-zero for that incomplete quiescence.
+
+Checkpoints contain identities, revisions, task/finding references, changed-file
+paths and content digests—not file contents, OpenSpec prose, transcripts, or
+private reasoning. Resume reloads canonical state and refuses mutation after
+artifact, repository, workspace, human-action, or dispatch drift. With no
+checkpoint it reconstructs and labels the safest route. It never selects among
+multiple changes or discussions by recency.
+
+Pre-proposal discussion checkpoints live in
+`openspec/.openspec-relay/discussions.json`. They are ephemeral and become
+inactive only after confirmed mapping into proposal artifacts. OpenSpec remains
+the only durable planning truth. Pause and resume inspect Git state but never
+commit, branch, worktree, stash, reset, delete, or overwrite files without
+separate explicit authority.
 
 ### Discussion contract
 

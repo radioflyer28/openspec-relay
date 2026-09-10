@@ -1,21 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { confirmDiscussionHandoff, type DiscussionArtifactMappingV1 } from './discussion.js';
-declare const DecisionSchema: z.ZodObject<{
-    decisionId: z.ZodString;
-    summary: z.ZodString;
-    dependsOn: z.ZodOptional<z.ZodArray<z.ZodString>>;
-}, z.core.$strict>;
-declare const RejectedAlternativeSchema: z.ZodObject<{
-    alternativeId: z.ZodString;
-    summary: z.ZodString;
-    reason: z.ZodString;
-}, z.core.$strict>;
-declare const OpenQuestionSchema: z.ZodObject<{
-    questionId: z.ZodString;
-    summary: z.ZodString;
-    dependsOn: z.ZodOptional<z.ZodArray<z.ZodString>>;
-}, z.core.$strict>;
 export declare const DiscussionCheckpointV1Schema: z.ZodObject<{
     version: z.ZodLiteral<1>;
     workingId: z.ZodString;
@@ -85,20 +70,33 @@ export declare const DiscussionRegistryV1Schema: z.ZodObject<{
         }, z.core.$strict>>;
     }, z.core.$strict>>;
 }, z.core.$strict>;
+export declare const DiscussionCheckpointInputV1Schema: z.ZodObject<{
+    workingId: z.ZodString;
+    goal: z.ZodString;
+    confirmedDecisions: z.ZodArray<z.ZodObject<{
+        decisionId: z.ZodString;
+        summary: z.ZodString;
+        dependsOn: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    }, z.core.$strict>>;
+    rejectedAlternatives: z.ZodArray<z.ZodObject<{
+        alternativeId: z.ZodString;
+        summary: z.ZodString;
+        reason: z.ZodString;
+    }, z.core.$strict>>;
+    openQuestions: z.ZodArray<z.ZodObject<{
+        questionId: z.ZodString;
+        summary: z.ZodString;
+        dependsOn: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    }, z.core.$strict>>;
+    frontierIds: z.ZodArray<z.ZodString>;
+}, z.core.$strict>;
 export type DiscussionCheckpointV1 = z.infer<typeof DiscussionCheckpointV1Schema>;
 export type DiscussionRegistryV1 = z.infer<typeof DiscussionRegistryV1Schema>;
 export declare function discussionRegistryPath(projectRoot: string, pathApi?: path.PlatformPath): string;
 export declare function readDiscussionRegistryV1(projectRoot: string): Promise<DiscussionRegistryV1>;
 export declare function replaceDiscussionCheckpointV1(options: {
     projectRoot: string;
-    checkpoint: {
-        workingId: string;
-        goal: string;
-        confirmedDecisions: Array<z.input<typeof DecisionSchema>>;
-        rejectedAlternatives: Array<z.input<typeof RejectedAlternativeSchema>>;
-        openQuestions: Array<z.input<typeof OpenQuestionSchema>>;
-        frontierIds: string[];
-    };
+    checkpoint: z.input<typeof DiscussionCheckpointInputV1Schema>;
     expectedFingerprint?: string;
     now?: string;
 }): Promise<{
@@ -131,5 +129,4 @@ export declare function consumeDiscussionCheckpointV1(options: {
     mappings: DiscussionArtifactMappingV1[];
     now?: string;
 }): Promise<ReturnType<typeof confirmDiscussionHandoff>>;
-export {};
 //# sourceMappingURL=discussion-registry.d.ts.map

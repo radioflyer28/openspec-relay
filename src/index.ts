@@ -15,6 +15,22 @@ export {
 } from './runner-v2.js';
 export { getRunStatusV2, type RunStatusV2 } from './status.js';
 export {
+  pauseRelayChangeV1,
+  resumeRelayChangeV1,
+  type PauseRelayResultV1,
+  type ResumeRelayResultV1,
+} from './pause-resume.js';
+export {
+  consumeDiscussionCheckpointV1,
+  readDiscussionRegistryV1,
+  removeDiscussionCheckpointV1,
+  replaceDiscussionCheckpointV1,
+  resumeDiscussionCheckpointV1,
+  selectDiscussionCheckpointV1,
+  type DiscussionCheckpointV1,
+  type DiscussionRegistryV1,
+} from './discussion-registry.js';
+export {
   acceptRelayGateV2,
   observeDebugExperimentV2,
   planDebugExperimentV2,

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { RELAY_VERSION } from './version.js';
 import {
@@ -13,6 +14,13 @@ import { checkRelayRunV2 } from './runner-v2.js';
 import { getRunStatusV2 } from './status.js';
 import { planRelayChangeV1 } from './plan-workflow.js';
 import { assertCurrentPlanApprovalV1 } from './do-workflow.js';
+import { pauseRelayChangeV1, resumeRelayChangeV1 } from './pause-resume.js';
+import {
+  DiscussionCheckpointInputV1Schema,
+  replaceDiscussionCheckpointV1,
+  resumeDiscussionCheckpointV1,
+} from './discussion-registry.js';
+import { resolveProjectRoot } from './state.js';
 import {
   acceptRelayGateV2,
   observeDebugExperimentV2,
@@ -55,6 +63,21 @@ async function readInput(filename: string): Promise<unknown> {
   return JSON.parse(content);
 }
 
+async function selectChange(change: string | undefined, projectRoot?: string): Promise<{
+  projectRoot: string;
+  change: string;
+}> {
+  const root = await resolveProjectRoot(projectRoot ?? process.cwd());
+  if (change) return { projectRoot: root, change };
+  const changesRoot = path.join(root, 'openspec', 'changes');
+  const candidates = (await fs.readdir(changesRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== 'archive' && !entry.name.startsWith('.'))
+    .map((entry) => entry.name).sort();
+  if (candidates.length === 0) throw new Error('No active OpenSpec change exists; select a discussion explicitly when resuming pre-proposal work.');
+  if (candidates.length > 1) throw new Error(`Multiple active OpenSpec changes exist; select one explicitly: ${candidates.join(', ')}.`);
+  return { projectRoot: root, change: candidates[0]! };
+}
+
 const program = new Command()
   .name('openspec-relay')
   .description('Risk-aware execution and assurance for OpenSpec changes')
@@ -87,6 +110,50 @@ program.command('do')
       `OpenSpec Relay do is ready for '${approval.changeName}' at approved revision ${approval.revision}. ` +
       `The host executor wrapper must delegate implementation to $openspec-apply-change.`,
     Boolean(options.json));
+  });
+
+program.command('pause')
+  .argument('[change]')
+  .option('--discussion <id>', 'Pause a pre-proposal discussion using --input')
+  .option('--input <json-file|->', 'Bounded discussion checkpoint JSON')
+  .option('--project <path>')
+  .option('--json')
+  .action(async (change, options) => {
+    if (options.discussion) {
+      if (change || !options.input) throw new Error('Discussion pause requires --discussion and --input, without a change argument.');
+      const root = await resolveProjectRoot(options.project ?? process.cwd());
+      const checkpoint = DiscussionCheckpointInputV1Schema.parse(await readInput(options.input));
+      if (checkpoint.workingId !== options.discussion) throw new Error('Discussion input workingId must match --discussion.');
+      const result = await replaceDiscussionCheckpointV1({ projectRoot: root, checkpoint });
+      print(options.json ? result : `OpenSpec Relay discussion '${result.checkpoint.workingId}' paused.`, Boolean(options.json));
+      return;
+    }
+    const selected = await selectChange(change, options.project);
+    const result = await pauseRelayChangeV1(selected);
+    print(options.json ? result : result.appended
+      ? `OpenSpec Relay '${result.checkpoint.changeName}' ${result.safe ? 'paused' : 'could not reach safe quiescence'}; resume=${result.checkpoint.resumeRoute}.`
+      : `OpenSpec Relay '${result.checkpoint.changeName}' is already paused; resume=${result.checkpoint.resumeRoute}.`,
+    Boolean(options.json));
+    if (!result.safe) process.exitCode = 2;
+  });
+
+program.command('resume')
+  .argument('[change]')
+  .option('--discussion <id>', 'Resume a pre-proposal discussion checkpoint')
+  .option('--project <path>')
+  .option('--json')
+  .action(async (change, options) => {
+    if (options.discussion) {
+      if (change) throw new Error('Select either a change argument or --discussion, not both.');
+      const root = await resolveProjectRoot(options.project ?? process.cwd());
+      const result = await resumeDiscussionCheckpointV1({ projectRoot: root, workingId: options.discussion });
+      print(options.json ? result : `Resume discussion '${result.workingId}': ${result.nextQuestion?.summary ?? 'proposal handoff is ready'}.`, Boolean(options.json));
+      return;
+    }
+    const selected = await selectChange(change, options.project);
+    const result = await resumeRelayChangeV1(selected);
+    print(options.json ? result : `OpenSpec Relay resume route for '${selected.change}': ${result.decision.route} (${result.reconstructed ? 'reconstructed' : 'checkpoint restored'}).`,
+      Boolean(options.json));
   });
 
 program.command('check')

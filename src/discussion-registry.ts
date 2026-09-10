@@ -45,6 +45,15 @@ export const DiscussionRegistryV1Schema = z.object({
   discussions: z.array(DiscussionCheckpointV1Schema).max(100),
 }).strict();
 
+export const DiscussionCheckpointInputV1Schema = z.object({
+  workingId: WorkingIdSchema,
+  goal: z.string().min(1).max(2000),
+  confirmedDecisions: z.array(DecisionSchema).max(100),
+  rejectedAlternatives: z.array(RejectedAlternativeSchema).max(100),
+  openQuestions: z.array(OpenQuestionSchema).max(100),
+  frontierIds: z.array(z.string().min(1).max(128)).max(100),
+}).strict();
+
 export type DiscussionCheckpointV1 = z.infer<typeof DiscussionCheckpointV1Schema>;
 export type DiscussionRegistryV1 = z.infer<typeof DiscussionRegistryV1Schema>;
 
@@ -118,14 +127,7 @@ async function lockedUpdate<T>(projectRoot: string, update: (registry: Discussio
 
 export async function replaceDiscussionCheckpointV1(options: {
   projectRoot: string;
-  checkpoint: {
-    workingId: string;
-    goal: string;
-    confirmedDecisions: Array<z.input<typeof DecisionSchema>>;
-    rejectedAlternatives: Array<z.input<typeof RejectedAlternativeSchema>>;
-    openQuestions: Array<z.input<typeof OpenQuestionSchema>>;
-    frontierIds: string[];
-  };
+  checkpoint: z.input<typeof DiscussionCheckpointInputV1Schema>;
   expectedFingerprint?: string;
   now?: string;
 }): Promise<{ checkpoint: DiscussionCheckpointV1 }> {

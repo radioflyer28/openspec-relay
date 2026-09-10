@@ -9,6 +9,8 @@ export { RELAY_VERSION } from './version.js';
 export { relayAssuranceGate } from './gate.js';
 export { DEFAULT_HOST_CAPABILITIES, checkRelayRunV2, startRelayRunV2, } from './runner-v2.js';
 export { getRunStatusV2 } from './status.js';
+export { pauseRelayChangeV1, resumeRelayChangeV1, } from './pause-resume.js';
+export { consumeDiscussionCheckpointV1, readDiscussionRegistryV1, removeDiscussionCheckpointV1, replaceDiscussionCheckpointV1, resumeDiscussionCheckpointV1, selectDiscussionCheckpointV1, } from './discussion-registry.js';
 export { acceptRelayGateV2, observeDebugExperimentV2, planDebugExperimentV2, presentUatV2, recordDebugConclusionV2, recordDebugHypothesisV2, recordDebugNextActionV2, recordDebugQuestionV2, recordDebugReferenceChangeV2, recordDispatchedRoleResultV2, recordUatV2, recordWorkflowResultV2, resolveDebugSessionV2, startOrResumeDebugV2, transitionFindingV2, verifyFindingFromDispatchedResultV2, } from './v2-operations.js';
 export { dispatchRoleV2, executeWithTier, } from './execution-adapters.js';
 export { negotiateExecutionTier, } from './tiers.js';

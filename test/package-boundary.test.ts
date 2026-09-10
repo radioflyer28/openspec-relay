@@ -19,6 +19,9 @@ describe('published package boundary', () => {
       startRelayRunV2: expect.any(Function),
       checkRelayRunV2: expect.any(Function),
       getRunStatusV2: expect.any(Function),
+      pauseRelayChangeV1: expect.any(Function),
+      resumeRelayChangeV1: expect.any(Function),
+      resumeDiscussionCheckpointV1: expect.any(Function),
       recordWorkflowResultV2: expect.any(Function),
       relayAssuranceGate: expect.any(Object),
     }));

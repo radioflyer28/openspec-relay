@@ -41,6 +41,14 @@ export const DiscussionRegistryV1Schema = z.object({
     version: z.literal(1),
     discussions: z.array(DiscussionCheckpointV1Schema).max(100),
 }).strict();
+export const DiscussionCheckpointInputV1Schema = z.object({
+    workingId: WorkingIdSchema,
+    goal: z.string().min(1).max(2000),
+    confirmedDecisions: z.array(DecisionSchema).max(100),
+    rejectedAlternatives: z.array(RejectedAlternativeSchema).max(100),
+    openQuestions: z.array(OpenQuestionSchema).max(100),
+    frontierIds: z.array(z.string().min(1).max(128)).max(100),
+}).strict();
 export function discussionRegistryPath(projectRoot, pathApi = path) {
     return pathApi.join(projectRoot, 'openspec', '.openspec-relay', 'discussions.json');
 }

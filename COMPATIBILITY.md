@@ -58,3 +58,9 @@ Runtime dispatch is default-off and must pass live capability probes. Static
 `openspec extension doctor` checks cannot observe the active Pi model,
 authentication, session lifecycle, or restricted tool inventory and therefore
 do not qualify the live adapter.
+
+Pause/resume is portable path-and-schema behavior across the CI matrix, but
+dispatch cancellation remains a qualified host capability. Standalone Tier 0
+records unavailable control honestly and never infers that an external process
+stopped. Discussion checkpoints and change checkpoints use atomic contained
+paths; neither is a Git snapshot, security boundary, or process supervisor.

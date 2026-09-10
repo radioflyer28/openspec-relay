@@ -64,7 +64,13 @@ export class DispatchQuiescenceControllerV1 {
   }
 
   snapshot(): PauseDispatchV1[] {
-    return [...this.dispatches.values()].map(({ abort: _abort, resolve: _resolve, settled: _settled, ...dispatch }) => dispatch)
+    return [...this.dispatches.values()].map((dispatch) => ({
+      dispatchId: dispatch.dispatchId,
+      state: dispatch.state,
+      readOnly: dispatch.readOnly,
+      ...(dispatch.sessionId ? { sessionId: dispatch.sessionId } : {}),
+      ...(dispatch.requestRevision ? { requestRevision: dispatch.requestRevision } : {}),
+    }))
       .sort((left, right) => left.dispatchId.localeCompare(right.dispatchId));
   }
 

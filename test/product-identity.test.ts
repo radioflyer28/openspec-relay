@@ -14,7 +14,7 @@ describe('OpenSpec Relay public identity', () => {
 
     expect(pkg).toMatchObject({
       name: 'openspec-relay',
-      version: '0.2.0',
+      version: '0.3.0',
       bin: { 'openspec-relay': './dist/cli.js' },
       repository: { url: 'https://github.com/radioflyer28/openspec-relay.git' },
     });
@@ -22,6 +22,8 @@ describe('OpenSpec Relay public identity', () => {
     expect(RELAY_VERSION).toBe(pkg.version);
     expect(pkg.engines).toEqual({ node: '>=22.19.0' });
     expect(manifest.id).toBe('relay');
+    expect(manifest.contributes.workflows.map((workflow: { id: string }) => workflow.id))
+      .toEqual(expect.arrayContaining(['pause', 'resume']));
     expect(manifest.contributes.gates.map((gate: { id: string }) => gate.id)).toContain('relay.assurance');
     expect(pi).toContain("name: 'openspec_relay_workflow'");
     expect(pi).not.toContain("name: 'openspec_gsd_workflow'");
