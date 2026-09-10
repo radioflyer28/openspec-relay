@@ -114,8 +114,16 @@ export async function resumeRelayChangeV1(options) {
     const resolved = await resolveChangeDirectory({ projectRoot: options.projectRoot, change: options.change });
     const canonical = await loadCanonicalRelayRecords(resolved.changeDir);
     const checkpoint = canonical.projection.run.effectivePause;
+    const currentMutationDrift = (options.dispatches ?? [])
+        .filter((dispatch) => !dispatch.readOnly && (dispatch.state === 'running' || dispatch.state === 'unknown'))
+        .map((dispatch) => `Current mutation-capable dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
     if (!checkpoint) {
-        const decision = routeDecision(canonical);
+        const decision = routeDecision(canonical, { hasCheckpoint: false, requiredAuthority: currentMutationDrift });
+        if (currentMutationDrift.length > 0)
+            return {
+                resumed: false, released: false, continued: false, reconstructed: true,
+                decision, drift: currentMutationDrift,
+            };
         if (options.enterRoute && options.enterRoute !== decision.route) {
             throw new Error(`Resume route changed: expected '${options.enterRoute}', current route is '${decision.route}'.`);
         }
@@ -160,11 +168,7 @@ export async function resumeRelayChangeV1(options) {
             drift.push(`Dispatch '${dispatch.dispatchId}' revision identity changed.`);
         }
     }
-    for (const dispatch of options.dispatches ?? []) {
-        if (!dispatch.readOnly && (dispatch.state === 'running' || dispatch.state === 'unknown')) {
-            drift.push(`Current mutation-capable dispatch '${dispatch.dispatchId}' has not reached a resumable boundary.`);
-        }
-    }
+    drift.push(...currentMutationDrift);
     const decision = routeDecision(canonical, {
         hasCheckpoint: true,
         artifactsChanged: drift.some((reason) => /artifact/i.test(reason)),
