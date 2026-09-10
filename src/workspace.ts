@@ -66,7 +66,7 @@ async function gitSnapshot(projectRoot: string): Promise<WorkspaceSnapshotV1> {
     const record = records[index]!;
     const code = record.slice(0, 2);
     let portable = record.slice(3);
-    if (code.includes('R') || code.includes('C')) portable = records[++index] ?? portable;
+    if (code.includes('R') || code.includes('C')) index += 1; // -z emits destination first, then source.
     portable = portable.split(path.sep).join('/');
     if (portable.split('/').includes('.openspec-relay')) continue;
     const status = statusName(code);
